@@ -52,6 +52,8 @@ if [ ! -f "$APP_DIR/.env" ]; then
 fi
 PORT="$(grep -E '^PORT=' "$APP_DIR/.env" | cut -d= -f2 || echo 3000)"
 chown -R root:root "$APP_DIR"
+# arquivos vindos do Mac podem chegar só com permissão do dono; o app precisa conseguir ler
+find "$APP_DIR" -path "$APP_DIR/data" -prune -o -type d -exec chmod 755 {} + -o -type f -exec chmod 644 {} +
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/data"
 chmod 640 "$APP_DIR/.env"; chgrp "$APP_USER" "$APP_DIR/.env"
 ok "arquivos no lugar (banco e configuração preservados)"
