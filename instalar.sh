@@ -150,6 +150,9 @@ if [ -n "$SERVER_IP" ] && [ "$DNS_IP" = "$SERVER_IP" ]; then
   else
     warn "o certificado não foi emitido. Rode de novo em alguns minutos."
   fi
+elif [ -d "/etc/letsencrypt/live/$DOMAIN" ] && command -v certbot >/dev/null 2>&1; then
+  # o certificado já existe: só reaplica no nginx (a configuração foi reescrita no passo 5)
+  if certbot install --nginx --cert-name "$DOMAIN" --redirect --non-interactive >/dev/null 2>&1; then HTTPS=1; ok "HTTPS mantido"; fi
 else
   warn "$DOMAIN ainda não aponta para este servidor (DNS: ${DNS_IP:-nenhum}, servidor: ${SERVER_IP:-?})."
   warn "Aponte o DNS e rode este script de novo para ativar o HTTPS."
