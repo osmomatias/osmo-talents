@@ -1,0 +1,3 @@
+/* Para usar a DIN Pro original, copie os arquivos .woff2 da fonte para public/fonts/ e descomente:
+@font-face{font-family:'DIN Pro';src:url('/fonts/DINPro-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
+*/

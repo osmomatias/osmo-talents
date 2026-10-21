@@ -1,0 +1,502 @@
+// Osmo Talents: servidor HTTP nativo (node:http) + API REST + SQLite
+// Requer Node.js 22.13 ou mais novo.
+const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { one, all, run, tx } = require("./src/db");
+
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "127.0.0.1";
+const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
+const PUBLIC_DIR = path.join(__dirname, "public");
+const FEE = 0.10; // taxa da plataforma
+const SESSION_DAYS = 30;
+
+const CATS = ["design", "dev", "texto", "dados"];
+const ENERGY = ["baixa", "media", "alta"];
+
+/* ---------------- utilidades ---------------- */
+class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+const fail = (status, msg) => { throw new HttpError(status, msg); };
+
+function str(v, max = 2000) { return typeof v === "string" ? v.trim().slice(0, max) : ""; }
+function int(v, min = 0, max = 10_000_000) { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min; }
+function list(v, maxItems = 20, maxLen = 120) {
+  const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : [];
+  return arr.map(x => str(String(x), maxLen)).filter(Boolean).slice(0, maxItems);
+}
+const parse = s => { try { return JSON.parse(s); } catch { return []; } };
+
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
+  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+function checkPassword(pw, stored) {
+  const [, saltHex, hashHex] = String(stored).split("$");
+  if (!saltHex || !hashHex) return false;
+  const hash = crypto.scryptSync(pw, Buffer.from(saltHex, "hex"), 64, { N: 16384, r: 8, p: 1 });
+  return crypto.timingSafeEqual(hash, Buffer.from(hashHex, "hex"));
+}
+const sha = s => crypto.createHash("sha256").update(s).digest("hex");
+
+function clarity(j) {
+  const checks = [
+    j.title.length > 8, CATS.includes(j.cat), j.obj.length > 20, j.ent.length >= 2,
+    j.fora.length >= 1, j.com.length > 3, j.fb.length > 3, j.budget > 0, j.duration.length > 1,
+  ];
+  return Math.round(checks.filter(Boolean).length / checks.length * 100);
+}
+
+// limite de propostas abertas pela capacidade declarada
+function proposalCap(user, hours) {
+  let cap = Math.max(2, Math.floor((hours || 20) / 5));
+  if (user.energy === "baixa") cap = Math.max(1, cap - 2);
+  if (user.energy === "alta") cap += 1;
+  return cap;
+}
+
+/* ---------------- rate limit simples ---------------- */
+const hits = new Map();
+function limit(key, max, windowMs) {
+  const now = Date.now();
+  const h = (hits.get(key) || []).filter(t => now - t < windowMs);
+  if (h.length >= max) fail(429, "Muitas tentativas. Espere alguns minutos e tente de novo.");
+  h.push(now); hits.set(key, h);
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (!v.some(t => now - t < 3600_000)) hits.delete(k); }, 600_000).unref();
+
+/* ---------------- sessão ---------------- */
+function readCookie(req, name) {
+  const m = (req.headers.cookie || "").split(/;\s*/).find(c => c.startsWith(name + "="));
+  return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
+}
+function sessionCookie(token, maxAge) {
+  return `osmo_sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${COOKIE_SECURE ? "; Secure" : ""}`;
+}
+function currentUser(req) {
+  const tok = readCookie(req, "osmo_sid");
+  if (!tok) return null;
+  const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
+  if (!s || s.expires_at < new Date().toISOString()) return null;
+  return one("SELECT id, name, email, role, energy FROM users WHERE id = ?", s.user_id) || null;
+}
+function createSession(res, userId) {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
+  run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), userId, exp);
+  run("DELETE FROM sessions WHERE expires_at < ?", new Date().toISOString());
+  res.setHeader("Set-Cookie", sessionCookie(token, SESSION_DAYS * 86400));
+}
+
+/* ---------------- formatação ---------------- */
+function profileOf(userId) {
+  const u = one("SELECT u.id, u.name, u.role, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?", userId);
+  if (!u) return null;
+  const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
+  return {
+    id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
+    rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: parse(u.portfolio || "[]"),
+    how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
+    tag: u.tag || "", company: u.company || "", done: stats.n,
+  };
+}
+function jobOut(j) {
+  return {
+    id: j.id, client_id: j.client_id, client: j.client_name, company: j.company || "", title: j.title, cat: j.cat,
+    brief: { obj: j.obj, ent: parse(j.ent), fora: parse(j.fora), com: j.com, fb: j.fb, ref: j.ref },
+    budget_type: j.budget_type, budget: j.budget, duration: j.duration, skills: parse(j.skills),
+    async: !!j.is_async, flex: !!j.is_flex, clarity: j.clarity, status: j.status, created_at: j.created_at,
+    proposals: j.n_props ?? undefined,
+  };
+}
+const JOB_SELECT = `SELECT j.*, u.name client_name, p.company,
+  (SELECT COUNT(*) FROM proposals x WHERE x.job_id = j.id) n_props
+  FROM jobs j JOIN users u ON u.id = j.client_id LEFT JOIN profiles p ON p.user_id = j.client_id`;
+
+function threadFor(jobId, clientId, freelaId) {
+  let t = one("SELECT id FROM threads WHERE job_id IS ? AND client_id = ? AND freela_id = ?", jobId, clientId, freelaId);
+  if (!t) t = { id: Number(run("INSERT INTO threads (job_id, client_id, freela_id) VALUES (?,?,?)", jobId, clientId, freelaId).lastInsertRowid) };
+  return t.id;
+}
+function postMessage(threadId, senderId, body, actorId) {
+  run("INSERT INTO messages (thread_id, sender_id, body) VALUES (?,?,?)", threadId, senderId, body);
+  run("UPDATE threads SET updated_at = datetime('now') WHERE id = ?", threadId);
+  const who = actorId || senderId;
+  if (who) run(`UPDATE threads SET client_read_at = CASE WHEN client_id = ? THEN datetime('now', '+1 second') ELSE client_read_at END,
+    freela_read_at = CASE WHEN freela_id = ? THEN datetime('now', '+1 second') ELSE freela_read_at END WHERE id = ?`, who, who, threadId);
+}
+const brl = n => "R$ " + Number(n).toLocaleString("pt-BR");
+
+/* ---------------- rotas ---------------- */
+const routes = [];
+const route = (method, pattern, handler, opts = {}) => {
+  const keys = []; const re = new RegExp("^" + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return "(\\d+)"; }) + "$");
+  routes.push({ method, re, keys, handler, auth: opts.auth !== false, role: opts.role });
+};
+
+// --- autenticação
+route("POST", "/api/auth/register", ({ body, res, ip }) => {
+  limit("reg:" + ip, 10, 600_000);
+  const name = str(body.name, 80), email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
+  const role = body.role === "cliente" ? "cliente" : "freela";
+  if (name.length < 2) fail(400, "Escreva seu nome.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
+  if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
+  if (one("SELECT 1 FROM users WHERE email = ?", email)) fail(409, "Já existe uma conta com esse e-mail. Tente entrar.");
+  const id = tx(() => {
+    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", name, email, hashPassword(password), role).lastInsertRowid);
+    run("INSERT INTO profiles (user_id) VALUES (?)", uid);
+    return uid;
+  });
+  createSession(res, id);
+  return { ok: true };
+}, { auth: false });
+
+route("POST", "/api/auth/login", ({ body, res, ip }) => {
+  limit("login:" + ip, 10, 600_000);
+  const email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
+  const u = one("SELECT id, pass_hash FROM users WHERE email = ?", email);
+  if (!u || !checkPassword(password, u.pass_hash)) fail(401, "E-mail ou senha não conferem.");
+  createSession(res, u.id);
+  return { ok: true };
+}, { auth: false });
+
+route("POST", "/api/auth/logout", ({ req, res }) => {
+  const tok = readCookie(req, "osmo_sid");
+  if (tok) run("DELETE FROM sessions WHERE token_hash = ?", sha(tok));
+  res.setHeader("Set-Cookie", sessionCookie("", 0));
+  return { ok: true };
+}, { auth: false });
+
+route("GET", "/api/me", ({ user }) => {
+  if (!user) return { user: null };
+  const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
+    WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
+    AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
+  return { user: { ...user, profile: profileOf(user.id), unread } };
+}, { auth: false });
+
+route("PUT", "/api/me/profile", ({ user, body }) => {
+  const how = body.how || {};
+  run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, portfolio=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
+    str(body.title, 100), str(body.bio, 1200), str(body.location, 80), int(body.rate, 0, 100000), int(body.hours, 1, 60),
+    JSON.stringify(list(body.skills, 12, 40)), JSON.stringify(list(body.portfolio, 12, 80)),
+    str(how.com, 200), str(how.resp, 200), str(how.fb, 200), str(how.foco, 200), str(body.tag, 80), str(body.company, 100), user.id);
+  const name = str(body.name, 80);
+  if (name.length >= 2) run("UPDATE users SET name = ? WHERE id = ?", name, user.id);
+  return { profile: profileOf(user.id) };
+});
+
+route("PUT", "/api/me/energy", ({ user, body }) => {
+  if (!ENERGY.includes(body.energy)) fail(400, "Escolha baixa, média ou alta.");
+  run("UPDATE users SET energy = ? WHERE id = ?", body.energy, user.id);
+  return { ok: true };
+});
+
+// --- talentos
+route("GET", "/api/talents", ({ query }) => {
+  const q = str(query.get("q") || "", 80).toLowerCase();
+  const rows = all("SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200");
+  let out = rows.map(r => profileOf(r.id));
+  if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
+  return { talents: out };
+}, { auth: false });
+
+route("GET", "/api/talents/:id", ({ params }) => {
+  const t = profileOf(params.id);
+  if (!t || t.role !== "freela") fail(404, "Perfil não encontrado.");
+  return { talent: t };
+}, { auth: false });
+
+// --- vagas
+route("GET", "/api/jobs", ({ query }) => {
+  const rows = all(JOB_SELECT + " WHERE j.status = 'aberta' ORDER BY j.created_at DESC, j.id DESC LIMIT 300").map(jobOut);
+  const q = str(query.get("q") || "", 80).toLowerCase(), cat = query.get("cat") || "";
+  let r = rows.filter(j => (!cat || j.cat === cat)
+    && (query.get("clear") !== "1" || j.clarity >= 80) && (query.get("async") !== "1" || j.async) && (query.get("flex") !== "1" || j.flex)
+    && (!q || (j.title + " " + j.skills.join(" ") + " " + j.client + " " + j.company).toLowerCase().includes(q)));
+  const sort = query.get("sort");
+  if (sort === "clareza") r.sort((a, b) => b.clarity - a.clarity);
+  if (sort === "valor") r.sort((a, b) => (b.budget_type === "hora" ? b.budget * 15 : b.budget) - (a.budget_type === "hora" ? a.budget * 15 : a.budget));
+  return { jobs: r };
+}, { auth: false });
+
+route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.client_id = ? ORDER BY j.created_at DESC", user.id).map(jobOut) }), { role: "cliente" });
+
+route("GET", "/api/jobs/:id", ({ params, user }) => {
+  const j = one(JOB_SELECT + " WHERE j.id = ?", params.id);
+  if (!j) fail(404, "Vaga não encontrada.");
+  const out = { job: jobOut(j) };
+  if (user && user.id === j.client_id) {
+    out.proposals = all(`SELECT pr.*, u.name freela_name FROM proposals pr JOIN users u ON u.id = pr.freela_id WHERE pr.job_id = ? ORDER BY pr.created_at`, j.id)
+      .map(p => ({ ...p, milestones: parse(p.milestones), freela: profileOf(p.freela_id) }));
+  }
+  if (user && user.role === "freela") {
+    const mine = one("SELECT * FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id);
+    if (mine) out.mine = { ...mine, milestones: parse(mine.milestones) };
+  }
+  return out;
+}, { auth: false });
+
+route("POST", "/api/jobs", ({ user, body }) => {
+  const j = {
+    title: str(body.title, 120), cat: CATS.includes(body.cat) ? body.cat : "", obj: str(body.obj, 1200),
+    ent: list(body.ent, 15, 200), fora: list(body.fora, 10, 200), com: str(body.com, 200), fb: str(body.fb, 300), ref: str(body.ref, 500),
+    budget_type: body.budget_type === "hora" ? "hora" : "fixo", budget: int(body.budget, 0, 10_000_000), duration: str(body.duration, 60),
+    skills: list(body.skills, 8, 40), async: body.async ? 1 : 0, flex: body.flex ? 1 : 0,
+  };
+  if (j.title.length < 5) fail(400, "Dê um título com pelo menos 5 letras.");
+  if (!j.cat) fail(400, "Escolha uma área.");
+  const c = clarity(j);
+  if (c < 50) fail(400, `O briefing está com ${c}% de clareza. Complete pelo menos metade dos campos para publicar.`);
+  const id = Number(run(`INSERT INTO jobs (client_id,title,cat,obj,ent,fora,com,fb,ref,budget_type,budget,duration,skills,is_async,is_flex,clarity)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, user.id, j.title, j.cat, j.obj, JSON.stringify(j.ent), JSON.stringify(j.fora), j.com, j.fb, j.ref,
+    j.budget_type, j.budget, j.duration, JSON.stringify(j.skills), j.async, j.flex, c).lastInsertRowid);
+  return { id, clarity: c };
+}, { role: "cliente" });
+
+route("POST", "/api/jobs/:id/close", ({ user, params }) => {
+  const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ?", params.id, user.id);
+  if (!j) fail(404, "Vaga não encontrada.");
+  run("UPDATE jobs SET status = 'fechada' WHERE id = ?", j.id);
+  return { ok: true };
+}, { role: "cliente" });
+
+route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
+  const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ? AND status = 'aberta'", params.id, user.id);
+  if (!j) fail(404, "Vaga aberta não encontrada.");
+  const t = one("SELECT id FROM users WHERE id = ? AND role = 'freela'", int(body.talentId));
+  if (!t) fail(404, "Talento não encontrado.");
+  const th = threadFor(j.id, user.id, t.id);
+  postMessage(th, null, `${user.name} convidou você para a vaga "${j.title}". Leia o briefing e, se fizer sentido, envie uma proposta.`, user.id);
+  return { thread: th };
+}, { role: "cliente" });
+
+// --- propostas
+route("POST", "/api/jobs/:id/proposals", ({ user, params, body }) => {
+  const j = one("SELECT * FROM jobs WHERE id = ? AND status = 'aberta'", params.id);
+  if (!j) fail(404, "Essa vaga não está mais aberta.");
+  if (one("SELECT 1 FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id)) fail(409, "Você já enviou uma proposta para esta vaga.");
+  const prof = one("SELECT hours FROM profiles WHERE user_id = ?", user.id);
+  const open = one("SELECT COUNT(*) n FROM proposals WHERE freela_id = ? AND status = 'enviada'", user.id).n;
+  const cap = proposalCap(user, prof && prof.hours);
+  if (open >= cap) fail(409, `Você já tem ${open} propostas aguardando resposta, o limite para sua capacidade atual. Espere uma resposta ou retire uma proposta.`);
+  const text = str(body.text, 4000), value = int(body.value, 0), days = int(body.days, 0, 365), questions = str(body.questions, 2000);
+  if (text.split(/\s+/).filter(Boolean).length < 10) fail(400, "Escreva pelo menos 10 palavras sobre como faria o trabalho.");
+  if (value < 50) fail(400, "Informe um valor de pelo menos R$ 50.");
+  if (days < 1) fail(400, "Informe o prazo em dias úteis.");
+  let ms = Array.isArray(body.milestones) ? body.milestones.map(m => ({ title: str(m.title, 120), value: int(m.value, 0) })).filter(m => m.title && m.value > 0).slice(0, 8) : [];
+  if (!ms.length || ms.reduce((a, m) => a + m.value, 0) !== value) ms = [{ title: "Entrega completa", value }];
+  const id = tx(() => {
+    const pid = Number(run("INSERT INTO proposals (job_id, freela_id, text, value, days, questions, milestones) VALUES (?,?,?,?,?,?,?)",
+      j.id, user.id, text, value, days, questions, JSON.stringify(ms)).lastInsertRowid);
+    const th = threadFor(j.id, j.client_id, user.id);
+    postMessage(th, null, `${user.name} enviou uma proposta de ${brl(value)} em ${days} dias úteis.`, user.id);
+    if (questions) postMessage(th, user.id, questions);
+    return pid;
+  });
+  return { id };
+}, { role: "freela" });
+
+route("GET", "/api/me/proposals", ({ user }) => {
+  const prof = one("SELECT hours FROM profiles WHERE user_id = ?", user.id);
+  const rows = all(`SELECT pr.*, j.title job_title, u.name client_name FROM proposals pr JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = j.client_id
+    WHERE pr.freela_id = ? ORDER BY pr.created_at DESC`, user.id);
+  return { proposals: rows, cap: proposalCap(user, prof && prof.hours), open: rows.filter(r => r.status === "enviada").length };
+}, { role: "freela" });
+
+function ownProposalAsClient(user, id) {
+  const p = one("SELECT pr.*, j.client_id, j.title job_title, j.status job_status FROM proposals pr JOIN jobs j ON j.id = pr.job_id WHERE pr.id = ?", id);
+  if (!p || p.client_id !== user.id) fail(404, "Proposta não encontrada.");
+  return p;
+}
+route("POST", "/api/proposals/:id/accept", ({ user, params }) => {
+  const p = ownProposalAsClient(user, params.id);
+  if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
+  const cid = tx(() => {
+    run("UPDATE proposals SET status = 'aceita' WHERE id = ?", p.id);
+    const c = Number(run("INSERT INTO contracts (job_id, proposal_id, client_id, freela_id, value) VALUES (?,?,?,?,?)", p.job_id, p.id, user.id, p.freela_id, p.value).lastInsertRowid);
+    parse(p.milestones).forEach((m, i) => run("INSERT INTO milestones (contract_id, pos, title, value) VALUES (?,?,?,?)", c, i, m.title, m.value));
+    run("UPDATE jobs SET status = 'em_andamento' WHERE id = ?", p.job_id);
+    const th = threadFor(p.job_id, user.id, p.freela_id);
+    postMessage(th, null, `Proposta aceita. Contrato criado com ${parse(p.milestones).length} etapa(s). O valor fica protegido e é liberado a cada etapa aprovada.`, user.id);
+    return c;
+  });
+  return { contract: cid };
+}, { role: "cliente" });
+
+route("POST", "/api/proposals/:id/decline", ({ user, params }) => {
+  const p = ownProposalAsClient(user, params.id);
+  if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
+  run("UPDATE proposals SET status = 'recusada' WHERE id = ?", p.id);
+  postMessage(threadFor(p.job_id, user.id, p.freela_id), null, "A proposta não foi escolhida desta vez. Obrigado pelo tempo dedicado.", user.id);
+  return { ok: true };
+}, { role: "cliente" });
+
+route("POST", "/api/proposals/:id/withdraw", ({ user, params }) => {
+  const p = one("SELECT * FROM proposals WHERE id = ? AND freela_id = ?", params.id, user.id);
+  if (!p) fail(404, "Proposta não encontrada.");
+  if (p.status !== "enviada") fail(409, "Só dá para retirar propostas que ainda aguardam resposta.");
+  run("UPDATE proposals SET status = 'retirada' WHERE id = ?", p.id);
+  return { ok: true };
+}, { role: "freela" });
+
+// --- contratos e etapas
+route("GET", "/api/contracts", ({ user }) => {
+  const cs = all(`SELECT c.*, j.title job_title, uc.name client_name, uf.name freela_name FROM contracts c
+    JOIN jobs j ON j.id = c.job_id JOIN users uc ON uc.id = c.client_id JOIN users uf ON uf.id = c.freela_id
+    WHERE c.client_id = ? OR c.freela_id = ? ORDER BY c.status = 'concluido', c.created_at DESC`, user.id, user.id);
+  for (const c of cs) {
+    c.milestones = all("SELECT * FROM milestones WHERE contract_id = ? ORDER BY pos", c.id);
+    c.thread = threadFor(c.job_id, c.client_id, c.freela_id);
+  }
+  const mine = cs.flatMap(c => c.milestones.map(m => ({ ...m, side: c.freela_id === user.id ? "freela" : "cliente" })));
+  const paid = mine.filter(m => m.status === "aprovada").reduce((a, m) => a + m.value, 0);
+  const held = mine.filter(m => m.status !== "aprovada").reduce((a, m) => a + m.value, 0);
+  return { contracts: cs, stats: { paid, held, net: Math.round(paid * (1 - FEE)), fee: FEE } };
+});
+
+const MS_FLOW = {
+  start: { who: "freela", from: ["pendente", "ajustes"], to: "andamento", msg: m => `Etapa "${m.title}" em andamento.` },
+  deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` },
+  approve: { who: "cliente", from: ["entregue"], to: "aprovada", msg: m => `Etapa "${m.title}" aprovada. ${brl(m.value)} liberado.` },
+  changes: { who: "cliente", from: ["entregue"], to: "ajustes", msg: m => `Pedido de ajustes na etapa "${m.title}".` },
+};
+for (const [action, f] of Object.entries(MS_FLOW)) {
+  route("POST", `/api/milestones/:id/${action}`, ({ user, params, body }) => {
+    const m = one("SELECT ms.*, c.client_id, c.freela_id, c.job_id, c.id cid FROM milestones ms JOIN contracts c ON c.id = ms.contract_id WHERE ms.id = ?", params.id);
+    if (!m || (f.who === "freela" ? m.freela_id : m.client_id) !== user.id) fail(404, "Etapa não encontrada.");
+    if (!f.from.includes(m.status)) fail(409, "Essa ação não vale para o estado atual da etapa.");
+    tx(() => {
+      run("UPDATE milestones SET status = ?, updated_at = datetime('now') WHERE id = ?", f.to, m.id);
+      const th = threadFor(m.job_id, m.client_id, m.freela_id);
+      postMessage(th, null, f.msg(m), user.id);
+      const note = str(body && body.note, 1000);
+      if (note) postMessage(th, user.id, note);
+      const left = one("SELECT COUNT(*) n FROM milestones WHERE contract_id = ? AND status != 'aprovada'", m.cid).n;
+      if (left === 0) { run("UPDATE contracts SET status = 'concluido' WHERE id = ?", m.cid); run("UPDATE jobs SET status = 'concluida' WHERE id = ?", m.job_id); postMessage(th, null, "Todas as etapas aprovadas. Contrato concluído.", user.id); }
+    });
+    return { ok: true };
+  });
+}
+
+// --- mensagens
+route("GET", "/api/threads", ({ user }) => {
+  const rows = all(`SELECT t.*, j.title job_title, uc.name client_name, uf.name freela_name,
+      (SELECT body FROM messages WHERE thread_id = t.id ORDER BY id DESC LIMIT 1) last,
+      (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND (m.sender_id IS NULL OR m.sender_id != ?)
+         AND m.created_at > CASE WHEN t.client_id = ? THEN t.client_read_at ELSE t.freela_read_at END) unread
+    FROM threads t LEFT JOIN jobs j ON j.id = t.job_id JOIN users uc ON uc.id = t.client_id JOIN users uf ON uf.id = t.freela_id
+    WHERE t.client_id = ? OR t.freela_id = ? ORDER BY t.updated_at DESC`, user.id, user.id, user.id, user.id);
+  return { threads: rows.map(t => ({ id: t.id, job: t.job_title || "Conversa direta", with: t.client_id === user.id ? t.freela_name : t.client_name,
+    withId: t.client_id === user.id ? t.freela_id : t.client_id, last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
+});
+
+function threadAccess(user, id) {
+  const t = one("SELECT * FROM threads WHERE id = ?", id);
+  if (!t || (t.client_id !== user.id && t.freela_id !== user.id)) fail(404, "Conversa não encontrada.");
+  return t;
+}
+route("GET", "/api/threads/:id", ({ user, params }) => {
+  const t = threadAccess(user, params.id);
+  run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
+  const other = profileOf(t.client_id === user.id ? t.freela_id : t.client_id);
+  const job = t.job_id ? one("SELECT id, title FROM jobs WHERE id = ?", t.job_id) : null;
+  const msgs = all("SELECT id, sender_id, body, created_at FROM messages WHERE thread_id = ? ORDER BY id LIMIT 500", t.id)
+    .map(m => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null }));
+  return { thread: { id: t.id, pin: t.pin, job, with: other }, messages: msgs };
+});
+route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
+  limit("msg:" + user.id, 60, 60_000);
+  const t = threadAccess(user, params.id);
+  const text = str(body.body, 3000);
+  if (!text) fail(400, "A mensagem está vazia.");
+  postMessage(t.id, user.id, text);
+  run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
+  return { ok: true };
+});
+route("PUT", "/api/threads/:id/pin", ({ user, params, body }) => {
+  const t = threadAccess(user, params.id);
+  run("UPDATE threads SET pin = ? WHERE id = ?", str(body.pin, 600), t.id);
+  postMessage(t.id, null, `${user.name} atualizou o resumo do combinado.`, user.id);
+  return { ok: true };
+});
+route("POST", "/api/threads", ({ user, body }) => {
+  const other = one("SELECT id, role FROM users WHERE id = ?", int(body.withId));
+  if (!other || other.role === user.role) fail(400, "Conversas são entre quem contrata e quem trabalha.");
+  const th = user.role === "cliente" ? threadFor(null, user.id, other.id) : threadFor(null, other.id, user.id);
+  return { thread: th };
+});
+
+/* ---------------- servidor ---------------- */
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" };
+
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Frame-Options": "DENY",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+};
+
+function send(res, status, data, headers = {}) {
+  const body = typeof data === "string" || Buffer.isBuffer(data) ? data : JSON.stringify(data);
+  res.writeHead(status, { ...SECURITY_HEADERS, ...(typeof data === "object" && !Buffer.isBuffer(data) ? { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } : {}), ...headers });
+  res.end(body);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", c => { size += c.length; if (size > 200_000) { reject(new HttpError(413, "Conteúdo grande demais.")); req.destroy(); } else chunks.push(c); });
+    req.on("end", () => { if (!chunks.length) return resolve({}); try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { reject(new HttpError(400, "JSON inválido.")); } });
+    req.on("error", reject);
+  });
+}
+
+function serveStatic(req, res, pathname) {
+  let rel = decodeURIComponent(pathname);
+  if (rel === "/" || !path.extname(rel)) rel = "/index.html";
+  const file = path.normalize(path.join(PUBLIC_DIR, rel));
+  if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
+  fs.readFile(file, (err, buf) => {
+    if (err) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+    const ext = path.extname(file);
+    send(res, 200, buf, { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600" });
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://localhost");
+  // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
+  const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
+  if (!url.pathname.startsWith("/api/")) {
+    if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
+    return serveStatic(req, res, url.pathname);
+  }
+  try {
+    // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)
+    if (req.method !== "GET" && req.headers["x-osmo"] !== "1") fail(403, "Requisição recusada.");
+    const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
+    if (!r) fail(404, "Rota não encontrada.");
+    const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
+    const user = currentUser(req);
+    if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
+    if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
+    const body = req.method === "GET" ? {} : await readBody(req);
+    const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
+    send(res, 200, out ?? { ok: true });
+  } catch (e) {
+    if (e instanceof HttpError) return send(res, e.status, { error: e.message });
+    console.error(new Date().toISOString(), req.method, url.pathname, e);
+    send(res, 500, { error: "Algo deu errado do nosso lado. Tente de novo em instantes." });
+  }
+});
+
+if (require.main === module) {
+  server.listen(PORT, HOST, () => console.log(`Osmo Talents rodando em http://${HOST}:${PORT}`));
+}
+module.exports = { server, hashPassword, clarity };

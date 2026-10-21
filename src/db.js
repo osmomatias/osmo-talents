@@ -1,0 +1,104 @@
+// Banco de dados SQLite (módulo nativo node:sqlite, sem dependências externas)
+const { DatabaseSync } = require("node:sqlite");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "data", "osmo_talents.sqlite");
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+const db = new DatabaseSync(DB_PATH);
+db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pass_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('freela','cliente')),
+  energy TEXT NOT NULL DEFAULT 'media',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS profiles (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT DEFAULT '', bio TEXT DEFAULT '', location TEXT DEFAULT '',
+  rate INTEGER DEFAULT 0, hours INTEGER DEFAULT 20,
+  skills TEXT DEFAULT '[]', portfolio TEXT DEFAULT '[]',
+  ws_com TEXT DEFAULT '', ws_resp TEXT DEFAULT '', ws_fb TEXT DEFAULT '', ws_foco TEXT DEFAULT '',
+  tag TEXT DEFAULT '', company TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS jobs (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, cat TEXT NOT NULL,
+  obj TEXT NOT NULL DEFAULT '', ent TEXT NOT NULL DEFAULT '[]', fora TEXT NOT NULL DEFAULT '[]',
+  com TEXT NOT NULL DEFAULT '', fb TEXT NOT NULL DEFAULT '', ref TEXT NOT NULL DEFAULT '',
+  budget_type TEXT NOT NULL DEFAULT 'fixo', budget INTEGER NOT NULL DEFAULT 0, duration TEXT NOT NULL DEFAULT '',
+  skills TEXT NOT NULL DEFAULT '[]', is_async INTEGER NOT NULL DEFAULT 1, is_flex INTEGER NOT NULL DEFAULT 0,
+  clarity INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'aberta',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS proposals (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  freela_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, value INTEGER NOT NULL, days INTEGER NOT NULL, questions TEXT NOT NULL DEFAULT '',
+  milestones TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'enviada',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (job_id, freela_id)
+);
+CREATE TABLE IF NOT EXISTS contracts (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  proposal_id INTEGER NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  client_id INTEGER NOT NULL REFERENCES users(id), freela_id INTEGER NOT NULL REFERENCES users(id),
+  value INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'ativo',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS milestones (
+  id INTEGER PRIMARY KEY,
+  contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  pos INTEGER NOT NULL, title TEXT NOT NULL, value INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS threads (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+  client_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  freela_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pin TEXT NOT NULL DEFAULT '',
+  client_read_at TEXT NOT NULL DEFAULT '1970-01-01', freela_read_at TEXT NOT NULL DEFAULT '1970-01-01',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (job_id, client_id, freela_id)
+);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY,
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  sender_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_props_job ON proposals(job_id);
+CREATE INDEX IF NOT EXISTS idx_props_freela ON proposals(freela_id);
+CREATE INDEX IF NOT EXISTS idx_msgs_thread ON messages(thread_id, id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+`);
+
+const one = (sql, ...p) => db.prepare(sql).get(...p);
+const all = (sql, ...p) => db.prepare(sql).all(...p);
+const run = (sql, ...p) => db.prepare(sql).run(...p);
+function tx(fn) {
+  db.exec("BEGIN");
+  try { const r = fn(); db.exec("COMMIT"); return r; }
+  catch (e) { db.exec("ROLLBACK"); throw e; }
+}
+
+module.exports = { db, one, all, run, tx, DB_PATH };
