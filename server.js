@@ -6,6 +6,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { one, all, run, tx } = require("./src/db");
 const asaas = require("./src/asaas");
+const oauth = require("./src/oauth");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -76,6 +77,10 @@ function readCookie(req, name) {
 function sessionCookie(token, maxAge) {
   return `osmo_sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${COOKIE_SECURE ? "; Secure" : ""}`;
 }
+function appendCookie(res, c) {
+  const prev = res.getHeader("Set-Cookie");
+  res.setHeader("Set-Cookie", prev ? [].concat(prev, c) : c);
+}
 function currentUser(req) {
   const tok = readCookie(req, "osmo_sid");
   if (!tok) return null;
@@ -88,7 +93,7 @@ function createSession(res, userId) {
   const exp = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString();
   run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), userId, exp);
   run("DELETE FROM sessions WHERE expires_at < ?", new Date().toISOString());
-  res.setHeader("Set-Cookie", sessionCookie(token, SESSION_DAYS * 86400));
+  appendCookie(res, sessionCookie(token, SESSION_DAYS * 86400));
 }
 
 /* ---------------- formatação ---------------- */
@@ -185,15 +190,39 @@ route("POST", "/api/auth/logout", ({ req, res }) => {
   return { ok: true };
 }, { auth: false });
 
+// --- login social: conta nova escolhe o perfil (freelancer ou cliente)
+function pendingRow(token) {
+  const t = String(token || "");
+  if (!/^[a-f0-9]{48}$/.test(t)) return null;
+  run("DELETE FROM oauth_pending WHERE created_at < datetime('now', '-20 minutes')");
+  return one("SELECT * FROM oauth_pending WHERE token = ?", t);
+}
+route("GET", "/api/auth/oauth/pending", ({ query }) => {
+  const r = pendingRow(query.get("token"));
+  if (!r) fail(404, "Esse link expirou. Entre de novo pelo botão do provedor.");
+  return { name: r.name, email: r.email, provider: (oauth.P[r.provider] || {}).name || r.provider };
+}, { auth: false });
+route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
+  const r = pendingRow(body.token);
+  if (!r) fail(404, "Esse link expirou. Entre de novo pelo botão do provedor.");
+  const role = body.role === "cliente" ? "cliente" : body.role === "freela" ? "freela" : "";
+  if (!role) fail(400, "Escolha se você quer trabalhar ou contratar.");
+  const id = tx(() => createOAuthUser(r, role));
+  run("DELETE FROM oauth_pending WHERE token = ?", r.token);
+  createSession(res, id);
+  return { ok: true, role };
+}, { auth: false });
+
 route("GET", "/api/me", ({ user }) => {
-  if (!user) return { user: null };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list() };
+  if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
   return { user: { ...user, profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
-    payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS } };
+    ...pub };
 }, { auth: false });
 
 route("PUT", "/api/me/profile", ({ user, body }) => {
@@ -588,6 +617,72 @@ route("POST", "/api/threads", ({ user, body }) => {
   return { thread: th };
 });
 
+/* ---------------- login social (/auth/...) ---------------- */
+function createOAuthUser(r, role) {
+  if (one("SELECT 1 FROM users WHERE email = ?", r.email)) fail(409, "Já existe uma conta com esse e-mail. Entre com e-mail e senha.");
+  const name = r.name || r.email.split("@")[0];
+  const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", name.slice(0, 80), r.email, "oauth$" + r.provider, role).lastInsertRowid);
+  run("INSERT INTO profiles (user_id) VALUES (?)", uid);
+  run("INSERT INTO oauth_identities (provider, sub, user_id, email) VALUES (?,?,?,?)", r.provider, r.sub, uid, r.email);
+  return uid;
+}
+function redirect(res, to) { res.writeHead(302, { ...SECURITY_HEADERS, Location: to, "Cache-Control": "no-store" }); res.end(); }
+const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; ${COOKIE_SECURE ? "SameSite=None; Secure" : "SameSite=Lax"}`;
+function readRaw(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on("data", c => { size += c.length; if (size > 50_000) { req.destroy(); reject(new Error("grande demais")); } else chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8"))); req.on("error", reject);
+  });
+}
+async function handleAuth(req, res, url, ip) {
+  const m = url.pathname.match(/^\/auth\/(google|apple|linkedin|adobe)(\/callback)?$/);
+  const fail2 = code => redirect(res, `/?oauth_error=${code}#entrar`);
+  if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  const k = m[1];
+  if (!oauth.enabled(k)) return fail2("indisponivel");
+  if (!m[2]) {
+    if (req.method !== "GET") return send(res, 405, "Método não permitido");
+    try { limit("oauth:" + ip, 30, 600_000); } catch { return fail2("tentativas"); }
+    const role = ["freela", "cliente"].includes(url.searchParams.get("role")) ? url.searchParams.get("role") : "";
+    const s = oauth.start(k);
+    run("DELETE FROM oauth_states WHERE created_at < datetime('now', '-15 minutes')");
+    run("INSERT INTO oauth_states (state, provider, verifier, nonce, role) VALUES (?,?,?,?,?)", s.state, k, s.verifier, s.nonce, role);
+    appendCookie(res, stateCookie(s.state, 600));
+    return redirect(res, s.url);
+  }
+  // retorno do provedor (GET ou, na Apple, POST de formulário)
+  let params = url.searchParams;
+  if (req.method === "POST") { try { params = new URLSearchParams(await readRaw(req)); } catch { return fail2("falhou"); } }
+  else if (req.method !== "GET") return send(res, 405, "Método não permitido");
+  appendCookie(res, stateCookie("", 0));
+  if (params.get("error")) return fail2(params.get("error") === "access_denied" || params.get("error") === "user_cancelled_authorize" ? "cancelado" : "falhou");
+  const state = params.get("state") || "", code = params.get("code") || "";
+  const saved = /^[a-f0-9]{48}$/.test(state) ? one("SELECT * FROM oauth_states WHERE state = ? AND provider = ? AND created_at > datetime('now', '-15 minutes')", state, k) : null;
+  const cookie = readCookie(req, "osmo_oauth");
+  if (!saved || !code || cookie !== state) return fail2("expirou");
+  run("DELETE FROM oauth_states WHERE state = ?", state);
+  let prof;
+  try { let appleUser = null; try { appleUser = params.get("user") ? JSON.parse(params.get("user")) : null; } catch {} prof = await oauth.finish(k, code, saved, appleUser); }
+  catch (e) { console.error("oauth", k, e.message); return fail2("falhou"); }
+
+  let uid = (one("SELECT user_id FROM oauth_identities WHERE provider = ? AND sub = ?", k, prof.sub) || {}).user_id;
+  if (!uid && prof.email && prof.emailVerified) {
+    const u = one("SELECT id FROM users WHERE email = ?", prof.email);
+    if (u) { uid = u.id; run("INSERT OR IGNORE INTO oauth_identities (provider, sub, user_id, email) VALUES (?,?,?,?)", k, prof.sub, uid, prof.email); }
+  }
+  if (!uid) {
+    if (!prof.email || !prof.emailVerified) return fail2("sem_email");
+    const r = { provider: k, sub: prof.sub, email: prof.email, name: prof.name };
+    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/#perfil" : "/#publicar"); }
+    const token = crypto.randomBytes(24).toString("hex");
+    run("INSERT INTO oauth_pending (token, provider, sub, email, name) VALUES (?,?,?,?,?)", token, k, prof.sub, prof.email, prof.name);
+    return redirect(res, `/#escolher-${token}`);
+  }
+  createSession(res, uid);
+  return redirect(res, "/#painel");
+}
+
 /* ---------------- servidor ---------------- */
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" };
@@ -627,6 +722,15 @@ function serveStatic(req, res, pathname) {
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
     if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
+    if (ext === ".html") {
+      // carimba app.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
+      return fs.readFile(file, "utf8", (err2, html) => {
+        if (err2) return send(res, 404, "Não encontrado");
+        const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
+        html = html.replace(/(src|href)="\/(app\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
+      });
+    }
     fs.readFile(file, (err2, buf) => err2 ? send(res, 404, "Não encontrado") : send(res, 200, buf, headers));
   });
 }
@@ -635,6 +739,9 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
   const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
+  if (url.pathname.startsWith("/auth/")) {
+    return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
+  }
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
     return serveStatic(req, res, url.pathname);

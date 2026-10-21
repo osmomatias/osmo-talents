@@ -49,13 +49,13 @@ const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18
 const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pass" aria-label="Mostrar senha" aria-pressed="false" aria-controls="a_pass">${EYE}</button>`;
 
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 };
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [];
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; } catch { ME = null; }
   renderChrome();
 }
 
@@ -197,6 +197,7 @@ V.entrar = async () => {
   return `<div class="auth stack">
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
+  ${socialHTML(reg)}
   <form class="panel stack" id="authForm" novalidate>
     ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" required></div>
     <div class="field"><span class="flabel">Eu quero</span>
@@ -207,6 +208,42 @@ V.entrar = async () => {
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
   </form></div>`;
+};
+
+const SOCIAL = {
+  google: ["Google", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h6a5.1 5.1 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.2-4.8 3.2-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1-3.7 1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.1a11 11 0 0 0 0 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>'],
+  apple: ["Apple", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.4.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.1zM13.9 4.9c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>'],
+  linkedin: ["LinkedIn", '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0A66C2"/><path fill="#fff" d="M6.9 9.5h-3v9.8h3zM5.4 4.7a1.7 1.7 0 1 0 0 3.5 1.7 1.7 0 0 0 0-3.5zM20.1 13.9c0-2.9-1.6-4.6-4-4.6a3.5 3.5 0 0 0-3.2 1.7V9.5H10v9.8h3v-5.3c0-1.4.6-2.4 1.9-2.4s1.8.9 1.8 2.4v5.3h3z"/></svg>'],
+  adobe: ["Adobe", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#EB1000" d="M14.6 2H22v20zM9.4 2H2v20zM12 9.4 16.7 22h-3.1l-1.4-3.6H8.8z"/></svg>'],
+};
+function socialHTML(reg) {
+  if (!OAUTH.length) return "";
+  const role = reg ? (document.querySelector('input[name="role"]:checked') || {}).value || "freela" : "";
+  return `<div class="stack" style="gap:10px" id="socialBox">
+    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
+    <div class="divider"><span>ou com e-mail</span></div></div>`;
+}
+const OAUTH_ERR = {
+  cancelado: "Você cancelou a entrada. Tente de novo quando quiser.",
+  expirou: "A entrada demorou demais ou foi aberta em outra aba. Tente de novo.",
+  sem_email: "O provedor não confirmou seu e-mail. Use outro jeito de entrar ou crie a conta com e-mail.",
+  indisponivel: "Esse jeito de entrar ainda não está ativo.",
+  tentativas: "Muitas tentativas seguidas. Espere alguns minutos.",
+  falhou: "Não deu para entrar com o provedor agora. Tente de novo ou use e-mail e senha.",
+};
+
+/* ---------- escolher perfil (conta nova pelo login social) ---------- */
+V.escolher = async () => {
+  const token = (location.hash.split("-")[1] || "");
+  const d = await api("GET", "/api/auth/oauth/pending?token=" + encodeURIComponent(token));
+  return `<div class="auth stack">
+    <div><span class="label">Quase lá</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Olá${d.name ? ", " + esc(d.name.split(" ")[0]) : ""}!</h1>
+    <p class="muted" style="margin-top:8px">Você entrou com ${esc(d.provider)} (${esc(d.email)}). Falta só uma escolha: o que você quer fazer na Osmo Talents?</p></div>
+    <div class="stack" style="gap:12px">
+      <button class="cat" data-act="oauth-role" data-role="freela" data-token="${esc(token)}"><b>Quero trabalhar</b><span class="muted">Encontrar vagas com briefing claro e enviar propostas</span></button>
+      <button class="cat" data-act="oauth-role" data-role="cliente" data-token="${esc(token)}"><b>Quero contratar</b><span class="muted">Publicar vagas e encontrar talentos</span></button>
+    </div>
+    <div id="roleErr" class="err" role="alert" hidden></div></div>`;
 };
 
 /* ---------- vagas ---------- */
@@ -633,6 +670,10 @@ document.addEventListener("click", async e => {
   const busy = fn => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
     case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
+    case "oauth-role": return busy(async () => {
+      try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }
+      catch (err) { const b = $("#roleErr"); b.textContent = err.message; b.hidden = false; }
+    })();
     case "toggle-pass": {
       const inp = $("#a_pass"), show = inp.type === "password";
       inp.type = show ? "text" : "password";
@@ -697,6 +738,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target, id = t.id;
+  if (t.name === "role") $$("[data-social]").forEach(a => { a.href = `/auth/${a.dataset.social}?role=${t.value}`; });
   if (id === "fcat") { S.cat = t.value; refreshJobs(); }
   if (id === "fsort") { S.sort = t.value; refreshJobs(); }
   if (["f_clear", "f_async", "f_flex"].includes(id)) { S[id.slice(2)] = t.checked; refreshJobs(); }
@@ -784,4 +826,6 @@ document.addEventListener("keydown", e => {
 /* ---------- início ---------- */
 setInterval(() => { if (ME && !document.hidden) refreshMe(); }, 30000);
 applyPrefs();
-refreshMe().then(route);
+const oauthErr = new URLSearchParams(location.search).get("oauth_error");
+if (oauthErr) history.replaceState(null, "", "/" + location.hash);
+refreshMe().then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });

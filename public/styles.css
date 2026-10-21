@@ -461,3 +461,11 @@ body.menu-open{overflow:hidden}
 .eye-btn:hover{color:var(--fg); background:var(--sunken)}
 .eye-btn[aria-pressed="true"]{color:var(--accent)}
 .eye-btn svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+
+/* ---------- login social ---------- */
+.btn.social{justify-content:center; gap:12px; text-transform:none; font-size:1rem; letter-spacing:0; min-height:50px; background:var(--surface); color:var(--fg); border-color:var(--line)}
+.btn.social:hover{border-color:var(--fg)}
+.btn.social svg{width:20px; height:20px; flex:none}
+.divider{display:flex; align-items:center; gap:12px; color:var(--muted); font-size:.85rem; margin-top:6px}
+.divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--line)}
+@media (max-width:980px){ .top-actions [data-go="entrar"]{display:none} }

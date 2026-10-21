@@ -116,6 +116,24 @@ addColumn("milestones", "invoice_url", "TEXT DEFAULT ''");
 addColumn("milestones", "delivered_at", "TEXT DEFAULT ''");
 db.exec("CREATE INDEX IF NOT EXISTS idx_ms_pay ON milestones(pay_id)");
 
+// --- migrações (versão 3: login social)
+db.exec(`
+CREATE TABLE IF NOT EXISTS oauth_identities (
+  provider TEXT NOT NULL, sub TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (provider, sub)
+);
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY, provider TEXT NOT NULL, verifier TEXT DEFAULT '', nonce TEXT DEFAULT '', role TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS oauth_pending (
+  token TEXT PRIMARY KEY, provider TEXT NOT NULL, sub TEXT NOT NULL, email TEXT DEFAULT '', name TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities(user_id);
+`);
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);
