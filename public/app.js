@@ -44,6 +44,10 @@ async function api(method, path, body) {
   return data;
 }
 
+const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2"/><path d="M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pass" aria-label="Mostrar senha" aria-pressed="false" aria-controls="a_pass">${EYE}</button>`;
+
 /* ---------- estado ---------- */
 let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 };
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
@@ -199,7 +203,7 @@ V.entrar = async () => {
       <label class="check"><input type="radio" name="role" value="freela" checked><span>Trabalhar como freelancer</span></label>
       <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label></div>` : ""}
     <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" required></div>
-    <div class="field"><label for="a_pass">Senha</label><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : ""}</div>
+    <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : ""}</div>
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
   </form></div>`;
@@ -629,6 +633,14 @@ document.addEventListener("click", async e => {
   const busy = fn => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
     case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
+    case "toggle-pass": {
+      const inp = $("#a_pass"), show = inp.type === "password";
+      inp.type = show ? "text" : "password";
+      act.setAttribute("aria-pressed", String(show));
+      act.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
+      act.innerHTML = show ? EYE_OFF : EYE;
+      return;
+    }
     case "login-then": S.next = act.dataset.next; return go("entrar");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
