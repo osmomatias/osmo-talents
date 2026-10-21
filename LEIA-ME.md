@@ -126,20 +126,20 @@ Pontos a confirmar com o Asaas antes de ir para produção: se valores de split 
 
 ---
 
-## Login com Google, Apple, LinkedIn e Adobe
+## Login com Google, LinkedIn, Adobe e GitHub
 
 Cada botão só aparece no site depois que o provedor é configurado. Para cada um:
 
 1. Crie o aplicativo no painel do provedor (links abaixo).
-2. Cadastre o endereço de retorno: `https://osmo.com.br/auth/<provedor>/callback` (troque `<provedor>` por google, apple, linkedin ou adobe).
+2. Cadastre o endereço de retorno: `https://osmo.com.br/auth/<provedor>/callback` (troque `<provedor>` por google, linkedin, adobe ou github).
 3. No terminal do editor: `bash configurar-login-social.sh`, escolha o provedor e cole as chaves.
 
 | Provedor | Onde criar | O que você recebe |
 | --- | --- | --- |
 | Google | console.cloud.google.com → APIs e serviços → Credenciais → ID do cliente OAuth (Aplicativo da Web) | Client ID e Client Secret |
 | LinkedIn | linkedin.com/developers → Create app → produto "Sign In with LinkedIn using OpenID Connect" | Client ID e Client Secret |
+| GitHub | github.com → Settings → Developer settings → OAuth Apps → New OAuth App (em "Authorization callback URL" use o endereço de retorno) | Client ID e Client Secret |
 | Adobe | developer.adobe.com/console → projeto → OAuth Web App | Client ID e Client Secret |
-| Apple | developer.apple.com (precisa do Apple Developer Program, pago) → Identifiers → Services ID com "Sign in with Apple" + uma chave (Keys) | Services ID, Team ID, Key ID e o arquivo .p8 |
 
 Como funciona:
 

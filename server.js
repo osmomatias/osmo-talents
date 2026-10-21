@@ -627,16 +627,9 @@ function createOAuthUser(r, role) {
   return uid;
 }
 function redirect(res, to) { res.writeHead(302, { ...SECURITY_HEADERS, Location: to, "Cache-Control": "no-store" }); res.end(); }
-const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; ${COOKIE_SECURE ? "SameSite=None; Secure" : "SameSite=Lax"}`;
-function readRaw(req) {
-  return new Promise((resolve, reject) => {
-    let size = 0; const chunks = [];
-    req.on("data", c => { size += c.length; if (size > 50_000) { req.destroy(); reject(new Error("grande demais")); } else chunks.push(c); });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8"))); req.on("error", reject);
-  });
-}
+const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
 async function handleAuth(req, res, url, ip) {
-  const m = url.pathname.match(/^\/auth\/(google|apple|linkedin|adobe)(\/callback)?$/);
+  const m = url.pathname.match(/^\/auth\/(google|linkedin|adobe|github)(\/callback)?$/);
   const fail2 = code => redirect(res, `/?oauth_error=${code}#entrar`);
   if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   const k = m[1];
@@ -651,10 +644,9 @@ async function handleAuth(req, res, url, ip) {
     appendCookie(res, stateCookie(s.state, 600));
     return redirect(res, s.url);
   }
-  // retorno do provedor (GET ou, na Apple, POST de formulário)
-  let params = url.searchParams;
-  if (req.method === "POST") { try { params = new URLSearchParams(await readRaw(req)); } catch { return fail2("falhou"); } }
-  else if (req.method !== "GET") return send(res, 405, "Método não permitido");
+  // retorno do provedor
+  if (req.method !== "GET") return send(res, 405, "Método não permitido");
+  const params = url.searchParams;
   appendCookie(res, stateCookie("", 0));
   if (params.get("error")) return fail2(params.get("error") === "access_denied" || params.get("error") === "user_cancelled_authorize" ? "cancelado" : "falhou");
   const state = params.get("state") || "", code = params.get("code") || "";
@@ -663,7 +655,7 @@ async function handleAuth(req, res, url, ip) {
   if (!saved || !code || cookie !== state) return fail2("expirou");
   run("DELETE FROM oauth_states WHERE state = ?", state);
   let prof;
-  try { let appleUser = null; try { appleUser = params.get("user") ? JSON.parse(params.get("user")) : null; } catch {} prof = await oauth.finish(k, code, saved, appleUser); }
+  try { prof = await oauth.finish(k, code, saved); }
   catch (e) { console.error("oauth", k, e.message); return fail2("falhou"); }
 
   let uid = (one("SELECT user_id FROM oauth_identities WHERE provider = ? AND sub = ?", k, prof.sub) || {}).user_id;
