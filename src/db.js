@@ -92,6 +92,30 @@ CREATE INDEX IF NOT EXISTS idx_msgs_thread ON messages(thread_id, id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `);
 
+// --- migrações (versão 2: pagamentos com Asaas)
+db.exec(`
+CREATE TABLE IF NOT EXISTS payout_accounts (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  asaas_account_id TEXT NOT NULL, wallet_id TEXT NOT NULL, api_key_enc TEXT NOT NULL,
+  escrow INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id TEXT PRIMARY KEY, event TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+function addColumn(table, col, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+}
+addColumn("profiles", "cpf_cnpj", "TEXT DEFAULT ''");
+addColumn("profiles", "asaas_customer_id", "TEXT DEFAULT ''");
+addColumn("milestones", "pay_id", "TEXT DEFAULT ''");
+addColumn("milestones", "pay_status", "TEXT DEFAULT 'a_pagar'");
+addColumn("milestones", "invoice_url", "TEXT DEFAULT ''");
+addColumn("milestones", "delivered_at", "TEXT DEFAULT ''");
+db.exec("CREATE INDEX IF NOT EXISTS idx_ms_pay ON milestones(pay_id)");
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

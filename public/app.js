@@ -45,13 +45,13 @@ async function api(method, path, body) {
 }
 
 /* ---------- estado ---------- */
-let ME = null;
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 };
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
 async function refreshMe() {
-  try { ME = (await api("GET", "/api/me")).user; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; } catch { ME = null; }
   renderChrome();
 }
 
@@ -86,6 +86,7 @@ function renderChrome() {
       <button class="btn" id="mmA11y">Ajustes de conforto</button>
       ${ME ? `<button class="btn ghost" data-act="logout">Sair da conta</button>` : ""}
     </div>`;
+  const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled ? `Pagamento protegido pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
   markNav();
 }
 function markNav() {
@@ -464,8 +465,15 @@ after.mensagens = () => {
 
 /* ---------- painel ---------- */
 const MSTATUS = { pendente: ["A seguir", "off", ""], andamento: ["Em andamento", "hi", "now"], entregue: ["Entregue, aguardando aprovação", "wait", "now"], ajustes: ["Ajustes pedidos", "wait", "now"], aprovada: ["Aprovada e paga", "ok", "done"] };
+const PAYST = { a_pagar: ["A pagar", "off"], aguardando: ["Aguardando pagamento", "wait"], pago: ["Pago · protegido", "ok"], liberado: ["Liberado", "ok"], estornado: ["Estornado", "off"] };
 function msActions(c, m) {
   const isF = ME.id === c.freela_id;
+  const paid = !PAY.enabled || m.pay_status === "pago" || m.pay_status === "liberado";
+  if (PAY.enabled && !isF && m.status !== "aprovada") {
+    if (m.pay_status === "a_pagar") return `<button class="btn sm hl" data-act="pay" data-id="${m.id}">Pagar etapa</button>`;
+    if (m.pay_status === "aguardando") return `<a class="btn sm hl" href="${esc(m.invoice_url)}" target="_blank" rel="noopener">Abrir cobrança</a><span class="hint">Pix, boleto ou cartão. A confirmação chega aqui sozinha.</span>`;
+  }
+  if (isF && !paid && m.status === "pendente") return `<span class="hint">Aguardando o cliente pagar esta etapa.</span>`;
   if (isF && (m.status === "pendente" || m.status === "ajustes")) return `<button class="btn sm" data-act="ms" data-a="start" data-id="${m.id}">Começar</button>`;
   if (isF && m.status === "andamento") return `<button class="btn sm hl" data-act="ms" data-a="deliver" data-id="${m.id}">Marcar como entregue</button>`;
   if (!isF && m.status === "entregue") return `<button class="btn sm hl" data-act="ms" data-a="approve" data-id="${m.id}">Aprovar e liberar</button><button class="btn sm" data-act="ms-changes" data-id="${m.id}">Pedir ajustes</button>`;
@@ -479,7 +487,7 @@ V.painel = async () => {
   const contracts = cs.contracts.length ? cs.contracts.map(c => `<div class="panel">
     <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</div>
     <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="#mensagens-${c.thread}">Abrir conversa</a></p>
-    ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
+    ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
   </div>`).join("") : emptyBox("Nenhum contrato ainda.", isF ? "Quando um cliente aceitar sua proposta, o contrato aparece aqui." : "Quando você aceitar uma proposta, o contrato aparece aqui.");
   let side;
   if (isF) {
@@ -495,6 +503,7 @@ V.painel = async () => {
 <div class="stats" style="margin-bottom:24px">
   <div class="panel stat"><span class="label">${isF ? "Recebido (líquido)" : "Pago até agora"}</span><b class="mono">${brl(isF ? st.net : st.paid)}</b></div>
   <div class="panel stat"><span class="label">Protegido, a liberar</span><b class="mono">${brl(st.held)}</b></div>
+  ${st.payments ? `<div class="panel stat"><span class="label">${isF ? "Aguardando pagamento" : "A pagar"}</span><b class="mono">${brl(st.toPay)}</b></div>` : ""}
   <div class="panel stat"><span class="label">Contratos ativos</span><b class="mono">${cs.contracts.filter(c => c.status === "ativo").length}</b></div>
 </div>
 <div class="stack">${side}<section class="stack" style="gap:12px"><h2>Contratos</h2>${contracts}</section></div>`;
@@ -512,7 +521,8 @@ V.perfil = async () => {
       ${isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
         + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono"')}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric"', "Define quantas propostas você pode ter abertas.")}</div>`
         + f("p_loc", "Cidade", p.location) + f("p_skills", "Habilidades", p.skills.join(", "), "", "Separe por vírgula.") + ta("p_bio", "Sobre você", p.bio, 4)
-        : f("p_company", "Empresa ou projeto", p.company)}
+        : f("p_company", "Empresa ou projeto", p.company)
+          + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas.")}
     </div>
     ${isF ? `<div class="panel stack"><div><h2>Como eu trabalho melhor</h2><p class="muted">Aparece no seu perfil e nas suas propostas. Quem contrata lê antes de chamar.</p></div>
       ${f("w_com", "Comunicação", p.how.com, 'placeholder="Ex.: Texto primeiro. Chamadas só com pauta."')}
@@ -522,10 +532,38 @@ V.perfil = async () => {
       ${f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")}
     </div>
     <div class="panel stack">${ta("p_port", "Portfólio", p.portfolio.join("\n"), 4, "Um projeto por linha.")}</div>` : ""}
+    ${isF && PAY.enabled ? payoutHTML() : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
     <div class="row"><button class="btn hl" type="submit">Salvar perfil</button><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div>
   </form></div>`;
 };
+
+function payoutHTML() {
+  if (ME.payout) return `<div class="panel stack" style="gap:8px"><h2>Receber pagamentos</h2><p><span class="status ok">Conta de recebimento ativa</span></p>
+    <p class="muted">Os valores das etapas chegam na sua conta Asaas e ficam protegidos até a aprovação. Para sacar, entre no Asaas pelo e-mail de ativação que você recebeu.</p></div>`;
+  const i = (id, label, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
+  return `<div class="panel stack" id="payoutBox"><div><h2>Receber pagamentos</h2><p class="muted">Para receber, criamos uma conta no Asaas em seu nome. Depois o Asaas manda um e-mail para você enviar um documento com foto. É feito uma vez só.</p></div>
+    ${i("po_doc", "CPF ou CNPJ", 'inputmode="numeric" autocomplete="off"', "Só números.")}
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1; min-width:160px">${i("po_birth", "Data de nascimento", 'type="date"', "Só para CPF.")}</div>
+      <div style="flex:1; min-width:160px"><div class="field"><label for="po_type">Tipo de empresa</label><select class="input" id="po_type"><option value="MEI">MEI</option><option value="INDIVIDUAL">Empresário individual</option><option value="LIMITED">Limitada</option></select><span class="hint">Só para CNPJ.</span></div></div>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1; min-width:160px">${i("po_phone", "Celular com DDD", 'inputmode="tel" autocomplete="tel"')}</div>
+      <div style="flex:1; min-width:160px">${i("po_income", "Renda ou faturamento mensal (R$)", 'inputmode="numeric"', "Exigido pelo Banco Central.")}</div>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1; min-width:140px">${i("po_cep", "CEP", 'inputmode="numeric" autocomplete="postal-code"')}</div>
+      <div style="flex:2; min-width:200px">${i("po_addr", "Rua", 'autocomplete="address-line1"')}</div>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1; min-width:120px">${i("po_num", "Número")}</div>
+      <div style="flex:1; min-width:160px">${i("po_comp", "Complemento")}</div>
+      <div style="flex:2; min-width:160px">${i("po_prov", "Bairro")}</div>
+    </div>
+    <div id="poErr" class="err" role="alert" hidden></div>
+    <button class="btn hl" type="button" data-act="payout">Ativar recebimentos</button></div>`;
+}
 
 /* ---------- publicar vaga ---------- */
 const POST0 = { title: "", cat: "", obj: "", ent: "", fora: "", com: "", fb: "", ref: "", budget_type: "fixo", budget: "", duration: "", skills: "", async: true, flex: false };
@@ -602,6 +640,14 @@ document.addEventListener("click", async e => {
       catch (err) { const box = $("#wErr"); box.textContent = err.message; box.hidden = false; return; }
       store.set("draft-" + WJOB.id, null); W = null; WJOB = null; toast("Proposta enviada"); refreshMe(); go("painel");
     })();
+    case "pay": return busy(async () => { await api("POST", `/api/milestones/${id}/pay`); toast("Cobrança gerada. Clique em Abrir cobrança para pagar."); route(); })();
+    case "payout": return busy(async () => {
+      const v = k => ($("#" + k) || {}).value || "";
+      const body = { cpfCnpj: v("po_doc"), birthDate: v("po_birth"), companyType: v("po_type"), mobilePhone: v("po_phone"), incomeValue: Number(v("po_income").replace(/\D/g, "")) || 0,
+        postalCode: v("po_cep"), address: v("po_addr"), addressNumber: v("po_num"), complement: v("po_comp"), province: v("po_prov") };
+      try { const r = await api("POST", "/api/me/payout", body); toast(r.escrow ? "Recebimentos ativados" : "Recebimentos ativados (sem garantia automática)"); await refreshMe(); route(); }
+      catch (err) { const b = $("#poErr"); b.textContent = err.message; b.hidden = false; }
+    })();
     case "close-job": return busy(async () => { await api("POST", `/api/jobs/${id}/close`); toast("Vaga fechada"); route(); })();
     case "accept": return busy(async () => { await api("POST", `/api/proposals/${id}/accept`); toast("Contrato criado"); go("painel"); })();
     case "decline": return busy(async () => { await api("POST", `/api/proposals/${id}/decline`); toast("Proposta recusada"); route(); })();
@@ -671,7 +717,7 @@ document.addEventListener("submit", async e => {
     if (f.id === "profForm") {
       const v = id => ($("#" + id) || {}).value || "";
       const body = { name: v("p_name"), title: v("p_title"), rate: Number(v("p_rate")) || 0, hours: Number(v("p_hours")) || 20, location: v("p_loc"),
-        skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"),
+        skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
         portfolio: v("p_port").split("\n").map(s => s.trim()).filter(Boolean), how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", err.message); }
       await refreshMe(); toast("Perfil salvo"); return;

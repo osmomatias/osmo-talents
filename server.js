@@ -5,12 +5,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { one, all, run, tx } = require("./src/db");
+const asaas = require("./src/asaas");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
 const PUBLIC_DIR = path.join(__dirname, "public");
-const FEE = 0.10; // taxa da plataforma
+const FEE = asaas.FEE_PCT / 100; // taxa da plataforma (FEE_PCT no .env)
 const SESSION_DAYS = 30;
 
 const CATS = ["design", "dev", "texto", "dados"];
@@ -129,6 +130,20 @@ function postMessage(threadId, senderId, body, actorId) {
 }
 const brl = n => "R$ " + Number(n).toLocaleString("pt-BR");
 
+function validDoc(d) {
+  if (/^(\d)\1+$/.test(d)) return false;
+  if (d.length === 11) {
+    const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+    return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+  }
+  if (d.length === 14) {
+    const calc = len => { const w = len === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2]; let s = 0; for (let i = 0; i < len; i++) s += Number(d[i]) * w[i]; const r = s % 11; return r < 2 ? 0 : 11 - r; };
+    return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+  }
+  return false;
+}
+function dateBR(addDays = 0) { const d = new Date(Date.now() - 3 * 3600e3 + addDays * 864e5); return d.toISOString().slice(0, 10); }
+
 /* ---------------- rotas ---------------- */
 const routes = [];
 const route = (method, pattern, handler, opts = {}) => {
@@ -175,7 +190,10 @@ route("GET", "/api/me", ({ user }) => {
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
-  return { user: { ...user, profile: profileOf(user.id), unread } };
+  const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
+  const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
+  return { user: { ...user, profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
+    payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS } };
 }, { auth: false });
 
 route("PUT", "/api/me/profile", ({ user, body }) => {
@@ -186,6 +204,11 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
     str(how.com, 200), str(how.resp, 200), str(how.fb, 200), str(how.foco, 200), str(body.tag, 80), str(body.company, 100), user.id);
   const name = str(body.name, 80);
   if (name.length >= 2) run("UPDATE users SET name = ? WHERE id = ?", name, user.id);
+  if (typeof body.cpfCnpj === "string" && body.cpfCnpj.trim()) {
+    const doc = body.cpfCnpj.replace(/\D/g, "");
+    if (!validDoc(doc)) fail(400, "CPF ou CNPJ inválido. Confira os números.");
+    run("UPDATE profiles SET cpf_cnpj = ?, asaas_customer_id = '' WHERE user_id = ?", doc, user.id);
+  }
   return { profile: profileOf(user.id) };
 });
 
@@ -322,6 +345,11 @@ route("POST", "/api/proposals/:id/accept", ({ user, params }) => {
     run("UPDATE jobs SET status = 'em_andamento' WHERE id = ?", p.job_id);
     const th = threadFor(p.job_id, user.id, p.freela_id);
     postMessage(th, null, `Proposta aceita. Contrato criado com ${parse(p.milestones).length} etapa(s). O valor fica protegido e é liberado a cada etapa aprovada.`, user.id);
+    if (asaas.ENABLED) {
+      const hasPayout = one("SELECT 1 FROM payout_accounts WHERE user_id = ?", p.freela_id);
+      postMessage(th, null, "Próximo passo: o cliente paga a primeira etapa pelo Painel. O trabalho começa quando o pagamento for confirmado."
+        + (hasPayout ? "" : " Freelancer: ative sua conta de recebimento em Meu perfil para a cobrança poder ser gerada."), user.id);
+    }
     return c;
   });
   return { contract: cid };
@@ -353,34 +381,164 @@ route("GET", "/api/contracts", ({ user }) => {
     c.thread = threadFor(c.job_id, c.client_id, c.freela_id);
   }
   const mine = cs.flatMap(c => c.milestones.map(m => ({ ...m, side: c.freela_id === user.id ? "freela" : "cliente" })));
-  const paid = mine.filter(m => m.status === "aprovada").reduce((a, m) => a + m.value, 0);
-  const held = mine.filter(m => m.status !== "aprovada").reduce((a, m) => a + m.value, 0);
-  return { contracts: cs, stats: { paid, held, net: Math.round(paid * (1 - FEE)), fee: FEE } };
+  const sum = arr => arr.reduce((a, m) => a + m.value, 0);
+  let paid, held, toPay;
+  if (asaas.ENABLED) {
+    paid = sum(mine.filter(m => m.pay_status === "liberado"));
+    held = sum(mine.filter(m => m.pay_status === "pago"));
+    toPay = sum(mine.filter(m => m.pay_status === "a_pagar" || m.pay_status === "aguardando"));
+  } else {
+    paid = sum(mine.filter(m => m.status === "aprovada")); held = sum(mine.filter(m => m.status !== "aprovada")); toPay = 0;
+  }
+  for (const c of cs) for (const m of c.milestones) { delete m.pay_id; }
+  return { contracts: cs, stats: { paid, held, toPay, net: Math.round(paid * (1 - FEE)), fee: FEE, payments: asaas.ENABLED } };
 });
 
 const MS_FLOW = {
   start: { who: "freela", from: ["pendente", "ajustes"], to: "andamento", msg: m => `Etapa "${m.title}" em andamento.` },
-  deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` },
+  deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` + (asaas.ENABLED ? ` Se não houver resposta em ${asaas.AUTO_RELEASE_DAYS} dias, o valor é liberado automaticamente.` : "") },
   approve: { who: "cliente", from: ["entregue"], to: "aprovada", msg: m => `Etapa "${m.title}" aprovada. ${brl(m.value)} liberado.` },
   changes: { who: "cliente", from: ["entregue"], to: "ajustes", msg: m => `Pedido de ajustes na etapa "${m.title}".` },
 };
+const MS_SELECT = "SELECT ms.*, c.client_id, c.freela_id, c.job_id, c.id cid FROM milestones ms JOIN contracts c ON c.id = ms.contract_id WHERE ms.id = ?";
+
+// libera a garantia (Conta Escrow) no Asaas; sem garantia ativa, não há o que liberar
+async function releaseEscrow(m) {
+  if (!asaas.ENABLED || m.pay_status !== "pago" || !m.pay_id) return;
+  const acc = one("SELECT api_key_enc FROM payout_accounts WHERE user_id = ?", m.freela_id);
+  const keys = [undefined]; if (acc) { try { keys.push(asaas.open(acc.api_key_enc)); } catch {} }
+  let lastErr = null;
+  for (const k of keys) {
+    try {
+      const e = await asaas.api.getPaymentEscrow(m.pay_id, k);
+      const id = e && (e.id || (e.data && e.data[0] && e.data[0].id));
+      if (!id || e.status === "DONE" || e.status === "FINISHED") return;
+      await asaas.api.finishEscrow(id, k);
+      return;
+    } catch (err) { if (err.status === 404) return; lastErr = err; }
+  }
+  if (lastErr) throw new HttpError(502, "Não foi possível liberar o valor no Asaas: " + lastErr.message);
+}
+
+function applyMilestone(m, f, actorId, note, extraMsg) {
+  tx(() => {
+    run("UPDATE milestones SET status = ?, updated_at = datetime('now') WHERE id = ?", f.to, m.id);
+    if (f.to === "entregue") run("UPDATE milestones SET delivered_at = datetime('now') WHERE id = ?", m.id);
+    if (f.to === "aprovada" && asaas.ENABLED && m.pay_status === "pago") run("UPDATE milestones SET pay_status = 'liberado' WHERE id = ?", m.id);
+    const th = threadFor(m.job_id, m.client_id, m.freela_id);
+    postMessage(th, null, f.msg(m) + (extraMsg || ""), actorId);
+    if (note) postMessage(th, actorId, note);
+    const left = one("SELECT COUNT(*) n FROM milestones WHERE contract_id = ? AND status != 'aprovada'", m.cid).n;
+    if (left === 0) { run("UPDATE contracts SET status = 'concluido' WHERE id = ?", m.cid); run("UPDATE jobs SET status = 'concluida' WHERE id = ?", m.job_id); postMessage(th, null, "Todas as etapas aprovadas. Contrato concluído.", actorId); }
+  });
+}
+
 for (const [action, f] of Object.entries(MS_FLOW)) {
-  route("POST", `/api/milestones/:id/${action}`, ({ user, params, body }) => {
-    const m = one("SELECT ms.*, c.client_id, c.freela_id, c.job_id, c.id cid FROM milestones ms JOIN contracts c ON c.id = ms.contract_id WHERE ms.id = ?", params.id);
+  route("POST", `/api/milestones/:id/${action}`, async ({ user, params, body }) => {
+    const m = one(MS_SELECT, params.id);
     if (!m || (f.who === "freela" ? m.freela_id : m.client_id) !== user.id) fail(404, "Etapa não encontrada.");
     if (!f.from.includes(m.status)) fail(409, "Essa ação não vale para o estado atual da etapa.");
-    tx(() => {
-      run("UPDATE milestones SET status = ?, updated_at = datetime('now') WHERE id = ?", f.to, m.id);
-      const th = threadFor(m.job_id, m.client_id, m.freela_id);
-      postMessage(th, null, f.msg(m), user.id);
-      const note = str(body && body.note, 1000);
-      if (note) postMessage(th, user.id, note);
-      const left = one("SELECT COUNT(*) n FROM milestones WHERE contract_id = ? AND status != 'aprovada'", m.cid).n;
-      if (left === 0) { run("UPDATE contracts SET status = 'concluido' WHERE id = ?", m.cid); run("UPDATE jobs SET status = 'concluida' WHERE id = ?", m.job_id); postMessage(th, null, "Todas as etapas aprovadas. Contrato concluído.", user.id); }
-    });
+    if (action === "start" && asaas.ENABLED && m.pay_status !== "pago") fail(409, "Espere o cliente pagar esta etapa. O valor fica protegido antes de você começar.");
+    if (action === "approve") await releaseEscrow(m);
+    applyMilestone(m, f, user.id, str(body && body.note, 1000));
     return { ok: true };
   });
 }
+
+// liberação automática: etapa entregue sem resposta do cliente
+async function autoRelease() {
+  const due = all(`SELECT id FROM milestones WHERE status = 'entregue' AND delivered_at != '' AND delivered_at < datetime('now', ?)`, `-${asaas.AUTO_RELEASE_DAYS} days`);
+  for (const { id } of due) {
+    const m = one(MS_SELECT, id);
+    try { await releaseEscrow(m); applyMilestone(m, MS_FLOW.approve, null, "", ` Liberação automática: ${asaas.AUTO_RELEASE_DAYS} dias sem resposta do cliente.`); }
+    catch (e) { console.error("auto-release", id, e.message); }
+  }
+}
+setInterval(() => autoRelease().catch(e => console.error("auto-release", e)), 3600_000).unref();
+
+// --- pagamentos (Asaas)
+route("POST", "/api/me/payout", async ({ user, body }) => {
+  if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
+  if (one("SELECT 1 FROM payout_accounts WHERE user_id = ?", user.id)) fail(409, "Sua conta de recebimento já está ativa.");
+  const doc = String(body.cpfCnpj || "").replace(/\D/g, "");
+  if (!validDoc(doc)) fail(400, "CPF ou CNPJ inválido. Confira os números.");
+  const cep = String(body.postalCode || "").replace(/\D/g, ""), phone = String(body.mobilePhone || "").replace(/\D/g, "");
+  if (cep.length !== 8) fail(400, "Informe o CEP com 8 números.");
+  if (phone.length < 10) fail(400, "Informe o celular com DDD.");
+  const email = one("SELECT email FROM users WHERE id = ?", user.id).email;
+  const payload = {
+    name: str(body.name, 120) || user.name, email, cpfCnpj: doc, mobilePhone: phone, incomeValue: int(body.incomeValue, 1, 100_000_000),
+    address: str(body.address, 120), addressNumber: str(body.addressNumber, 20), complement: str(body.complement, 60), province: str(body.province, 80), postalCode: cep,
+  };
+  if (doc.length === 11) { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.birthDate || ""))) fail(400, "Informe a data de nascimento."); payload.birthDate = body.birthDate; }
+  else payload.companyType = ["MEI", "LIMITED", "INDIVIDUAL", "ASSOCIATION"].includes(body.companyType) ? body.companyType : "MEI";
+  if (!payload.address || !payload.addressNumber || !payload.province) fail(400, "Complete o endereço: rua, número e bairro.");
+  let acc;
+  try { acc = await asaas.api.createSubaccount(payload); } catch (e) { fail(e.status === 400 ? 400 : 502, e.message); }
+  if (!acc.walletId || !acc.apiKey) fail(502, "O Asaas não devolveu os dados da conta. Tente de novo.");
+  let escrow = 0;
+  try { await asaas.api.enableEscrow(acc.id, Math.max(30, asaas.AUTO_RELEASE_DAYS * 6)); escrow = 1; } catch (e) { console.error("escrow", e.message); }
+  run("INSERT INTO payout_accounts (user_id, asaas_account_id, wallet_id, api_key_enc, escrow) VALUES (?,?,?,?,?)", user.id, String(acc.id || ""), acc.walletId, asaas.seal(acc.apiKey), escrow);
+  run("UPDATE profiles SET cpf_cnpj = ? WHERE user_id = ?", doc, user.id);
+  return { ok: true, escrow: !!escrow };
+}, { role: "freela" });
+
+route("POST", "/api/milestones/:id/pay", async ({ user, params }) => {
+  if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
+  const m = one(MS_SELECT, params.id);
+  if (!m || m.client_id !== user.id) fail(404, "Etapa não encontrada.");
+  if (m.pay_status === "aguardando" && m.invoice_url) return { invoiceUrl: m.invoice_url };
+  if (m.pay_status !== "a_pagar") fail(409, "Esta etapa já foi paga.");
+  const acc = one("SELECT wallet_id FROM payout_accounts WHERE user_id = ?", m.freela_id);
+  if (!acc) fail(409, "O freelancer ainda não ativou a conta de recebimento. Avisamos na conversa.");
+  const pr = one("SELECT cpf_cnpj, asaas_customer_id, company FROM profiles WHERE user_id = ?", user.id);
+  if (!pr.cpf_cnpj) fail(400, "Informe seu CPF ou CNPJ em Meu perfil para gerar a cobrança.");
+  let customer = pr.asaas_customer_id;
+  if (!customer) {
+    const u = one("SELECT name, email FROM users WHERE id = ?", user.id);
+    try { customer = (await asaas.api.createCustomer({ name: pr.company || u.name, email: u.email, cpfCnpj: pr.cpf_cnpj, externalReference: "user:" + user.id, notificationDisabled: false })).id; }
+    catch (e) { fail(e.status === 400 ? 400 : 502, e.message); }
+    run("UPDATE profiles SET asaas_customer_id = ? WHERE user_id = ?", customer, user.id);
+  }
+  const job = one("SELECT title FROM jobs WHERE id = ?", m.job_id);
+  let pay;
+  try {
+    pay = await asaas.api.createPayment({
+      customer, billingType: "UNDEFINED", value: m.value, dueDate: dateBR(3),
+      description: `Osmo Talents · ${job.title} · etapa: ${m.title}`.slice(0, 500), externalReference: "ms:" + m.id,
+      split: [{ walletId: acc.wallet_id, percentualValue: 100 - asaas.FEE_PCT }],
+    });
+  } catch (e) { fail(e.status === 400 ? 400 : 502, e.message); }
+  run("UPDATE milestones SET pay_id = ?, invoice_url = ?, pay_status = 'aguardando' WHERE id = ?", pay.id, pay.invoiceUrl || "", m.id);
+  postMessage(threadFor(m.job_id, m.client_id, m.freela_id), null, `Cobrança da etapa "${m.title}" gerada (${brl(m.value)}). O valor fica protegido até a aprovação.`, user.id);
+  return { invoiceUrl: pay.invoiceUrl };
+}, { role: "cliente" });
+
+const PAID = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
+route("POST", "/api/webhooks/asaas", async ({ req, body }) => {
+  if (!asaas.checkWebhookToken(req.headers["asaas-access-token"])) fail(401, "Token inválido.");
+  const evId = str(body.id, 120) || null, ev = str(body.event, 60);
+  if (evId) { if (one("SELECT 1 FROM webhook_events WHERE id = ?", evId)) return { received: true }; }
+  const payId = body.payment && str(body.payment.id, 80);
+  if (payId && ev.startsWith("PAYMENT_")) {
+    const m = one("SELECT ms.*, c.client_id, c.freela_id, c.job_id, c.id cid FROM milestones ms JOIN contracts c ON c.id = ms.contract_id WHERE ms.pay_id = ?", payId);
+    if (m) {
+      const p = await asaas.api.getPayment(payId); // confirma o estado direto no Asaas, sem confiar só no aviso
+      const th = threadFor(m.job_id, m.client_id, m.freela_id);
+      if (PAID.includes(p.status) && m.pay_status === "aguardando") {
+        run("UPDATE milestones SET pay_status = 'pago' WHERE id = ?", m.id);
+        postMessage(th, null, `Pagamento da etapa "${m.title}" confirmado. O valor está protegido e o trabalho pode começar.`);
+      } else if (/REFUND/.test(p.status) && m.pay_status !== "estornado") {
+        run("UPDATE milestones SET pay_status = 'estornado' WHERE id = ?", m.id);
+        postMessage(th, null, `O pagamento da etapa "${m.title}" foi estornado.`);
+      } else if ((p.deleted || ev === "PAYMENT_DELETED") && m.pay_status === "aguardando") {
+        run("UPDATE milestones SET pay_status = 'a_pagar', pay_id = '', invoice_url = '' WHERE id = ?", m.id);
+      }
+    }
+  }
+  if (evId) run("INSERT OR IGNORE INTO webhook_events (id, event) VALUES (?,?)", evId, ev);
+  return { received: true };
+}, { auth: false });
 
 // --- mensagens
 route("GET", "/api/threads", ({ user }) => {
@@ -479,7 +637,7 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)
-    if (req.method !== "GET" && req.headers["x-osmo"] !== "1") fail(403, "Requisição recusada.");
+    if (req.method !== "GET" && req.headers["x-osmo"] !== "1" && url.pathname !== "/api/webhooks/asaas") fail(403, "Requisição recusada.");
     const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
     if (!r) fail(404, "Rota não encontrada.");
     const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
@@ -499,4 +657,4 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`Osmo Talents rodando em http://${HOST}:${PORT}`));
 }
-module.exports = { server, hashPassword, clarity };
+module.exports = { server, hashPassword, clarity, autoRelease };

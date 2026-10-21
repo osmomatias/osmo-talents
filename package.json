@@ -11,6 +11,7 @@
     "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
     "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
     "seed": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/seed.js",
-    "publicar": "bash publicar.sh"
+    "publicar": "bash publicar.sh",
+    "asaas:setup": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/asaas-setup.js"
   }
 }

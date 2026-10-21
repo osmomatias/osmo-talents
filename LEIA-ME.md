@@ -102,6 +102,28 @@ Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e o
 
 ---
 
+---
+
+## Pagamentos com Asaas
+
+Sem configuração, os pagamentos ficam simulados. Para ligar:
+
+1. Crie uma conta no Asaas. Para testar, use o ambiente sandbox (sandbox.asaas.com).
+2. No Asaas: **Integrações → Chave de API → Gerar nova chave**. Copie a chave.
+3. No terminal do editor, dentro da pasta do projeto: `bash configurar-pagamentos.sh`
+4. Escolha o ambiente, cole a chave e informe seu e-mail. O script grava tudo no servidor, reinicia o app e registra o webhook no Asaas.
+
+Como funciona:
+
+- O freelancer ativa "Receber pagamentos" em **Meu perfil**. O app cria uma subconta Asaas com Conta Escrow (garantia).
+- O cliente informa CPF ou CNPJ em **Meu perfil** e paga cada etapa pelo **Painel** (Pix, boleto ou cartão).
+- A cobrança sai com split: o freelancer recebe 90% do valor líquido e a Osmo fica com 10% (`FEE_PCT`).
+- O freelancer só começa a etapa depois do pagamento confirmado.
+- Ao aprovar, o app libera a garantia. Sem resposta do cliente em 7 dias após a entrega, a liberação é automática (`AUTO_RELEASE_DAYS`).
+- Para trocar de testes para produção, rode `bash configurar-pagamentos.sh` de novo e escolha 2.
+
+Pontos a confirmar com o Asaas antes de ir para produção: se valores de split entram na Conta Escrow e as taxas atuais.
+
 ## O que esta versão faz
 
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
@@ -118,7 +140,6 @@ Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e o
 
 ## Ainda não faz (próximas versões)
 
-- **Pagamentos reais.** Os valores são simulados. Para valer de verdade, é preciso integrar um meio de pagamento com custódia (por exemplo, Pix com split).
 - Recuperar senha por e-mail
 - Envio de arquivos e imagens de portfólio
 - Avaliações depois do contrato
