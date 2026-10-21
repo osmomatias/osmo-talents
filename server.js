@@ -620,10 +620,14 @@ function serveStatic(req, res, pathname) {
   if (rel === "/" || !path.extname(rel)) rel = "/index.html";
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
-  fs.readFile(file, (err, buf) => {
-    if (err) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
     const ext = path.extname(file);
-    send(res, 200, buf, { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600" });
+    // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
+    const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
+    if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
+    fs.readFile(file, (err2, buf) => err2 ? send(res, 404, "Não encontrado") : send(res, 200, buf, headers));
   });
 }
 
