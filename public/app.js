@@ -142,6 +142,7 @@ function emptyBox(title, text, goTo, label) {
 }
 async function route() {
   if (NEW_VERSION) return location.reload();
+  document.body.classList.remove("chat-full");
   checkVersion();
   clearInterval(pollTimer);
   const seq = ++renderSeq;
@@ -149,19 +150,38 @@ async function route() {
   const [name, idStr] = h.split("-"); const id = Number(idStr) || null;
   const fn = V[name] || V.inicio;
   markNav();
+  // trocou de tela e a resposta demorou: mostra blocos no formato do conteúdo (parados, sem animação)
+  const skT = h !== SHOWN ? setTimeout(() => { if (seq === renderSeq) { $("#view").innerHTML = skeleton(name); window.scrollTo(0, 0); } }, 150) : null;
   try {
     const html = await fn(id);
+    clearTimeout(skT);
     if (seq !== renderSeq || html === undefined) return;
-    $("#view").innerHTML = html;
+    $("#view").innerHTML = html; SHOWN = h;
     window.scrollTo(0, 0);
     after[name] && after[name](id);
   } catch (e) {
+    clearTimeout(skT);
     if (seq !== renderSeq) return;
     if (e.status === 401) { ME = null; renderChrome(); S.next = h; go("entrar"); return; }
     $("#view").innerHTML = emptyBox("Não deu para abrir esta página.", e.message, "inicio", "Voltar ao início");
   }
 }
 window.addEventListener("hashchange", route);
+let SHOWN = "";
+function skeleton(name) {
+  const b = (h, w = "100%", extra = "") => `<div class="sk" style="height:${h}px; width:${w}${extra}"></div>`;
+  const rows = (n, h) => Array.from({ length: n }, () => b(h)).join("");
+  const shapes = {
+    inicio: b(360) + `<div class="sk-grid">${rows(4, 90)}</div>`,
+    vagas: b(28, "45%") + b(16, "30%") + rows(3, 150),
+    talentos: b(28, "45%") + `<div class="sk-grid">${rows(6, 170)}</div>`,
+    vaga: b(16, "25%") + b(36, "75%") + b(320), proposta: b(16, "25%") + b(36, "60%") + b(280),
+    talento: `<div class="sk-row">${b(92, "92px", "; border-radius:50%; flex:none")}<div class="sk-col">${b(32, "70%")}${b(16, "45%")}</div></div>` + b(240),
+    mensagens: b(28, "35%") + rows(5, 68), painel: b(28, "30%") + `<div class="sk-grid">${rows(4, 84)}</div>` + rows(2, 150),
+    perfil: b(36, "50%") + rows(4, 76), publicar: b(36, "60%") + rows(3, 200),
+  };
+  return `<div class="sk-wrap" aria-hidden="true">${shapes[name] || rows(3, 120)}</div><p class="sr-only" role="status">Carregando…</p>`;
+}
 const after = {};
 const V = {};
 
@@ -580,22 +600,41 @@ function convoHTML() {
     <div class="pin" id="pinBox"><b>Combinado até agora:</b> <span id="pinText">${esc(t.pin) || "Nada registrado ainda."}</span> <button class="btn sm ghost" data-act="pin-edit" style="padding:2px 8px">Editar</button></div>
     <div class="bubbles" id="bubbles" aria-live="polite">${bubbles()}</div>
     <form class="compose" id="compose">
+      <button type="button" class="btn sm newmsg" id="newMsg" hidden></button>
       <div class="quick">${["Recebi, vou olhar até amanhã.", "Pode me mandar por escrito?", "Preciso de mais 1 dia.", "Entrega enviada, aguardo retorno."].map(q => `<button type="button" data-quick="${esc(q)}">${q}</button>`).join("")}</div>
       <div class="row"><input class="input" id="msgIn" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"><button class="btn primary" type="submit">Enviar</button></div>
     </form>`;
 }
+// celular: conversa aberta ocupa a tela toda (cabeçalho, rodapé e barra de navegação somem)
+function syncViewport() { // acompanha o teclado: a conversa usa só a parte visível da tela
+  const v = window.visualViewport; if (!v) return;
+  document.documentElement.style.setProperty("--vvh", v.height + "px");
+  document.documentElement.style.setProperty("--vvt", v.offsetTop + "px");
+}
+if (window.visualViewport) { visualViewport.addEventListener("resize", syncViewport); visualViewport.addEventListener("scroll", syncViewport); syncViewport(); }
+let NEW_MSGS = 0;
+function showNewMsgs(n) {
+  const b = $("#newMsg"); if (!b) return;
+  NEW_MSGS = n; b.hidden = !n; b.textContent = n === 1 ? "1 mensagem nova ↓" : `${n} mensagens novas ↓`;
+}
 after.mensagens = () => {
   const bb = $("#bubbles"); if (bb) bb.scrollTop = bb.scrollHeight;
   if (!TH) return;
+  if (isMobile()) { document.body.classList.add("chat-full"); syncViewport(); if (bb) bb.scrollTop = bb.scrollHeight; }
+  showNewMsgs(0);
+  if (bb) bb.addEventListener("scroll", () => { if (NEW_MSGS && bb.scrollHeight - bb.scrollTop - bb.clientHeight < 60) showNewMsgs(0); });
   const tid = TH.thread.id;
   pollTimer = setInterval(async () => {
     if (document.hidden || !TH || TH.thread.id !== tid) return;
     try {
       const d = await api("GET", "/api/threads/" + tid);
       if (d.messages.length !== TH.messages.length || d.thread.pin !== TH.thread.pin) {
+        const added = Math.max(0, d.messages.length - TH.messages.length);
         TH = d; const b = $("#bubbles"); if (!b) return;
         const atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 60;
-        b.innerHTML = bubbles(); if (atEnd) b.scrollTop = b.scrollHeight;
+        b.innerHTML = bubbles();
+        // quem está lendo mais acima não é puxado para baixo: aparece um aviso discreto
+        if (atEnd) b.scrollTop = b.scrollHeight; else if (added) showNewMsgs(NEW_MSGS + added);
         const p = $("#pinText"); if (p) p.textContent = d.thread.pin || "Nada registrado ainda.";
       }
     } catch {}
@@ -958,6 +997,8 @@ document.addEventListener("click", async e => {
   const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const au = t.closest("[data-auth]"); if (au) { authMode = au.dataset.auth; return route(); }
   const q = t.closest("[data-quick]"); if (q) { $("#msgIn").value = q.dataset.quick; return $("#msgIn").focus(); }
+  if (t.closest("#newMsg")) { const b = $("#bubbles"); b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
+  if (t.closest("#pinText")) { $("#pinBox").classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
   const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W.qs = ta.value; return saveDraft(); }
   const en = t.closest("[data-energy]"); if (en) { try { await api("PUT", "/api/me/energy", { energy: en.dataset.energy }); ME.energy = en.dataset.energy; toast("Energia atualizada"); route(); } catch (err) { toast(err.message); } return; }
   const act = t.closest("[data-act]"); if (!act) return;
@@ -980,11 +1021,11 @@ document.addEventListener("click", async e => {
     case "login-then": S.next = act.dataset.next; return go("entrar");
     case "pfile-del": { const i = PFILES.findIndex(f => f.name === act.dataset.name); if (i >= 0) PFILES.splice(i, 1); $("#pFilesBox").innerHTML = pfilesHTML(); return; }
     case "file-del": return busy(async () => {
-      if (!confirm(`Remover "${act.dataset.name}" da vaga?`)) return;
+      if (!await confirmSheet({ title: `Remover "${act.dataset.name}" da vaga?`, text: "Quem já baixou o arquivo continua com a cópia.", ok: "Remover" })) return;
       await api("DELETE", `/api/jobs/${act.dataset.job}/files/${id}`); toast("Arquivo removido"); route();
     })();
     case "verify-del": return busy(async () => {
-      if (!confirm("Remover o selo de verificado do seu perfil?")) return;
+      if (!await confirmSheet({ title: "Remover o selo de verificado?", text: "O selo verde sai do seu perfil. Para ter de novo, é preciso enviar o laudo outra vez.", ok: "Remover selo" })) return;
       await api("DELETE", "/api/me/verify"); await refreshMe(); toast("Selo removido"); route();
     })();
     case "port-new": PE = { id: 0, title: "", link: "", image: "" }; return renderPort("pe_title");
@@ -1002,7 +1043,7 @@ document.addEventListener("click", async e => {
     })();
     case "port-del": return busy(async () => {
       const it = ME.profile.portfolio.find(x => x.id === id);
-      if (!confirm(`Remover "${it.title}" do portfólio?`)) return;
+      if (!await confirmSheet({ title: `Remover "${it.title}" do portfólio?`, text: "O projeto e a imagem saem do seu perfil.", ok: "Remover" })) return;
       ME.profile.portfolio = (await api("DELETE", "/api/me/portfolio/" + id)).portfolio; if (PE && PE.id === id) PE = null; toast("Projeto removido"); renderPort();
     })();
     case "port-move": return busy(async () => { ME.profile.portfolio = (await api("POST", `/api/me/portfolio/${id}/move`, { dir: Number(act.dataset.dir) })).portfolio; renderPort(); })();
@@ -1151,15 +1192,50 @@ document.addEventListener("submit", async e => {
   } finally { if (btn) btn.disabled = false; }
 });
 
+/* ---------- painel de confirmação (no celular sobe de baixo; no computador fica no centro) ---------- */
+// arrastar para baixo fecha o painel (só no toque)
+function sheetDrag(el, onClose) {
+  let y0 = null, dy = 0;
+  el.addEventListener("touchstart", e => { if (el.scrollTop > 0) return; y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
+  el.addEventListener("touchmove", e => { if (y0 === null) return; dy = Math.max(0, e.touches[0].clientY - y0); el.style.transform = dy ? `translateY(${dy}px)` : ""; }, { passive: true });
+  el.addEventListener("touchend", () => { if (y0 === null) return; y0 = null; if (dy > 90) onClose(); else el.style.transform = ""; });
+}
+function trapFocus(e, box) {
+  if (e.key !== "Tab") return;
+  const f = [...box.querySelectorAll("button, [href], input, select, textarea")].filter(x => !x.disabled && x.offsetParent);
+  if (!f.length) return;
+  if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+  else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+}
+// substitui o confirm() do navegador: devolve true se a pessoa confirmou
+function confirmSheet({ title, text = "", ok = "Confirmar" }) {
+  return new Promise(resolve => {
+    const back = document.activeElement, box = document.createElement("div");
+    box.innerHTML = `<div class="scrim"></div><div class="drawer sheet" role="alertdialog" aria-modal="true" aria-labelledby="sheetT" ${text ? 'aria-describedby="sheetD"' : ""}>
+      <div class="sheet-grip" aria-hidden="true"></div><h2 id="sheetT">${esc(title)}</h2>${text ? `<p class="muted" id="sheetD">${esc(text)}</p>` : ""}
+      <div class="sheet-actions"><button class="btn hl" data-sheet="ok">${esc(ok)}</button><button class="btn" data-sheet="no">Cancelar</button></div></div>`;
+    document.body.appendChild(box);
+    const panel = box.querySelector(".sheet");
+    const done = v => { document.removeEventListener("keydown", onKey, true); box.remove(); if (back && back.focus) back.focus(); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } else trapFocus(e, panel); };
+    document.addEventListener("keydown", onKey, true);
+    box.addEventListener("click", e => { if (e.target.classList.contains("scrim")) done(false); const b = e.target.closest("[data-sheet]"); if (b) done(b.dataset.sheet === "ok"); });
+    sheetDrag(panel, () => done(false));
+    panel.querySelector('[data-sheet="no"]').focus(); // o foco começa no caminho seguro
+  });
+}
+
 /* ---------- conforto ---------- */
 function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
 function openA11y() {
   $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer" role="dialog" aria-modal="true" aria-label="Conforto">
+    <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
     ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
   </div>`;
   $("#a11yClose").focus();
+  sheetDrag($("#layer .drawer"), closeA11y);
 }
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }
 
@@ -1188,6 +1264,7 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (e.key === "Escape" && $("#layer").innerHTML) closeA11y();
+  if ($("#layer .drawer")) trapFocus(e, $("#layer .drawer"));
 });
 
 /* ---------- início ---------- */
