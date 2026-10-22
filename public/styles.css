@@ -555,3 +555,32 @@ body.menu-open{overflow:hidden}
   .btn.sm::after,.back::after,.foot a::after,.link-btn::after,.brand::after,.icon-btn.sm::after,.chip-check::after{
     content:""; position:absolute; left:-4px; right:-4px; top:50%; height:max(100%,44px); transform:translateY(-50%)}
 }
+
+/* ---------- perfil em seções (mesmo painel e títulos de antes; só abre e fecha) ---------- */
+.psec{padding:0}
+.psec>summary{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; min-height:56px; cursor:pointer; list-style:none}
+.psec>summary::-webkit-details-marker{display:none}
+.psec>summary::after{content:"›"; font-size:1.6rem; line-height:1; color:var(--muted); transform:rotate(90deg); transition:transform .15s; flex:none}
+.psec[open]>summary::after{transform:rotate(-90deg)}
+.psec-h{display:flex; flex-direction:column; gap:2px; min-width:0}
+.psec-h .hint{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.psec[open] .psec-h .hint{display:none}
+.psec-b{padding:0 22px 22px}
+.psec-b>.panel{border:0; padding:0; margin:0!important; background:none; box-shadow:none}
+.psec-b>.panel>h2:first-child{display:none}
+@media (max-width:700px){ .psec>summary{padding:16px 18px} .psec-b{padding:0 18px 18px} }
+
+/* ---------- vagas: chips de filtro no celular ---------- */
+.fchips{display:none}
+@media (max-width:700px){
+  /* a fileira rola para o lado; o respiro vertical guarda a área de toque de 44 px dos chips */
+  .fchips{display:flex; gap:8px; overflow-x:auto; scrollbar-width:none; margin:-11px -16px; padding:11px 16px; -webkit-overflow-scrolling:touch}
+  .fchips::-webkit-scrollbar{display:none}
+  .fchips .chip{flex:none; cursor:pointer; border:0; font:inherit; font-size:.82rem; font-weight:700; position:relative}
+  .fchips .chip::after{content:""; position:absolute; left:-4px; right:-4px; top:50%; height:44px; transform:translateY(-50%)}
+}
+
+/* ---------- início no celular: perfil em destaque compacto (só as duas preferências principais) ---------- */
+@media (max-width:700px){
+  .wcard .grid2 .pref:nth-child(n+3){display:none}
+}

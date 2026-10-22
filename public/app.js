@@ -174,7 +174,7 @@ V.inicio = async () => {
   <div>
     <span class="label">Trabalho freelance para mentes neurodivergentes</span>
     <h1 style="margin-top:12px">Trabalho bom, <em>no seu ritmo</em>, com regras claras.</h1>
-    <p class="lead">Aqui toda vaga tem briefing estruturado, todo perfil diz como a pessoa prefere se comunicar e nenhuma proposta precisa ser escrita do zero.</p>
+    <p class="lead"><span class="only-d">Aqui toda vaga tem briefing estruturado, todo perfil diz como a pessoa prefere se comunicar e nenhuma proposta precisa ser escrita do zero.</span><span class="only-m">Vagas com briefing claro e comunicação combinada antes.</span></p>
     <div class="seg" role="group" aria-label="Eu quero">
       <button aria-pressed="${S.aud === "freela"}" data-aud="freela">Quero trabalhar</button>
       <button aria-pressed="${S.aud === "cliente"}" data-aud="cliente">Quero contratar</button>
@@ -318,6 +318,10 @@ function jobCard(j) {
   </button>`;
 }
 const activeFilters = () => [S.cat, S.clear, S.async, S.flex].filter(Boolean).length;
+// celular: filtros mais usados viram chips no topo da lista (mesmo estilo dos chips das vagas); sincronizam com o painel de filtros
+const QUICK = [["clear", "Briefing claro"], ["async", "Assíncrono"], ["flex", "Prazo flexível"]];
+const fchipsHTML = () => QUICK.map(([k, n]) => `<button class="chip ${S[k] ? "accent" : ""}" data-fchip="${k}" aria-pressed="${!!S[k]}">${n}</button>`).join("")
+  + CATS.map(c => `<button class="chip ${S.cat === c.id ? "accent" : ""}" data-fcat="${c.id}" aria-pressed="${S.cat === c.id}">${c.n}</button>`).join("");
 async function jobsHTML() {
   const { jobs } = await api("GET", "/api/jobs?" + jobQuery());
   return { n: jobs.length, html: jobs.length ? jobs.map(jobCard).join("") : emptyBox("Nenhuma vaga com esses filtros.", "Tente desmarcar um filtro ou buscar outra palavra.") };
@@ -339,6 +343,7 @@ V.vagas = async () => {
         <option value="recentes" ${S.sort === "recentes" ? "selected" : ""}>Mais recentes</option>
         <option value="clareza" ${S.sort === "clareza" ? "selected" : ""}>Mais claras</option>
         <option value="valor" ${S.sort === "valor" ? "selected" : ""}>Maior valor</option></select></div></div>
+    <div class="fchips" id="fchips" role="group" aria-label="Filtros rápidos">${fchipsHTML()}</div>
     <div class="list" id="jlist">${r.html}</div>
   </section></div>`;
 };
@@ -346,7 +351,7 @@ let jobsT;
 async function refreshJobs() {
   clearTimeout(jobsT);
   jobsT = setTimeout(async () => {
-    try { const r = await jobsHTML(); $("#jlist").innerHTML = r.html; $("#jcount").textContent = `${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}`; const sm = $("#fbox>summary"); if (sm) sm.textContent = "Filtros" + (activeFilters() ? ` (${activeFilters()})` : ""); }
+    try { const r = await jobsHTML(); $("#jlist").innerHTML = r.html; $("#jcount").textContent = `${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}`; const sm = $("#fbox>summary"); if (sm) sm.textContent = "Filtros" + (activeFilters() ? ` (${activeFilters()})` : ""); const fc = $("#fchips"); if (fc) fc.innerHTML = fchipsHTML(); }
     catch (e) { toast(e.message); }
   }, 250);
 }
@@ -739,49 +744,90 @@ function portBoxHTML() {
       <div id="peErr" class="err" role="alert" hidden></div>
       <div class="row"><button type="button" class="btn hl" data-act="port-save">Salvar projeto</button><button type="button" class="btn ghost" data-act="port-cancel">Cancelar</button></div></div>`
     : full ? `<p class="hint">O portfólio tem espaço para 12 projetos. Remova um para adicionar outro.</p>` : `<div><button type="button" class="btn" data-act="port-new">+ Adicionar projeto</button></div>`;
-  return `<div><h2>Portfólio</h2><p class="muted">Até 12 projetos, na ordem que você escolher. Cada projeto salva na hora.</p></div>
+  return `<p class="muted">Até 12 projetos, na ordem que você escolher. Cada projeto salva na hora.</p>
     ${items.length ? `<div class="stack" style="gap:0">${list}</div>` : `<p class="hint">Nenhum projeto ainda.</p>`}${editor}`;
 }
-function renderPort(focusId) { const b = $("#portBox"); if (!b) return; b.innerHTML = portBoxHTML(); if (focusId) { const el = $("#" + focusId); if (el) el.focus(); } }
+function renderPort(focusId) { const b = $("#portBox"); if (!b) return; b.innerHTML = portBoxHTML(); updateProfMeta(); if (focusId) { const el = $("#" + focusId); if (el) el.focus(); } }
 function syncPE() { if (!PE) return; const t = $("#pe_title"), l = $("#pe_link"); if (t) PE.title = t.value; if (l) PE.link = l.value; }
+// perfil em seções: no celular começam fechadas (cada uma com um resumo); no computador, abertas como antes
+const PSEC_OPEN = new Set();
+function profMeta(p) {
+  const isF = ME.role === "freela", how = [p.how.com, p.how.resp, p.how.fb, p.how.foco].filter(Boolean).length;
+  const items = isF ? [["foto", !!p.avatar], ["o que você faz", !!p.title], ["valor por hora", p.rate > 0], ["habilidades", p.skills.length > 0],
+    ["sobre você", !!p.bio], ["como você trabalha", how >= 2], ["portfólio", p.portfolio.length > 0]] : [];
+  const pct = items.length ? Math.round(items.filter(i => i[1]).length / items.length * 100) : 100;
+  const NOTE = { tudo: "Tudo", importante: "Só o importante", nada: "Nenhum" };
+  return {
+    pct, missing: items.filter(i => !i[1]).map(i => i[0]),
+    sum: {
+      sobre: isF ? (p.title || "Conte o que você faz") : (p.company || "Empresa ou projeto"),
+      como: `${how} de 4 preenchidos`,
+      port: p.portfolio.length ? `${p.portfolio.length} ${p.portfolio.length === 1 ? "projeto" : "projetos"}` : "Nenhum projeto ainda",
+      selo: p.verified ? "Verificado" : "Opcional",
+      receb: ME.payout ? "Conta ativa" : "Ainda não ativado",
+      avisos: NOTE[ME.notify || "tudo"],
+    },
+  };
+}
+function complHTML(m) {
+  if (m.pct >= 100) return "";
+  return `<span class="label">Perfil ${m.pct}% completo</span><span class="bar ${m.pct >= 80 ? "" : m.pct >= 50 ? "mid" : "low"}" style="width:100%; height:8px"><i style="width:${m.pct}%"></i></span>
+    <p class="hint">Falta: ${m.missing.join(", ")}. Perfis completos recebem mais convites.</p>`;
+}
+// atualiza resumo das seções e o "% completo" sem redesenhar a tela (a pessoa continua onde estava)
+function updateProfMeta() {
+  if (!ME || !$("#profForm")) return;
+  const m = profMeta(ME.profile), box = $("#pcompl");
+  if (box) { box.innerHTML = complHTML(m); box.hidden = m.pct >= 100; }
+  for (const [k, v] of Object.entries(m.sum)) { const el = $(`[data-sum="${k}"]`); if (el) el.textContent = v; }
+}
 V.perfil = async () => {
   if (needLogin()) return;
   PE = null;
-  const p = ME.profile, isF = ME.role === "freela";
+  const p = ME.profile, isF = ME.role === "freela", m = profMeta(p);
   const f = (id, label, val, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${esc(val)}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   const ta = (id, label, val, rows = 4, hint = "") => `<div class="field"><label for="${id}">${label}</label><textarea class="input" id="${id}" rows="${rows}">${esc(val)}</textarea>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
+  const open = id => !isMobile() || PSEC_OPEN.has(id) ? "open" : "";
+  const sec = (id, title, body, intro = "") => `<details class="panel psec" data-sec="${id}" ${open(id)}>
+    <summary><span class="psec-h"><h2>${title}</h2><span class="hint" data-sum="${id}">${esc(m.sum[id])}</span></span></summary>
+    <div class="psec-b stack">${intro ? `<p class="muted">${intro}</p>` : ""}${body}</div></details>`;
+  const save = `<div><button class="btn hl" type="submit">Salvar</button></div>`;
   return `<div class="wiz"><div class="row" style="justify-content:space-between; margin-bottom:18px"><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Meu perfil</h1>${isF ? `<button class="btn sm" data-go="talento-${ME.id}">Ver como os outros veem</button>` : ""}</div>
+  ${isF ? `<div class="panel stack" id="pcompl" style="gap:8px; margin-bottom:18px" ${m.pct >= 100 ? "hidden" : ""}>${complHTML(m)}</div>` : ""}
   <div class="panel avatar-edit" style="margin-bottom:18px"><div id="avatarBox">${av(ME.name, ME.id, "lg", p.avatar)}</div>
     <div class="stack" style="gap:8px"><b>${isF ? "Sua foto" : "Foto ou logo da empresa"} <span class="muted" style="font-weight:400">(opcional)</span></b>
       <p class="hint">JPG, PNG ou foto do celular. A gente recorta em quadrado e reduz o tamanho.</p>
       <div class="row"><label class="btn sm" for="avatarIn">${p.avatar ? "Trocar foto" : "Escolher foto"}</label><input type="file" id="avatarIn" accept="image/*" class="sr-only">
       ${p.avatar ? `<button type="button" class="btn sm ghost" data-act="avatar-del">Remover</button>` : ""}</div>
       <div id="avatarErr" class="err" role="alert" hidden></div></div></div>
-  ${isF ? verifyHTML(p) : ""}
   <form class="stack" id="profForm">
-    <div class="panel stack">${f("p_name", "Nome", ME.name, 'autocomplete="name"')}
-      ${isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
+    ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", "Nome", ME.name, 'autocomplete="name"')
+      + (isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
         + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono"')}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric"', "Define quantas propostas você pode ter abertas.")}</div>`
         + f("p_loc", "Cidade", p.location) + f("p_skills", "Habilidades", p.skills.join(", "), "", "Separe por vírgula.") + ta("p_bio", "Sobre você", p.bio, 4)
         : f("p_company", "Empresa ou projeto", p.company)
-          + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas.")}
-    </div>
-    ${isF ? `<div class="panel stack"><div><h2>Como eu trabalho melhor</h2><p class="muted">Aparece no seu perfil e nas suas propostas. Quem contrata lê antes de chamar.</p></div>
-      ${f("w_com", "Comunicação", p.how.com, 'placeholder="Ex.: Texto primeiro. Chamadas só com pauta."')}
-      ${f("w_resp", "Tempo de resposta", p.how.resp, 'placeholder="Ex.: Até 1 dia útil"')}
-      ${f("w_fb", "Formato de feedback", p.how.fb, 'placeholder="Ex.: Lista numerada"')}
-      ${f("w_foco", "Ritmo", p.how.foco, 'placeholder="Ex.: Entregas a cada 2 ou 3 dias"')}
-      ${f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")}
-    </div>
-` : ""}
-    ${isF && PAY.enabled ? payoutHTML() : ""}
-    ${MAIL ? `<div class="panel stack"><div><h2>Avisos por e-mail</h2><p class="muted">Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.</p></div>
-      ${notifyOpts(ME.notify || "tudo")}</div>` : ""}
+          + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas."))
+      + save)}
+    ${isF ? sec("como", "Como eu trabalho melhor",
+      f("w_com", "Comunicação", p.how.com, 'placeholder="Ex.: Texto primeiro. Chamadas só com pauta."')
+      + f("w_resp", "Tempo de resposta", p.how.resp, 'placeholder="Ex.: Até 1 dia útil"')
+      + f("w_fb", "Formato de feedback", p.how.fb, 'placeholder="Ex.: Lista numerada"')
+      + f("w_foco", "Ritmo", p.how.foco, 'placeholder="Ex.: Entregas a cada 2 ou 3 dias"')
+      + f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")
+      + save, "Aparece no seu perfil e nas suas propostas. Quem contrata lê antes de chamar.") : ""}
+    ${MAIL ? sec("avisos", "Avisos por e-mail", notifyOpts(ME.notify || "tudo") + save, "Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.") : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
-    <div class="row"><button class="btn hl" type="submit">Salvar perfil</button><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div>
   </form>
-  ${isF ? `<div class="panel stack" id="portBox" style="margin-top:18px">${portBoxHTML()}</div>` : ""}</div>`;
+  ${isF ? `<div class="stack" style="margin-top:18px">
+    ${sec("port", "Portfólio", `<div class="stack" id="portBox">${portBoxHTML()}</div>`)}
+    ${sec("selo", "Selo de verificado", verifyHTML(p))}
+    ${PAY.enabled ? sec("receb", "Receber pagamentos", payoutHTML()) : ""}</div>` : ""}
+  <div class="row" style="margin-top:18px"><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div></div>`;
 };
+document.addEventListener("toggle", e => {
+  const d = e.target; if (!d.classList || !d.classList.contains("psec")) return;
+  d.open ? PSEC_OPEN.add(d.dataset.sec) : PSEC_OPEN.delete(d.dataset.sec);
+}, true);
 
 function payoutHTML() {
   if (ME.payout) return `<div class="panel stack" style="gap:8px"><h2>Receber pagamentos</h2><p><span class="status ok">Conta de recebimento ativa</span></p>
@@ -908,6 +954,8 @@ document.addEventListener("click", async e => {
   const g = t.closest("[data-go]"); if (g) { e.preventDefault(); if (menuOpen) closeMenu(false); return go(g.dataset.go); }
   const a = t.closest("[data-aud]"); if (a) { S.aud = a.dataset.aud; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", b === a)); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; return; }
   const c = t.closest("[data-cat]"); if (c) { S.cat = c.dataset.cat; return go("vagas"); }
+  const fq = t.closest("[data-fchip]"); if (fq) { const k = fq.dataset.fchip; S[k] = !S[k]; const cb = $("#f_" + k); if (cb) cb.checked = S[k]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
+  const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const au = t.closest("[data-auth]"); if (au) { authMode = au.dataset.auth; return route(); }
   const q = t.closest("[data-quick]"); if (q) { $("#msgIn").value = q.dataset.quick; return $("#msgIn").focus(); }
   const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W.qs = ta.value; return saveDraft(); }
@@ -1085,7 +1133,7 @@ document.addEventListener("submit", async e => {
         skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
         notify: (f.querySelector('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", err.message); }
-      await refreshMe(); toast("Perfil salvo"); return;
+      await refreshMe(); updateProfMeta(); toast("Salvo"); return;
     }
     if (f.id === "postForm") {
       const body = { ...P, ent: P.ent.split("\n"), fora: P.fora.split("\n"), skills: P.skills.split(",").map(s => s.trim()).filter(Boolean), budget: Number(P.budget) || 0 };
