@@ -17,7 +17,8 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const FEE = asaas.FEE_PCT / 100; // taxa da plataforma (FEE_PCT no .env)
 const SESSION_DAYS = 30;
 
-const CATS = ["design", "dev", "texto", "dados"];
+// categorias importadas do Upwork (public/taxonomia.json); as vagas guardam só o id
+const CATS = JSON.parse(fs.readFileSync(path.join(__dirname, "public", "taxonomia.json"), "utf8")).categorias.map(c => c.id);
 const ENERGY = ["baixa", "media", "alta"];
 
 /* ---------------- utilidades ---------------- */

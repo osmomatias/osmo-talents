@@ -8,13 +8,44 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR");
 const words = s => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 const isMobile = () => matchMedia("(max-width:700px)").matches;
-const CATS = [
-  { id: "design", n: "Design e marca", c: "Identidade, UI, ilustração" },
-  { id: "dev", n: "Desenvolvimento", c: "Sites, apps, automações" },
-  { id: "texto", n: "Escrita e revisão", c: "Copy, roteiro, tradução" },
-  { id: "dados", n: "Dados e pesquisa", c: "Análise, planilhas, UX research" },
+// categorias e habilidades vêm de /taxonomia.json (importadas do Upwork); estas quatro valem até o arquivo carregar
+let CATS = [
+  { id: "design", n: "Design e criação", c: "Marca, interfaces, vídeo, 3D" },
+  { id: "dev", n: "Desenvolvimento e TI", c: "Sites, apps, lojas virtuais" },
+  { id: "texto", n: "Escrita e conteúdo", c: "Copy, roteiro, revisão" },
+  { id: "dados", n: "Dados e análise", c: "Painéis, planilhas, pesquisa" },
 ];
+let SKILLS = { all: [], byCat: {} };
+async function loadTaxonomy() {
+  try {
+    const t = await (await fetch("/taxonomia.json")).json();
+    CATS = t.categorias.map(c => ({ id: c.id, n: c.nome, c: c.resumo }));
+    const uniq = a => [...new Set(a)];
+    t.categorias.forEach(c => { SKILLS.byCat[c.id] = uniq(c.especialidades.flatMap(e => e.habilidades)); });
+    SKILLS.all = uniq(Object.values(SKILLS.byCat).flat()).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  } catch {}
+}
 const catName = id => (CATS.find(c => c.id === id) || {}).n || "";
+
+/* sugestões de habilidades: enquanto digita, procura em todas; sem texto, mostra as da área escolhida */
+const fold = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function skillSugHTML(value, cat) {
+  const parts = String(value || "").split(","), term = fold(parts[parts.length - 1].trim());
+  const have = new Set(parts.map(p => fold(p.trim())).filter(Boolean));
+  const pool = term ? [...(SKILLS.byCat[cat] || []), ...SKILLS.all] : (SKILLS.byCat[cat] || []);
+  // começo do nome primeiro, depois começo de palavra, depois qualquer trecho
+  const rank = k => { const f = fold(k); return f.startsWith(term) ? 0 : (" " + f).includes(" " + term) ? 1 : 2; };
+  const list = [...new Set(pool)].filter(k => !have.has(fold(k)) && (!term || fold(k).includes(term)))
+    .map((k, i) => [k, term ? rank(k) : 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, 8);
+  if (!list.length) return term || cat ? "" : `<span class="hint">Comece a digitar para ver sugestões.</span>`;
+  return `<span class="hint">Sugestões:</span>${list.map(k => `<button type="button" class="chip sug" data-skill-add="${esc(k)}">+ ${esc(k)}</button>`).join("")}`;
+}
+function addSkill(k) {
+  const inp = $("#p_skills"); if (!inp) return;
+  const parts = inp.value.split(",").map(p => p.trim()); parts[parts.length - 1] = k;
+  inp.value = parts.filter(Boolean).join(", ") + ", ";
+  inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus();
+}
 const store = {
   get(k, d) { try { const v = localStorage.getItem("osmo." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { v == null ? localStorage.removeItem("osmo." + k) : localStorage.setItem("osmo." + k, JSON.stringify(v)); } catch {} },
@@ -844,7 +875,7 @@ V.perfil = async () => {
     ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", "Nome", ME.name, 'autocomplete="name"')
       + (isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
         + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono"')}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric"', "Define quantas propostas você pode ter abertas.")}</div>`
-        + f("p_loc", "Cidade", p.location) + f("p_skills", "Habilidades", p.skills.join(", "), "", "Separe por vírgula.") + ta("p_bio", "Sobre você", p.bio, 4)
+        + f("p_loc", "Cidade", p.location) + f("p_skills", "Habilidades", p.skills.join(", "), 'autocomplete="off"', "Separe por vírgula.") + `<div class="sugs" id="skillSug" aria-live="polite">${skillSugHTML(p.skills.join(", ") + (p.skills.length ? ", " : ""))}</div>` + ta("p_bio", "Sobre você", p.bio, 4)
         : f("p_company", "Empresa ou projeto", p.company)
           + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas."))
       + save)}
@@ -965,7 +996,8 @@ V.publicar = async () => {
       <div class="field"><span class="flabel">Arquivos do briefing (opcional)</span>
         <span class="hint">PDF, imagens, PSD, AI, Word, Excel, PowerPoint ou texto. Até 6 arquivos de 10 MB. Só pessoas com conta na Osmo conseguem abrir.</span>
         <div class="stack" style="gap:10px; margin-top:6px" id="pFilesBox">${pfilesHTML()}</div></div>
-      ${fld("p_skills", "Habilidades desejadas", `<input class="input" id="p_skills" data-p="skills" value="${esc(P.skills)}" placeholder="Branding, Logotipo">`, "Separe por vírgula.")}
+      ${fld("p_skills", "Habilidades desejadas", `<input class="input" id="p_skills" data-p="skills" value="${esc(P.skills)}" placeholder="Branding, Logotipo" autocomplete="off">`, "Separe por vírgula.")}
+      <div class="sugs" id="skillSug" aria-live="polite">${skillSugHTML(P.skills ? P.skills.replace(/,?\s*$/, ", ") : "", P.cat)}</div>
       <label class="check"><input type="checkbox" id="p_async" data-p="async" ${P.async ? "checked" : ""}><span>Sem reuniões obrigatórias</span></label>
       <label class="check"><input type="checkbox" id="p_flex" data-p="flex" ${P.flex ? "checked" : ""}><span>Prazo flexível</span></label>
     </div>
@@ -1002,10 +1034,11 @@ document.addEventListener("click", async e => {
     $$("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b === th)));
     return toast({ light: "Tema claro", dark: "Tema escuro", system: "Tema do sistema" }[th.dataset.themeSet]);
   }
-  const q = t.closest("[data-quick]"); if (q) { $("#msgIn").value = q.dataset.quick; return $("#msgIn").focus(); }
-  if (t.closest("#newMsg")) { const b = $("#bubbles"); b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
-  if (t.closest("#pinText")) { $("#pinBox").classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
-  const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W.qs = ta.value; return saveDraft(); }
+  const sk = t.closest("[data-skill-add]"); if (sk) return addSkill(sk.dataset.skillAdd);
+  const q = t.closest("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = q.dataset.quick; mi.focus(); } return; }
+  if (t.closest("#newMsg")) { const b = $("#bubbles"); if (b) b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
+  if (t.closest("#pinText")) { $("#pinBox")?.classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
+  const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); if (ta) { ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W.qs = ta.value; saveDraft(); } return; }
   const en = t.closest("[data-energy]"); if (en) { try { await api("PUT", "/api/me/energy", { energy: en.dataset.energy }); ME.energy = en.dataset.energy; toast("Energia atualizada"); route(); } catch (err) { toast(err.message); } return; }
   const act = t.closest("[data-act]"); if (!act) return;
   const id = Number(act.dataset.id);
@@ -1014,18 +1047,18 @@ document.addEventListener("click", async e => {
     case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
     case "oauth-role": return busy(async () => {
       try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }
-      catch (err) { const b = $("#roleErr"); b.textContent = err.message; b.hidden = false; }
+      catch (err) { const b = $("#roleErr"); if (b) { b.textContent = err.message; b.hidden = false; } else toast(err.message); }
     })();
     case "toggle-pass": {
-      const inp = $("#a_pass"), show = inp.type === "password";
-      inp.type = show ? "text" : "password";
+      const inp = $("#a_pass"), show = inp ? inp.type === "password" : false;
+      if (inp) inp.type = show ? "text" : "password";
       act.setAttribute("aria-pressed", String(show));
       act.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
       act.innerHTML = show ? EYE_OFF : EYE;
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
-    case "pfile-del": { const i = PFILES.findIndex(f => f.name === act.dataset.name); if (i >= 0) PFILES.splice(i, 1); $("#pFilesBox").innerHTML = pfilesHTML(); return; }
+    case "pfile-del": { const i = PFILES.findIndex(f => f.name === act.dataset.name); if (i >= 0) PFILES.splice(i, 1); const b = $("#pFilesBox"); if (b) b.innerHTML = pfilesHTML(); return; }
     case "file-del": return busy(async () => {
       if (!await confirmSheet({ title: `Remover "${act.dataset.name}" da vaga?`, text: "Quem já baixou o arquivo continua com a cópia.", ok: "Remover" })) return;
       await api("DELETE", `/api/jobs/${act.dataset.job}/files/${id}`); toast("Arquivo removido"); route();
@@ -1035,7 +1068,7 @@ document.addEventListener("click", async e => {
       await api("DELETE", "/api/me/verify"); await refreshMe(); toast("Selo removido"); route();
     })();
     case "port-new": PE = { id: 0, title: "", link: "", image: "" }; return renderPort("pe_title");
-    case "port-edit": { const it = ME.profile.portfolio.find(x => x.id === id); PE = { ...it }; return renderPort("pe_title"); }
+    case "port-edit": { const it = ME.profile.portfolio.find(x => x.id === id); if (!it) return; PE = { ...it }; return renderPort("pe_title"); }
     case "port-cancel": PE = null; return renderPort();
     case "port-img-del": syncPE(); PE.removeImage = true; PE.newImage = ""; return renderPort();
     case "port-save": return busy(async () => {
@@ -1044,11 +1077,12 @@ document.addEventListener("click", async e => {
       const body = { title: PE.title, link };
       if (PE.newImage) body.image = PE.newImage; else if (PE.removeImage) body.removeImage = true;
       try { const r = await api(PE.id ? "PUT" : "POST", "/api/me/portfolio" + (PE.id ? "/" + PE.id : ""), body); ME.profile.portfolio = r.portfolio; }
-      catch (e) { const b = $("#peErr"); b.textContent = e.message; b.hidden = false; return; }
+      catch (e) { const b = $("#peErr"); if (b) { b.textContent = e.message; b.hidden = false; } else toast(e.message); return; }
       toast(PE.id ? "Projeto atualizado" : "Projeto adicionado"); PE = null; renderPort();
     })();
     case "port-del": return busy(async () => {
       const it = ME.profile.portfolio.find(x => x.id === id);
+      if (!it) return;
       if (!await confirmSheet({ title: `Remover "${it.title}" do portfólio?`, text: "O projeto e a imagem saem do seu perfil.", ok: "Remover" })) return;
       ME.profile.portfolio = (await api("DELETE", "/api/me/portfolio/" + id)).portfolio; if (PE && PE.id === id) PE = null; toast("Projeto removido"); renderPort();
     })();
@@ -1057,12 +1091,12 @@ document.addEventListener("click", async e => {
     case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
-    case "ms-add": W.ms.push({ title: "", value: "" }); saveDraft(); $("#msBox").innerHTML = msRows(); return;
-    case "ms-del": W.ms.splice(Number(act.dataset.i), 1); saveDraft(); $("#msBox").innerHTML = msRows(); return;
+    case "ms-add": W.ms.push({ title: "", value: "" }); saveDraft(); const mb1 = $("#msBox"); if (mb1) mb1.innerHTML = msRows(); return;
+    case "ms-del": W.ms.splice(Number(act.dataset.i), 1); saveDraft(); const mb2 = $("#msBox"); if (mb2) mb2.innerHTML = msRows(); return;
     case "wsend": return busy(async () => {
       const body = { text: W.text, value: Number(W.value), days: Number(W.days), questions: W.qs, milestones: W.split ? W.ms.map(m => ({ title: m.title, value: Number(m.value) })) : [] };
       try { await api("POST", `/api/jobs/${WJOB.id}/proposals`, body); }
-      catch (err) { const box = $("#wErr"); box.textContent = err.message; box.hidden = false; return; }
+      catch (err) { const box = $("#wErr"); if (box) { box.textContent = err.message; box.hidden = false; } else toast(err.message); return; }
       store.set("draft-" + WJOB.id, null); W = null; WJOB = null; toast("Proposta enviada"); refreshMe(); go("painel");
     })();
     case "pay": return busy(async () => { await api("POST", `/api/milestones/${id}/pay`); toast("Cobrança gerada. Clique em Abrir cobrança para pagar."); route(); })();
@@ -1071,19 +1105,19 @@ document.addEventListener("click", async e => {
       const body = { cpfCnpj: v("po_doc"), birthDate: v("po_birth"), companyType: v("po_type"), mobilePhone: v("po_phone"), incomeValue: Number(v("po_income").replace(/\D/g, "")) || 0,
         postalCode: v("po_cep"), address: v("po_addr"), addressNumber: v("po_num"), complement: v("po_comp"), province: v("po_prov") };
       try { const r = await api("POST", "/api/me/payout", body); toast(r.escrow ? "Recebimentos ativados" : "Recebimentos ativados (sem garantia automática)"); await refreshMe(); route(); }
-      catch (err) { const b = $("#poErr"); b.textContent = err.message; b.hidden = false; }
+      catch (err) { const b = $("#poErr"); if (b) { b.textContent = err.message; b.hidden = false; } else toast(err.message); }
     })();
     case "close-job": return busy(async () => { await api("POST", `/api/jobs/${id}/close`); toast("Vaga fechada"); route(); })();
     case "accept": return busy(async () => { await api("POST", `/api/proposals/${id}/accept`); toast("Contrato criado"); go("painel"); })();
     case "decline": return busy(async () => { await api("POST", `/api/proposals/${id}/decline`); toast("Proposta recusada"); route(); })();
     case "withdraw": return busy(async () => { await api("POST", `/api/proposals/${id}/withdraw`); toast("Proposta retirada"); route(); })();
-    case "invite": return busy(async () => { const r = await api("POST", `/api/jobs/${$("#invJob").value}/invite`, { talentId: id }); toast("Convite enviado"); go("mensagens-" + r.thread); })();
+    case "invite": return busy(async () => { const inv = $("#invJob"); if (!inv) return; const r = await api("POST", `/api/jobs/${inv.value}/invite`, { talentId: id }); toast("Convite enviado"); go("mensagens-" + r.thread); })();
     case "chat": return busy(async () => { const r = await api("POST", "/api/threads", { withId: Number(act.dataset.with) }); go("mensagens-" + r.thread); })();
     case "ms": return busy(async () => { await api("POST", `/api/milestones/${id}/${act.dataset.a}`, {}); toast({ start: "Etapa iniciada", deliver: "Entrega registrada", approve: "Etapa aprovada e valor liberado" }[act.dataset.a]); route(); })();
-    case "ms-changes": { const box = $("#msa-" + id); box.innerHTML = `<input class="input" id="chg-${id}" placeholder="O que precisa ajustar?" style="flex:1; min-width:180px"><button class="btn sm hl" data-act="ms-changes-send" data-id="${id}">Enviar pedido</button>`; return $("#chg-" + id).focus(); }
-    case "ms-changes-send": return busy(async () => { const note = $("#chg-" + id).value.trim(); if (!note) return toast("Escreva o que precisa ajustar."); await api("POST", `/api/milestones/${id}/changes`, { note }); toast("Pedido de ajustes enviado"); route(); })();
-    case "pin-edit": { const box = $("#pinBox"); box.innerHTML = `<b>Combinado até agora:</b><div class="pin-edit"><input class="input" id="pinIn" maxlength="600" value="${esc(TH.thread.pin)}"><button class="btn sm primary" data-act="pin-save">Salvar</button></div>`; return $("#pinIn").focus(); }
-    case "pin-save": return busy(async () => { await api("PUT", `/api/threads/${TH.thread.id}/pin`, { pin: $("#pinIn").value }); toast("Resumo atualizado"); route(); })();
+    case "ms-changes": { const box = $("#msa-" + id); if (!box) return; box.innerHTML = `<input class="input" id="chg-${id}" placeholder="O que precisa ajustar?" style="flex:1; min-width:180px"><button class="btn sm hl" data-act="ms-changes-send" data-id="${id}">Enviar pedido</button>`; const chg = $("#chg-" + id); if (chg) chg.focus(); return; }
+    case "ms-changes-send": return busy(async () => { const inp = $("#chg-" + id); const note = inp ? inp.value.trim() : ""; if (!note) return toast("Escreva o que precisa ajustar."); await api("POST", `/api/milestones/${id}/changes`, { note }); toast("Pedido de ajustes enviado"); route(); })();
+    case "pin-edit": { const box = $("#pinBox"); if (!box) return; box.innerHTML = `<b>Combinado até agora:</b><div class="pin-edit"><input class="input" id="pinIn" maxlength="600" value="${esc(TH.thread.pin)}"><button class="btn sm primary" data-act="pin-save">Salvar</button></div>`; const pin = $("#pinIn"); if (pin) pin.focus(); return; }
+    case "pin-save": return busy(async () => { const pinIn = $("#pinIn"); if (!pinIn) return; await api("PUT", `/api/threads/${TH.thread.id}/pin`, { pin: pinIn.value }); toast("Resumo atualizado"); route(); })();
   }
 });
 function rerenderWiz() { $("#view").innerHTML = wizHTML(); window.scrollTo(0, 0); }
@@ -1107,6 +1141,7 @@ document.addEventListener("input", e => {
   if (id === "wqs") { W.qs = t.value; saveDraft(); }
   if (t.dataset.ms !== undefined) { const i = Number(t.dataset.ms), k = t.dataset.k; let v = t.value; if (k === "value") { v = v.replace(/\D/g, ""); if (t.value !== v) t.value = v; } W.ms[i][k] = v; saveDraft(); const d = (Number(W.value) || 0) - msSum(); $("#msDiff").textContent = d === 0 ? "As etapas somam o valor total." : d > 0 ? `Faltam ${brl(d)} para fechar o total.` : `As etapas passam ${brl(-d)} do total.`; }
   if (t.dataset.p && t.type !== "checkbox") { P[t.dataset.p] = t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
+  if ((id === "p_skills" || id === "p_cat") && $("#skillSug")) $("#skillSug").innerHTML = skillSugHTML($("#p_skills").value, $("#postForm") ? P.cat : "");
 });
 document.addEventListener("change", e => {
   const t = e.target, id = t.id;
@@ -1132,7 +1167,7 @@ document.addEventListener("change", e => {
 document.addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target, btn = f.querySelector('[type="submit"]');
-  const showErr = (box, msg) => { const b = $(box); b.textContent = msg; b.hidden = false; b.scrollIntoView({ block: "nearest" }); };
+  const showErr = (box, msg) => { const b = $(box); if (b) { b.textContent = msg; b.hidden = false; b.scrollIntoView({ block: "nearest" }); } else toast(msg); };
   if (f.id === "heroSearch") { const q = $("#heroQ").value; if (S.aud === "freela") { S.q = q; go("vagas"); } else { S.tq = q; go("talentos"); } return; }
   if (btn) btn.disabled = true;
   try {
@@ -1294,4 +1329,4 @@ function syncTopSize() { const y = scrollY, r = document.documentElement; if (y 
 addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
 if (oauthErr) history.replaceState(null, "", "/" + location.hash);
-refreshMe().then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });
+Promise.all([refreshMe(), loadTaxonomy()]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });

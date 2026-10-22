@@ -722,3 +722,10 @@ html.top-big .top{--top-h:83px; --logo-h:28.6px}
   .top .brand .sub{font-size:.6rem}
   html.top-big .top{--top-h:73px; --logo-h:26px}
 }
+
+/* ---------- sugestões de habilidades (categorias do Upwork) ---------- */
+.sugs{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:-6px}
+.sugs:empty{display:none}
+.chip.sug{border:1px dashed var(--line); background:none; color:var(--fg); cursor:pointer; font:inherit; font-size:.82rem; font-weight:600; min-height:32px}
+.chip.sug:hover{border-color:var(--accent); color:var(--accent)}
+.cats{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}

@@ -1,0 +1,972 @@
+{
+ "fonte": "Upwork (upwork.com/hire): categorias do menu \"Hire talent\" e habilidades mais frequentes nos perfis de cada especialidade, traduzidas e revisadas.",
+ "coletado": "2026-10-22",
+ "categorias": [
+  {
+   "id": "ia",
+   "nome": "IA e automação",
+   "resumo": "Agentes, chatbots, fluxos automáticos",
+   "especialidades": [
+    {
+     "nome": "Vídeo com IA",
+     "fonte": "https://www.upwork.com/hire/ai-generated-video-specialists/",
+     "habilidades": [
+      "Edição de vídeo",
+      "Geração de vídeo com IA",
+      "Motion graphics",
+      "Adobe After Effects",
+      "Adobe Premiere Pro",
+      "Vídeo explicativo",
+      "Animação 2D",
+      "YouTube"
+     ]
+    },
+    {
+     "nome": "Integração de IA",
+     "fonte": "https://www.upwork.com/hire/ai-integration-developers/",
+     "habilidades": [
+      "Desenvolvimento de IA",
+      "Agentes de IA",
+      "Integração de API",
+      "RAG",
+      "Python",
+      "Node.js",
+      "React",
+      "n8n",
+      "SaaS"
+     ]
+    },
+    {
+     "nome": "Chatbots",
+     "fonte": "https://www.upwork.com/hire/chatbot-developers/",
+     "habilidades": [
+      "Desenvolvimento de chatbot",
+      "Chatbot com IA",
+      "Processamento de linguagem natural",
+      "ManyChat",
+      "Dialogflow",
+      "Agentes de IA",
+      "Firebase",
+      "Automação de marketing"
+     ]
+    },
+    {
+     "nome": "Aprendizado de máquina",
+     "fonte": "https://www.upwork.com/hire/machine-learning-experts/",
+     "habilidades": [
+      "Machine learning",
+      "Deep learning",
+      "Visão computacional",
+      "Processamento de linguagem natural",
+      "PyTorch",
+      "TensorFlow",
+      "Python",
+      "Ciência de dados",
+      "Docker"
+     ]
+    },
+    {
+     "nome": "Desenvolvimento com IA",
+     "fonte": "https://www.upwork.com/hire/ai-developers/",
+     "habilidades": [
+      "Desenvolvimento de IA",
+      "Integração de modelos de IA",
+      "Apps com IA",
+      "Agentes de IA",
+      "RAG",
+      "React",
+      "React Native",
+      "Node.js",
+      "Python"
+     ]
+    },
+    {
+     "nome": "Automação de processos",
+     "fonte": "https://www.upwork.com/hire/automation-freelancers/",
+     "habilidades": [
+      "Make",
+      "Zapier",
+      "Automação de processos",
+      "Automação de CRM",
+      "Fluxos automáticos",
+      "Automação de e-mail",
+      "Automação no Google Sheets",
+      "Airtable",
+      "Integração de API"
+     ]
+    },
+    {
+     "nome": "n8n",
+     "fonte": "https://www.upwork.com/hire/n8n-experts/",
+     "habilidades": [
+      "n8n",
+      "Automação de CRM",
+      "Agentes de IA",
+      "Integração de API",
+      "HighLevel",
+      "HubSpot",
+      "WhatsApp",
+      "Twilio",
+      "RAG"
+     ]
+    },
+    {
+     "nome": "Vibe coding",
+     "fonte": "https://www.upwork.com/hire/vibe-coding-developers/",
+     "habilidades": [
+      "Prototipagem com IA",
+      "Claude",
+      "React",
+      "Node.js",
+      "WordPress",
+      "Shopify",
+      "Elementor",
+      "Desenvolvimento full-stack"
+     ]
+    },
+    {
+     "nome": "Claude",
+     "fonte": "https://www.upwork.com/hire/claude-specialists/",
+     "habilidades": [
+      "Claude",
+      "Consultoria em IA",
+      "Automação com IA",
+      "WordPress",
+      "Shopify",
+      "Landing page",
+      "SEO"
+     ]
+    },
+    {
+     "nome": "Consultoria em IA",
+     "fonte": "https://www.upwork.com/hire/ai-consultants/",
+     "habilidades": [
+      "Consultoria em IA",
+      "Implementação de IA",
+      "IA generativa",
+      "Modelos de linguagem (LLM)",
+      "Agentes de IA",
+      "RAG",
+      "Machine learning",
+      "Python"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "dev",
+   "nome": "Desenvolvimento e TI",
+   "resumo": "Sites, apps, lojas virtuais",
+   "especialidades": [
+    {
+     "nome": "Full-stack",
+     "fonte": "https://www.upwork.com/hire/full-stack-developers/",
+     "habilidades": [
+      "Desenvolvimento full-stack",
+      "Front-end",
+      "Back-end",
+      "JavaScript",
+      "TypeScript",
+      "React",
+      "Node.js",
+      "Vue.js",
+      "Laravel",
+      "Python",
+      "API REST",
+      "SaaS"
+     ]
+    },
+    {
+     "nome": "WordPress",
+     "fonte": "https://www.upwork.com/hire/wordpress-developers/",
+     "habilidades": [
+      "WordPress",
+      "Personalização de WordPress",
+      "Elementor",
+      "WooCommerce",
+      "Advanced Custom Fields",
+      "Gutenberg",
+      "Landing page",
+      "Correção de bugs no WordPress",
+      "Design responsivo"
+     ]
+    },
+    {
+     "nome": "Desenvolvimento web",
+     "fonte": "https://www.upwork.com/hire/web-developers/",
+     "habilidades": [
+      "Desenvolvimento web",
+      "HTML",
+      "CSS",
+      "JavaScript",
+      "PHP",
+      "React",
+      "WordPress",
+      "Webflow",
+      "Divi"
+     ]
+    },
+    {
+     "nome": "Shopify",
+     "fonte": "https://www.upwork.com/hire/shopify-developers/",
+     "habilidades": [
+      "Shopify",
+      "Temas Shopify",
+      "Apps Shopify",
+      "Redesign de loja Shopify",
+      "SEO para Shopify",
+      "Shopify Plus",
+      "Dropshipping",
+      "Otimização de conversão"
+     ]
+    },
+    {
+     "nome": "Apps para celular",
+     "fonte": "https://www.upwork.com/hire/mobile-app-developers/",
+     "habilidades": [
+      "Desenvolvimento de apps",
+      "iOS",
+      "Android",
+      "Flutter",
+      "React Native",
+      "Apps híbridos",
+      "Design de apps",
+      "Firebase"
+     ]
+    },
+    {
+     "nome": "Webflow",
+     "fonte": "https://www.upwork.com/hire/webflow-freelancers/",
+     "habilidades": [
+      "Webflow",
+      "Framer",
+      "Figma",
+      "Do Figma para o Webflow",
+      "Design responsivo",
+      "Animação de interface",
+      "Front-end"
+     ]
+    },
+    {
+     "nome": "Front-end",
+     "fonte": "https://www.upwork.com/hire/front-end-developers/",
+     "habilidades": [
+      "Front-end",
+      "React",
+      "Next.js",
+      "TypeScript",
+      "JavaScript",
+      "Tailwind CSS",
+      "Bootstrap",
+      "GSAP",
+      "Design responsivo"
+     ]
+    },
+    {
+     "nome": "Lojas virtuais",
+     "fonte": "https://www.upwork.com/hire/ecommerce-developers/",
+     "habilidades": [
+      "Loja virtual",
+      "Shopify",
+      "WooCommerce",
+      "Integração de pagamento",
+      "Integração de API",
+      "MVP",
+      "Desenvolvimento full-stack"
+     ]
+    },
+    {
+     "nome": "React",
+     "fonte": "https://www.upwork.com/hire/react-js-developers/",
+     "habilidades": [
+      "React",
+      "Next.js",
+      "TypeScript",
+      "React Native",
+      "Aplicações web",
+      "API REST",
+      "PostgreSQL",
+      "Tailwind CSS"
+     ]
+    },
+    {
+     "nome": "Bubble e no-code",
+     "fonte": "https://www.upwork.com/hire/bubble-io-developers/",
+     "habilidades": [
+      "Bubble",
+      "No-code",
+      "SaaS",
+      "Aplicações web",
+      "Integração de pagamento",
+      "Stripe",
+      "API da OpenAI"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "design",
+   "nome": "Design e criação",
+   "resumo": "Marca, interfaces, vídeo, 3D",
+   "especialidades": [
+    {
+     "nome": "Logotipo",
+     "fonte": "https://www.upwork.com/hire/logo-designers/",
+     "habilidades": [
+      "Logotipo",
+      "Identidade visual",
+      "Adobe Illustrator",
+      "Design gráfico",
+      "Vetorização",
+      "Cartão de visita",
+      "Rótulo e embalagem",
+      "Design minimalista"
+     ]
+    },
+    {
+     "nome": "Design gráfico",
+     "fonte": "https://www.upwork.com/hire/graphic-designers/",
+     "habilidades": [
+      "Design gráfico",
+      "Adobe Photoshop",
+      "Adobe Illustrator",
+      "Canva",
+      "Peças para redes sociais",
+      "Flyer",
+      "Folder",
+      "Material impresso",
+      "Ilustração"
+     ]
+    },
+    {
+     "nome": "Design de sites",
+     "fonte": "https://www.upwork.com/hire/web-designers/",
+     "habilidades": [
+      "Web design",
+      "Figma",
+      "UX e UI",
+      "Wireframe",
+      "Protótipo",
+      "Fluxo de usuário",
+      "Design de apps"
+     ]
+    },
+    {
+     "nome": "Edição de vídeo",
+     "fonte": "https://www.upwork.com/hire/video-editors/",
+     "habilidades": [
+      "Edição de vídeo",
+      "Adobe Premiere Pro",
+      "Adobe After Effects",
+      "DaVinci Resolve",
+      "Motion graphics",
+      "Correção de cor",
+      "Animação 2D",
+      "Vídeo para anúncios",
+      "Lyric video"
+     ]
+    },
+    {
+     "nome": "Edição de fotos",
+     "fonte": "https://www.upwork.com/hire/photo-editors/",
+     "habilidades": [
+      "Edição de fotos",
+      "Retoque",
+      "Manipulação de imagem",
+      "Correção de cor",
+      "Restauração de fotos",
+      "Edição de imagem com IA",
+      "Foto de produto"
+     ]
+    },
+    {
+     "nome": "Photoshop",
+     "fonte": "https://www.upwork.com/hire/adobe-photoshop-experts/",
+     "habilidades": [
+      "Adobe Photoshop",
+      "Adobe Lightroom",
+      "Remoção de fundo",
+      "Recorte (clipping path)",
+      "Retoque",
+      "Restauração de imagem",
+      "Fotos para e-commerce"
+     ]
+    },
+    {
+     "nome": "UX e UI",
+     "fonte": "https://www.upwork.com/hire/ux-designers/",
+     "habilidades": [
+      "UX e UI",
+      "Figma",
+      "Design de interface",
+      "Experiência do usuário",
+      "Pesquisa com usuários",
+      "Wireframe",
+      "Protótipo",
+      "Fluxo de usuário",
+      "Design de apps"
+     ]
+    },
+    {
+     "nome": "Apresentações",
+     "fonte": "https://www.upwork.com/hire/presentation-designers/",
+     "habilidades": [
+      "Design de apresentações",
+      "PowerPoint",
+      "Google Slides",
+      "Pitch deck",
+      "Apresentação de vendas",
+      "Infográfico",
+      "Visualização de dados"
+     ]
+    },
+    {
+     "nome": "Identidade de marca",
+     "fonte": "https://www.upwork.com/hire/brand-identity-designers/",
+     "habilidades": [
+      "Branding",
+      "Identidade visual",
+      "Manual de marca",
+      "Estratégia de marca",
+      "Logotipo",
+      "Adobe InDesign",
+      "Embalagem",
+      "Material impresso"
+     ]
+    },
+    {
+     "nome": "3D e renderização",
+     "fonte": "https://www.upwork.com/hire/3d-modelers/",
+     "habilidades": [
+      "Modelagem 3D",
+      "Renderização 3D",
+      "Blender",
+      "Escultura 3D",
+      "Animação 3D",
+      "Impressão 3D",
+      "Texturização e iluminação",
+      "Rigging",
+      "Unreal Engine"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "marketing",
+   "nome": "Marketing",
+   "resumo": "Redes sociais, anúncios, SEO, e-mail",
+   "especialidades": [
+    {
+     "nome": "Gestão de redes sociais",
+     "fonte": "https://www.upwork.com/hire/social-media-managers/",
+     "habilidades": [
+      "Gestão de redes sociais",
+      "Criação de conteúdo",
+      "Estratégia para redes sociais",
+      "Instagram",
+      "Carrossel",
+      "Vídeo para redes sociais",
+      "Engajamento",
+      "Anúncios em redes sociais"
+     ]
+    },
+    {
+     "nome": "Google Ads",
+     "fonte": "https://www.upwork.com/hire/google-adwords-experts/",
+     "habilidades": [
+      "Google Ads",
+      "Google Shopping",
+      "Google Merchant Center",
+      "Google Analytics",
+      "Google Tag Manager",
+      "Campanhas de PPC",
+      "Microsoft Ads (Bing)",
+      "Amazon Ads"
+     ]
+    },
+    {
+     "nome": "SEO",
+     "fonte": "https://www.upwork.com/hire/seo-experts/",
+     "habilidades": [
+      "SEO",
+      "SEO local",
+      "Auditoria de SEO",
+      "Pesquisa de palavras-chave",
+      "SEO on-page",
+      "SEO técnico",
+      "Link building",
+      "SEO para e-commerce",
+      "Tráfego orgânico"
+     ]
+    },
+    {
+     "nome": "Anúncios no Facebook e Instagram",
+     "fonte": "https://www.upwork.com/hire/facebook-ads-freelancers/",
+     "habilidades": [
+      "Meta Ads",
+      "Gerenciador de Anúncios",
+      "Campanhas no Instagram",
+      "Geração de leads",
+      "Marketing para e-commerce",
+      "Remarketing",
+      "Copy para anúncios"
+     ]
+    },
+    {
+     "nome": "E-mail marketing",
+     "fonte": "https://www.upwork.com/hire/email-marketing-consultants/",
+     "habilidades": [
+      "E-mail marketing",
+      "Newsletter",
+      "Mailchimp",
+      "Klaviyo",
+      "HubSpot",
+      "Automação de e-mail",
+      "Entregabilidade",
+      "Design de e-mail",
+      "Copy para e-mail"
+     ]
+    },
+    {
+     "nome": "Automação de marketing",
+     "fonte": "https://www.upwork.com/hire/marketing-automation-freelancers/",
+     "habilidades": [
+      "Automação de marketing",
+      "CRM",
+      "Funil de vendas",
+      "Landing page",
+      "Fluxos automáticos",
+      "Zapier",
+      "Geração de leads",
+      "Chatbot com IA"
+     ]
+    },
+    {
+     "nome": "Marketing em redes sociais",
+     "fonte": "https://www.upwork.com/hire/social-media/",
+     "habilidades": [
+      "Marketing em redes sociais",
+      "Anúncios em redes sociais",
+      "Criação de conteúdo",
+      "Estratégia para redes sociais",
+      "Vídeo com IA",
+      "Configuração de contas"
+     ]
+    },
+    {
+     "nome": "Links patrocinados",
+     "fonte": "https://www.upwork.com/hire/sem-specialists/",
+     "habilidades": [
+      "Links patrocinados (SEM)",
+      "Google Ads",
+      "Google Shopping",
+      "Remarketing",
+      "Auditoria de Google Ads",
+      "Google Analytics",
+      "Google Tag Manager"
+     ]
+    },
+    {
+     "nome": "Estratégia de marketing",
+     "fonte": "https://www.upwork.com/hire/marketing-strategists/",
+     "habilidades": [
+      "Estratégia de marketing",
+      "Marketing digital",
+      "Planejamento de campanhas",
+      "Marketing para e-commerce",
+      "Marketing de livros",
+      "Kindle Direct Publishing"
+     ]
+    },
+    {
+     "nome": "Geração de leads",
+     "fonte": "https://www.upwork.com/hire/lead-generation-specialists/",
+     "habilidades": [
+      "Geração de leads",
+      "Prospecção B2B",
+      "Lista de contatos",
+      "Pesquisa de mercado",
+      "Pesquisa online",
+      "LinkedIn",
+      "Limpeza de dados",
+      "HubSpot"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "dados",
+   "nome": "Dados e análise",
+   "resumo": "Painéis, planilhas, pesquisa",
+   "especialidades": [
+    {
+     "nome": "Análise de dados",
+     "fonte": "https://www.upwork.com/hire/data-analysts/",
+     "habilidades": [
+      "Análise de dados",
+      "Painéis (dashboards)",
+      "Visualização de dados",
+      "Power BI",
+      "Looker Studio",
+      "Excel",
+      "SQL",
+      "Business intelligence",
+      "Google Analytics"
+     ]
+    },
+    {
+     "nome": "Ciência de dados",
+     "fonte": "https://www.upwork.com/hire/data-scientists/",
+     "habilidades": [
+      "Ciência de dados",
+      "Estatística",
+      "Python",
+      "R",
+      "Stata",
+      "Modelos preditivos",
+      "Econometria",
+      "Machine learning",
+      "Análise quantitativa"
+     ]
+    },
+    {
+     "nome": "Engenharia de dados",
+     "fonte": "https://www.upwork.com/hire/data-engineers/",
+     "habilidades": [
+      "Engenharia de dados",
+      "Modelagem de dados",
+      "SQL",
+      "Python",
+      "Apache Airflow",
+      "Metabase",
+      "Apache Superset",
+      "Business intelligence"
+     ]
+    },
+    {
+     "nome": "Visualização de dados",
+     "fonte": "https://www.upwork.com/hire/data-visualization-freelancers/",
+     "habilidades": [
+      "Visualização de dados",
+      "Painéis interativos",
+      "Power BI",
+      "Power Query",
+      "Tableau",
+      "Excel",
+      "Modelagem de dados"
+     ]
+    },
+    {
+     "nome": "Análise de negócios",
+     "fonte": "https://www.upwork.com/hire/business-analysts/",
+     "habilidades": [
+      "Análise de negócios",
+      "Business intelligence",
+      "Excel",
+      "Power BI",
+      "Painéis (dashboards)",
+      "SQL",
+      "Indicadores (KPIs)"
+     ]
+    },
+    {
+     "nome": "Mineração de dados",
+     "fonte": "https://www.upwork.com/hire/data-miners/",
+     "habilidades": [
+      "Mineração de dados",
+      "Raspagem de dados (web scraping)",
+      "Extração de dados",
+      "Limpeza de dados",
+      "Lista de contatos",
+      "Pesquisa online",
+      "Digitação de dados"
+     ]
+    },
+    {
+     "nome": "Power BI",
+     "fonte": "https://www.upwork.com/hire/microsoft-power-bi-data-visualization/",
+     "habilidades": [
+      "Power BI",
+      "Power Query",
+      "DAX",
+      "Modelagem de dados",
+      "Painéis (dashboards)",
+      "Excel",
+      "Power Pivot"
+     ]
+    },
+    {
+     "nome": "Pesquisa quantitativa",
+     "fonte": "https://www.upwork.com/hire/quantitative-researchers/",
+     "habilidades": [
+      "Pesquisa quantitativa",
+      "Pesquisa qualitativa",
+      "Estatística",
+      "Análise de questionários",
+      "SPSS",
+      "Stata",
+      "Pesquisa acadêmica",
+      "Análise multivariada"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "admin",
+   "nome": "Administrativo e suporte",
+   "resumo": "Assistência, atendimento, financeiro",
+   "especialidades": [
+    {
+     "nome": "Assistência virtual",
+     "fonte": "https://www.upwork.com/hire/virtual-assistants/",
+     "habilidades": [
+      "Assistência virtual",
+      "Suporte administrativo",
+      "Gestão de agenda",
+      "Gestão de e-mail",
+      "Digitação de dados",
+      "Google Sheets",
+      "Excel",
+      "CRM",
+      "Atendimento ao cliente"
+     ]
+    },
+    {
+     "nome": "Digitação de dados",
+     "fonte": "https://www.upwork.com/hire/data-entry-specialists/",
+     "habilidades": [
+      "Digitação de dados",
+      "Coleta de dados",
+      "Extração de dados",
+      "Excel",
+      "Google Docs",
+      "Cadastro de produtos",
+      "Lista de contatos"
+     ]
+    },
+    {
+     "nome": "Contabilidade e escrituração",
+     "fonte": "https://www.upwork.com/hire/bookkeepers/",
+     "habilidades": [
+      "Escrituração contábil",
+      "Conciliação bancária",
+      "Contas a pagar",
+      "Contas a receber",
+      "Relatórios financeiros",
+      "QuickBooks",
+      "Xero",
+      "Excel",
+      "Controle de custos"
+     ]
+    },
+    {
+     "nome": "Excel",
+     "fonte": "https://www.upwork.com/hire/microsoft-excel-experts/",
+     "habilidades": [
+      "Excel",
+      "Google Sheets",
+      "Fórmulas",
+      "Macros e VBA",
+      "Painéis (dashboards)",
+      "Modelos de planilha",
+      "Análise de dados"
+     ]
+    },
+    {
+     "nome": "Prospecção por telefone",
+     "fonte": "https://www.upwork.com/hire/cold-callers/",
+     "habilidades": [
+      "Ligações de prospecção",
+      "Agendamento de reuniões",
+      "Telemarketing",
+      "Vendas internas",
+      "Prospecção B2B",
+      "Atendimento por chat"
+     ]
+    },
+    {
+     "nome": "PowerPoint",
+     "fonte": "https://www.upwork.com/hire/microsoft-powerpoint-producers/",
+     "habilidades": [
+      "PowerPoint",
+      "Google Slides",
+      "Keynote",
+      "Apresentação de negócios",
+      "Apresentação de vendas",
+      "Apresentação de treinamento",
+      "Infográfico",
+      "Pitch deck"
+     ]
+    },
+    {
+     "nome": "QuickBooks",
+     "fonte": "https://www.upwork.com/hire/intuit-quickbooks-contractors/",
+     "habilidades": [
+      "QuickBooks",
+      "QuickBooks Online",
+      "Escrituração contábil",
+      "Conciliação bancária",
+      "Plano de contas",
+      "Faturamento",
+      "Balanço patrimonial"
+     ]
+    },
+    {
+     "nome": "Assistência pessoal",
+     "fonte": "https://www.upwork.com/hire/personal-assistants/",
+     "habilidades": [
+      "Assistência pessoal",
+      "Gestão de agenda",
+      "Gestão de e-mail",
+      "Organização de tarefas",
+      "Gestão de projetos",
+      "Cadastro de produtos em e-commerce",
+      "Controle financeiro simples"
+     ]
+    },
+    {
+     "nome": "Agendamento de reuniões",
+     "fonte": "https://www.upwork.com/hire/appointment-setters/",
+     "habilidades": [
+      "Agendamento de reuniões",
+      "Ligações de prospecção",
+      "Prospecção ativa",
+      "Qualificação de leads",
+      "Estratégia de abordagem",
+      "Instagram"
+     ]
+    },
+    {
+     "nome": "Atendimento ao cliente",
+     "fonte": "https://www.upwork.com/hire/customer-service-representatives/",
+     "habilidades": [
+      "Atendimento ao cliente",
+      "Suporte por chat",
+      "Suporte por e-mail",
+      "Suporte por telefone",
+      "Zendesk",
+      "Gorgias",
+      "Processamento de pedidos",
+      "Rastreamento de pedidos"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "texto",
+   "nome": "Escrita e conteúdo",
+   "resumo": "Copy, roteiro, revisão",
+   "especialidades": [
+    {
+     "nome": "Currículo",
+     "fonte": "https://www.upwork.com/hire/resume-writers/",
+     "habilidades": [
+      "Currículo",
+      "Carta de apresentação",
+      "Perfil no LinkedIn",
+      "Currículo para sistemas de triagem (ATS)",
+      "Design de currículo",
+      "Orientação de carreira"
+     ]
+    },
+    {
+     "nome": "Copywriting",
+     "fonte": "https://www.upwork.com/hire/copywriters/",
+     "habilidades": [
+      "Copywriting",
+      "Textos para sites",
+      "Copy para e-mail",
+      "Funil de vendas",
+      "Página de vendas",
+      "Release para imprensa",
+      "Descrição de produtos",
+      "Conteúdo para redes sociais"
+     ]
+    },
+    {
+     "nome": "Escrita criativa",
+     "fonte": "https://www.upwork.com/hire/creative-writers/",
+     "habilidades": [
+      "Escrita criativa",
+      "Redação de conteúdo",
+      "Artigos",
+      "Blog",
+      "Contos",
+      "Conteúdo para redes sociais"
+     ]
+    },
+    {
+     "nome": "Ghostwriting",
+     "fonte": "https://www.upwork.com/hire/ghostwriters/",
+     "habilidades": [
+      "Ghostwriting",
+      "Livros",
+      "Ficção",
+      "Reescrita de conteúdo",
+      "Leitura beta",
+      "Publicação de livros"
+     ]
+    },
+    {
+     "nome": "Redação técnica",
+     "fonte": "https://www.upwork.com/hire/technical-writers/",
+     "habilidades": [
+      "Redação técnica",
+      "Documentação",
+      "Redação científica",
+      "Redação acadêmica",
+      "Manuais",
+      "Linguagem simples"
+     ]
+    },
+    {
+     "nome": "Roteiro",
+     "fonte": "https://www.upwork.com/hire/scriptwriting-freelancers/",
+     "habilidades": [
+      "Roteiro",
+      "Roteiro para vídeo",
+      "Roteiro para podcast",
+      "Roteiro para YouTube",
+      "Ficção",
+      "Criação de conteúdo"
+     ]
+    },
+    {
+     "nome": "Projetos e editais",
+     "fonte": "https://www.upwork.com/hire/grant-writers/",
+     "habilidades": [
+      "Projetos para editais",
+      "Propostas comerciais",
+      "Captação de recursos",
+      "Redação de políticas",
+      "Newsletter"
+     ]
+    },
+    {
+     "nome": "Edição de texto",
+     "fonte": "https://www.upwork.com/hire/editors/",
+     "habilidades": [
+      "Edição de texto",
+      "Preparação de texto",
+      "Checagem de fatos",
+      "Edição de livros",
+      "Guia de estilo",
+      "Revisão de conteúdo"
+     ]
+    },
+    {
+     "nome": "Revisão",
+     "fonte": "https://www.upwork.com/hire/proofreaders/",
+     "habilidades": [
+      "Revisão",
+      "Revisão ortográfica e gramatical",
+      "Preparação de texto",
+      "Checagem de fatos",
+      "Transcrição",
+      "Digitação"
+     ]
+    }
+   ]
+  }
+ ]
+}
