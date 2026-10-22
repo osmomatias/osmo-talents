@@ -174,6 +174,26 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - No máximo um e-mail por conversa a cada 15 minutos.
 - Cada pessoa escolhe em **Meu perfil**: Tudo, Só o importante (sem mensagens de conversa) ou Nenhum. Todo e-mail tem um link para mudar isso sem entrar na conta.
 
+## Selo de verificado (laudo médico com ICP-Brasil)
+
+Freelancers podem, se quiserem, enviar um laudo em PDF **assinado digitalmente por médico** com certificado ICP-Brasil. Se passar, aparece um selo verde ao lado do nome.
+
+O que o site confere (`src/icp.js`, sem bibliotecas externas):
+
+- a assinatura digital é válida e cobre o PDF inteiro (nada mudou depois de assinar);
+- o certificado encadeia até uma raiz oficial da ICP-Brasil (`certs/icp-brasil`) e estava válido na data da assinatura;
+- o certificado é de um médico: traz o registro no CRM (OID 2.16.76.1.4.2.2, atribuído pelo ITI ao CFM). Um e-CPF comum é recusado;
+- o certificado não está na lista de revogados da AC (quando a lista pode ser baixada);
+- o mesmo laudo não vale para duas contas, e quem assinou não pode ser a própria pessoa.
+
+O que **não** dá para conferir: o conteúdo do laudo (diagnóstico e nome do paciente). Isso fica como declaração da pessoa, que marca uma confirmação antes de enviar.
+
+O PDF é conferido na memória e descartado. O banco guarda só a data, o CRM de quem assinou e o hash do arquivo.
+
+- Testar um PDF no seu computador, sem enviar: `node scripts/conferir-laudo.js laudo.pdf`
+- Atualizar as ACs da ICP-Brasil (quando o ITI publicar novas): `bash scripts/atualizar-icp.sh` e depois publicar.
+- Antes de divulgar o selo, vale passar o texto de consentimento por um advogado de proteção de dados (laudo é dado sensível na LGPD).
+
 ## O que esta versão faz
 
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
@@ -181,6 +201,7 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - Avisos por e-mail, com escolha de quanto receber
 - Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
 - Arquivos no briefing da vaga: até 6 por vaga, 10 MB cada (PDF, imagens, PSD, AI, Office e texto), só para quem tem conta
+- Selo verde de verificado para quem envia laudo médico assinado com ICP-Brasil (opcional)
 - Avaliações depois do contrato (nota de 1 a 5, destaques e comentário), públicas só quando os dois lados avaliam ou após 14 dias
 - Perfil com "Como eu trabalho melhor" e identificação opcional
 - Foto de perfil ou logo da empresa (opcional), recortada e reduzida no navegador e guardada no próprio banco

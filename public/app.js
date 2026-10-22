@@ -30,6 +30,13 @@ function when(iso) {
 }
 function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
 function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
+// selo verde de verificado (laudo médico assinado com ICP-Brasil), no formato "roseta" dos selos de redes sociais
+const VB_SVG = (() => {
+  const bumps = Array.from({ length: 12 }, (_, i) => { const a = i * Math.PI / 6; return `<circle cx="${(12 + 8.2 * Math.cos(a)).toFixed(2)}" cy="${(12 + 8.2 * Math.sin(a)).toFixed(2)}" r="3"/>`; }).join("");
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="12" r="8.6"/>${bumps}</g><path d="M7.7 12.4l2.9 2.9 5.8-6" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+})();
+const VB_TXT = "Verificado: neurodivergência comprovada por laudo médico com assinatura digital ICP-Brasil";
+const vbadge = on => on ? `<span class="vbadge" role="img" aria-label="${VB_TXT}" title="${VB_TXT}">${VB_SVG}</span>` : "";
 const av = (name, id, size = "", src = "") => src ? `<img class="av ${size}" src="${esc(src)}" alt="" loading="lazy">` : `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
 function clarBar(v) { const cls = v >= 80 ? "" : v >= 65 ? "mid" : "low"; return `<span class="clarity" title="Clareza do briefing"><span class="bar ${cls}"><i style="width:${v}%"></i></span>${v}% claro</span>`; }
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
@@ -155,7 +162,7 @@ V.inicio = async () => {
     </form>
   </div>
   ${featured ? `<aside class="wcard" aria-label="Perfil em destaque">
-    <div class="row">${av(featured.name, featured.id, "", featured.avatar)}<div style="min-width:0"><h3>${esc(featured.name)}</h3><p class="muted">${esc(featured.title)}${featured.location ? " · " + esc(featured.location) : ""}</p></div></div>
+    <div class="row">${av(featured.name, featured.id, "", featured.avatar)}<div style="min-width:0"><h3>${esc(featured.name)}${vbadge(featured.verified)}</h3><p class="muted">${esc(featured.title)}${featured.location ? " · " + esc(featured.location) : ""}</p></div></div>
     <span class="label">Como eu trabalho melhor</span>
     <div class="grid2">
       <div class="pref"><b>${esc(featured.how.com)}</b><span>Comunicação</span></div>
@@ -335,7 +342,7 @@ V.vaga = async id => {
   else if (owner && j.status === "aberta") action = `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>`;
   const props = owner ? `<section class="panel stack"><h2>Propostas (${d.proposals.length})</h2>${d.proposals.length ? d.proposals.map(p => `
     <div class="prop">
-      <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button><p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
+      <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button>${vbadge(p.freela.verified)}<p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
       <p class="mono"><b>${brl(p.value)}</b> · ${p.days} dias úteis · você recebe a entrega em ${p.milestones.length} etapa(s)</p>
       <p style="white-space:pre-wrap">${esc(p.text)}</p>
       ${p.freela.how.com ? `<p class="hint">Como trabalha melhor: ${esc(p.freela.how.com)} ${esc(p.freela.how.resp)}</p>` : ""}
@@ -462,7 +469,7 @@ function reviewBox(c) {
 /* ---------- talentos ---------- */
 function talentCard(t) {
   return `<button class="talent" data-go="talento-${t.id}">
-    <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
+    <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}${vbadge(t.verified)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
     ${t.tag ? `<div class="row" style="gap:6px"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}
     <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="row" style="gap:10px">${stars(t.rating.avg, t.rating.n)}<span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></span></div>
     ${t.skills.length ? `<div class="row" style="gap:6px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
@@ -487,7 +494,7 @@ V.talento = async id => {
 <div class="detail">
   <article class="stack">
     <div class="prof-head">${av(t.name, t.id, "lg", t.avatar)}
-      <div class="stack" style="gap:6px"><h1 style="font-size:clamp(1.8rem,4vw,2.6rem)">${esc(t.name)}</h1><p class="muted">${esc(t.title || "Perfil em construção")}${t.location ? " · " + esc(t.location) : ""}</p>${t.tag ? `<div class="row"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}</div></div>
+      <div class="stack" style="gap:6px"><h1 style="font-size:clamp(1.8rem,4vw,2.6rem)">${esc(t.name)}${vbadge(t.verified)}</h1><p class="muted">${esc(t.title || "Perfil em construção")}${t.location ? " · " + esc(t.location) : ""}</p>${t.tag ? `<div class="row"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}</div></div>
     ${t.bio ? `<p style="max-width:65ch; white-space:pre-wrap">${esc(t.bio)}</p>` : ""}
     ${has ? `<div class="stack" style="gap:12px"><h2>Como eu trabalho melhor</h2><div class="howgrid">
       ${[["Comunicação", t.how.com], ["Tempo de resposta", t.how.resp], ["Feedback", t.how.fb], ["Ritmo", t.how.foco]].filter(x => x[1]).map(x => `<div class="how"><span class="label">${x[0]}</span>${esc(x[1])}</div>`).join("")}
@@ -525,7 +532,7 @@ V.mensagens = async id => {
   if (openId) { const t = threads.find(x => x.id === openId); if (t) t.unread = 0; refreshMe(); }
   return `<h2 style="margin-bottom:18px">Mensagens</h2>
 <div class="msgs ${openId ? "show-convo" : ""}">
-  <div class="threads" role="list">${threads.map(t => `<button class="thread" role="listitem" data-go="mensagens-${t.id}" aria-current="${t.id === openId}">${av(t.with, t.withId, "sm", t.withAvatar)}<div class="tx"><b>${esc(t.with)}${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</b><p>${esc(t.job)}</p><p>${esc(t.last)}</p></div></button>`).join("")}</div>
+  <div class="threads" role="list">${threads.map(t => `<button class="thread" role="listitem" data-go="mensagens-${t.id}" aria-current="${t.id === openId}">${av(t.with, t.withId, "sm", t.withAvatar)}<div class="tx"><b>${esc(t.with)}${vbadge(t.withVerified)}${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</b><p>${esc(t.job)}</p><p>${esc(t.last)}</p></div></button>`).join("")}</div>
   <div class="convo">${TH ? convoHTML() : ""}</div>
 </div>`;
 };
@@ -536,7 +543,7 @@ function bubbles() {
 function convoHTML() {
   const t = TH.thread;
   return `<div class="convo-head"><button class="back only-m" data-go="mensagens" style="margin:0">← Conversas</button>
-      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}</b><p class="hint">${t.job ? `<a href="#vaga-${t.job.id}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
+      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}${vbadge(t.with.role === "freela" && t.with.verified)}</b><p class="hint">${t.job ? `<a href="#vaga-${t.job.id}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
       ${t.with.how && t.with.how.resp ? `<span class="chip accent">${esc(t.with.how.resp)}</span>` : ""}</div>
     <div class="pin" id="pinBox"><b>Combinado até agora:</b> <span id="pinText">${esc(t.pin) || "Nada registrado ainda."}</span> <button class="btn sm ghost" data-act="pin-edit" style="padding:2px 8px">Editar</button></div>
     <div class="bubbles" id="bubbles" aria-live="polite">${bubbles()}</div>
@@ -609,6 +616,38 @@ V.painel = async () => {
 </div>
 <div class="stack">${side}<section class="stack" style="gap:12px"><h2>Contratos</h2>${contracts}</section></div>`;
 };
+
+/* ---------- selo de verificado ---------- */
+function verifyHTML(p) {
+  if (p.verified) return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:10px">
+    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Perfil verificado</b><p class="hint">Desde ${new Date(p.verified.replace(" ", "T") + "Z").toLocaleDateString("pt-BR")}. O selo verde aparece ao lado do seu nome.</p></div></div>
+    <div><button type="button" class="btn sm ghost" data-act="verify-del">Remover selo</button></div></div>`;
+  return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:12px">
+    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg off">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Selo de verificado <span class="muted" style="font-weight:400">(opcional)</span></b>
+      <p class="hint">Quem tem laudo pode mostrar um selo verde ao lado do nome. Quem não tem continua usando a plataforma normalmente.</p></div></div>
+    <details><summary class="hint">Como funciona e o que a gente guarda</summary><ul class="hint" style="margin:8px 0 0; padding-left:18px">
+      <li>Envie o laudo em PDF <b>assinado digitalmente pelo médico</b> com certificado ICP-Brasil (o mesmo usado em receitas digitais). PDF escaneado ou foto não serve.</li>
+      <li>Conferimos se a assinatura é válida, se o arquivo não foi alterado depois de assinado e se o certificado é de um médico com registro no CRM.</li>
+      <li>O PDF é conferido e <b>descartado na hora</b>. Não guardamos o arquivo nem o diagnóstico: só a data, o CRM de quem assinou e uma impressão digital do arquivo, para o mesmo laudo não valer para duas contas.</li>
+      <li>Você pode remover o selo quando quiser.</li></ul></details>
+    <label class="check"><input type="checkbox" id="vConsent"><span>O laudo é meu, indica um transtorno do neurodesenvolvimento, e eu concordo com a conferência descrita acima.</span></label>
+    <div><label class="btn sm" for="vFile" id="vFileLbl">Enviar laudo em PDF</label><input type="file" id="vFile" accept="application/pdf,.pdf" class="sr-only"></div>
+    <div id="vErr" class="err" role="alert" hidden></div></div>`;
+}
+async function sendVerify(file) {
+  const err = $("#vErr"); err.hidden = true;
+  const show = m => { err.textContent = m; err.hidden = false; };
+  if (!$("#vConsent").checked) return show("Marque a confirmação antes de enviar o laudo.");
+  if (fileExt(file.name) !== "pdf") return show("Envie o laudo em PDF.");
+  if (file.size > 10 * 1048576) return show("O PDF tem mais de 10 MB.");
+  const lbl = $("#vFileLbl"); lbl.textContent = "Conferindo a assinatura…";
+  let res;
+  try { res = await fetch("/api/me/verify", { method: "POST", credentials: "same-origin", body: file, headers: { "X-Osmo": "1", "X-Consent": "1", "Content-Type": "application/pdf" } }); }
+  catch { lbl.textContent = "Enviar laudo em PDF"; return show("Sem conexão com o servidor. Confira sua internet e tente de novo."); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { lbl.textContent = "Enviar outro PDF"; return show(data.error || "Não deu para conferir o laudo."); }
+  await refreshMe(); toast("Perfil verificado"); route();
+}
 
 /* ---------- avisos por e-mail ---------- */
 const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos e mensagens das pessoas"],
@@ -691,6 +730,7 @@ V.perfil = async () => {
       <div class="row"><label class="btn sm" for="avatarIn">${p.avatar ? "Trocar foto" : "Escolher foto"}</label><input type="file" id="avatarIn" accept="image/*" class="sr-only">
       ${p.avatar ? `<button type="button" class="btn sm ghost" data-act="avatar-del">Remover</button>` : ""}</div>
       <div id="avatarErr" class="err" role="alert" hidden></div></div></div>
+  ${isF ? verifyHTML(p) : ""}
   <form class="stack" id="profForm">
     <div class="panel stack">${f("p_name", "Nome", ME.name, 'autocomplete="name"')}
       ${isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
@@ -868,6 +908,10 @@ document.addEventListener("click", async e => {
       if (!confirm(`Remover "${act.dataset.name}" da vaga?`)) return;
       await api("DELETE", `/api/jobs/${act.dataset.job}/files/${id}`); toast("Arquivo removido"); route();
     })();
+    case "verify-del": return busy(async () => {
+      if (!confirm("Remover o selo de verificado do seu perfil?")) return;
+      await api("DELETE", "/api/me/verify"); await refreshMe(); toast("Selo removido"); route();
+    })();
     case "port-new": PE = { id: 0, title: "", link: "", image: "" }; return renderPort("pe_title");
     case "port-edit": { const it = ME.profile.portfolio.find(x => x.id === id); PE = { ...it }; return renderPort("pe_title"); }
     case "port-cancel": PE = null; return renderPort();
@@ -951,6 +995,7 @@ document.addEventListener("change", e => {
   if (id === "wsplit") { W.split = t.checked; if (W.split && W.ms.length === 1 && !W.ms[0].value) W.ms[0] = { title: "Entrega completa", value: W.value }; $("#msBox").hidden = !W.split; $("#msBox").innerHTML = msRows(); saveDraft(); }
   if (t.dataset.pref) { PREFS[t.dataset.pref] = t.checked; applyPrefs(); }
   if (id === "avatarIn" && t.files[0]) uploadAvatar(t.files[0]);
+  if (id === "vFile" && t.files[0]) { sendVerify(t.files[0]); t.value = ""; }
   if (id === "pFiles" && t.files.length) {
     const errs = [];
     for (const f of t.files) { const e2 = checkFile(f); if (e2) errs.push(e2); else if (PFILES.length < 6) PFILES.push(f); else errs.push(`"${f.name}": cada vaga aceita até 6 arquivos.`); }

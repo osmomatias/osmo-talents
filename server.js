@@ -8,6 +8,7 @@ const { one, all, run, tx } = require("./src/db");
 const asaas = require("./src/asaas");
 const oauth = require("./src/oauth");
 const mail = require("./src/mail");
+const icp = require("./src/icp");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -122,14 +123,15 @@ function reviewsOf(userId) {
 const portfolioOf = userId => all("SELECT id, title, link, v FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", userId)
   .map(p => ({ id: p.id, title: p.title, link: p.link, image: p.v ? `/portfolio/${p.id}?v=${p.v}` : "" }));
 function profileOf(userId) {
-  const u = one("SELECT u.id, u.name, u.role, a.v avatar_v, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?", userId);
+  const u = one(`SELECT u.id, u.name, u.role, a.v avatar_v, vf.verified_at, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+    LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN verifications vf ON vf.user_id = u.id WHERE u.id = ?`, userId);
   if (!u) return null;
   const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
   return {
     id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
-    tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id),
+    tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id), verified: u.verified_at || "",
   };
 }
 function jobOut(j) {
@@ -342,6 +344,29 @@ route("DELETE", "/api/me/avatar", ({ user }) => {
   run("DELETE FROM avatars WHERE user_id = ?", user.id);
   return { avatar: "" };
 });
+
+// --- selo de verificado: laudo em PDF assinado por médico com certificado ICP-Brasil (ver src/icp.js)
+// O PDF é conferido na memória e descartado. A pessoa declara que o laudo é dela.
+const plain = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z ]/g, "").replace(/\s+/g, " ").trim();
+route("POST", "/api/me/verify", async ({ user, req, body }) => {
+  limit("verify:" + user.id, 10, 3600_000);
+  if (req.headers["x-consent"] !== "1") fail(400, "Confirme que o laudo é seu e que você concorda com a conferência.");
+  let r;
+  try { r = await icp.verifyMedicalPdf(body); }
+  catch (e) { if (e instanceof icp.IcpError) fail(400, e.message); throw e; }
+  if (plain(r.doctor) && plain(r.doctor) === plain(user.name)) fail(400, "O laudo precisa ser assinado por outra pessoa, não pela própria dona da conta.");
+  const other = one("SELECT user_id FROM verifications WHERE doc_sha256 = ?", r.sha256);
+  if (other && other.user_id !== user.id) fail(409, "Esse laudo já foi usado para verificar outra conta.");
+  run(`INSERT INTO verifications (user_id, doc_sha256, crm, signed_at, revocation) VALUES (?,?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET doc_sha256 = excluded.doc_sha256, crm = excluded.crm, signed_at = excluded.signed_at,
+    revocation = excluded.revocation, verified_at = datetime('now')`,
+    user.id, r.sha256, `CRM${r.uf ? "-" + r.uf : ""} ${r.crm}`, r.signedAt.toISOString(), r.revocation);
+  return { verified: true, revocation: r.revocation };
+}, { role: "freela", raw: 10 * 1024 * 1024 });
+route("DELETE", "/api/me/verify", ({ user }) => {
+  run("DELETE FROM verifications WHERE user_id = ?", user.id);
+  return { verified: false };
+}, { role: "freela" });
 
 // --- portfólio: até 12 projetos, cada um com título, link e imagem opcionais (reduzida no navegador)
 const PORT_MAX = 12;
@@ -801,13 +826,15 @@ route("POST", "/api/contracts/:id/review", ({ user, params, body }) => {
 route("GET", "/api/threads", ({ user }) => {
   const rows = all(`SELECT t.*, j.title job_title, uc.name client_name, uf.name freela_name,
       (SELECT v FROM avatars WHERE user_id = CASE WHEN t.client_id = ? THEN t.freela_id ELSE t.client_id END) with_v,
+      (SELECT 1 FROM verifications WHERE user_id = t.freela_id) freela_verified,
       (SELECT body FROM messages WHERE thread_id = t.id ORDER BY id DESC LIMIT 1) last,
       (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND (m.sender_id IS NULL OR m.sender_id != ?)
          AND m.created_at > CASE WHEN t.client_id = ? THEN t.client_read_at ELSE t.freela_read_at END) unread
     FROM threads t LEFT JOIN jobs j ON j.id = t.job_id JOIN users uc ON uc.id = t.client_id JOIN users uf ON uf.id = t.freela_id
     WHERE t.client_id = ? OR t.freela_id = ? ORDER BY t.updated_at DESC`, user.id, user.id, user.id, user.id, user.id);
   return { threads: rows.map(t => ({ id: t.id, job: t.job_title || "Conversa direta", with: t.client_id === user.id ? t.freela_name : t.client_name,
-    withId: t.client_id === user.id ? t.freela_id : t.client_id, withAvatar: avatarUrl(t.client_id === user.id ? t.freela_id : t.client_id, t.with_v), last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
+    withId: t.client_id === user.id ? t.freela_id : t.client_id, withAvatar: avatarUrl(t.client_id === user.id ? t.freela_id : t.client_id, t.with_v),
+    withVerified: t.client_id === user.id && !!t.freela_verified, last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
 });
 
 function threadAccess(user, id) {

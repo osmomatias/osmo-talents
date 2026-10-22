@@ -201,6 +201,16 @@ CREATE TABLE IF NOT EXISTS job_files (
 CREATE INDEX IF NOT EXISTS idx_job_files ON job_files(job_id);
 `);
 
+// --- migrações (versão 10: selo de verificado por laudo médico assinado com ICP-Brasil)
+// O PDF nunca é guardado: só a data, o CRM de quem assinou (para auditoria) e o hash do arquivo (o mesmo laudo não vale para duas contas).
+db.exec(`
+CREATE TABLE IF NOT EXISTS verifications (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  doc_sha256 TEXT NOT NULL UNIQUE, crm TEXT NOT NULL, signed_at TEXT NOT NULL, revocation TEXT NOT NULL,
+  verified_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 // o portfólio antigo (uma linha de texto por projeto) vira itens sem imagem
 for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfolio NOT IN ('', '[]')").all()) {
   let titles = []; try { titles = JSON.parse(p.portfolio); } catch {}
