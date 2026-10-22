@@ -114,12 +114,16 @@ function renderChrome() {
       <button class="btn" id="mmA11y">Ajustes de conforto</button>
       ${ME ? `<button class="btn ghost" data-act="logout">Sair da conta</button>` : ""}
     </div>`;
+  // barra de navegação embaixo (só em telas pequenas; o CSS decide quando aparece)
+  const tabs = !ME ? [["inicio", "Início"], ["vagas", "Vagas"], ["talentos", "Talentos"], ["entrar", "Entrar"]]
+    : [["inicio", "Início"], ME.role === "cliente" ? ["talentos", "Talentos"] : ["vagas", "Vagas"], ["mensagens", "Mensagens"], ["painel", "Painel"], ["perfil", "Perfil"]];
+  $("#tabbar").innerHTML = tabs.map(([k, label]) => `<button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}</span>${k === "mensagens" && unread ? `<span class="badge" aria-label="${unread} não lidas">${unread}</span>` : ""}</button>`).join("");
   const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled ? `Pagamento protegido pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
   markNav();
 }
 function markNav() {
   const name = (location.hash.slice(1) || "inicio").split("-")[0];
-  $$("#nav button, #mmenu [data-go]").forEach(b => {
+  $$("#nav button, #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
     const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento");
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
@@ -359,6 +363,9 @@ V.vaga = async id => {
   else if (ME.role === "freela") action = d.mine ? `<div class="stack" style="gap:6px"><span class="label">Sua proposta</span>${pill(PSTATUS, d.mine.status)}<p class="mono">${brl(d.mine.value)} · ${d.mine.days} dias úteis</p></div>`
     : j.status === "aberta" ? `<button class="btn hl" data-go="proposta-${j.id}">Enviar proposta guiada</button>` : "";
   else if (owner && j.status === "aberta") action = `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>`;
+  // no celular, valor e botão principal ficam fixos embaixo (o mesmo botão do painel lateral)
+  const barAction = !ME ? action : ME.role === "freela" && !d.mine && j.status === "aberta" ? action : "";
+  const price = j.budget_type === "hora" ? brl(j.budget) + "/h" : brl(j.budget);
   const props = owner ? `<section class="panel stack"><h2>Propostas (${d.proposals.length})</h2>${d.proposals.length ? d.proposals.map(p => `
     <div class="prop">
       <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button>${vbadge(p.freela.verified)}<p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
@@ -393,7 +400,7 @@ V.vaga = async id => {
   </article>
   <aside class="stack">
     <div class="panel stack" style="gap:12px">
-      <div class="kv"><span class="muted">Valor</span><b class="mono">${j.budget_type === "hora" ? brl(j.budget) + "/h" : brl(j.budget)}</b></div>
+      <div class="kv"><span class="muted">Valor</span><b class="mono">${price}</b></div>
       <div class="kv"><span class="muted">Duração</span><b>${esc(j.duration) || "—"}</b></div>
       <div class="kv"><span class="muted">Propostas</span><b class="mono">${j.proposals}</b></div>
       <div class="kv"><span class="muted">Publicada</span><b>${when(j.created_at)}</b></div>
@@ -402,7 +409,8 @@ V.vaga = async id => {
     <div class="panel stack side-extra" style="gap:6px"><span class="label">Quem contrata</span><h3>${esc(j.company || j.client)}</h3>${j.company ? `<p class="muted">${esc(j.client)}</p>` : ""}
       ${j.clientRating && j.clientRating.n ? `${stars(j.clientRating.avg, j.clientRating.n)}${tagSummary(j.clientRating)}${j.clientReviews.length ? `<details><summary class="hint">Ler o que freelancers disseram</summary><div class="stack" style="gap:0">${reviewList(j.clientReviews)}</div></details>` : ""}` : `<p class="hint">Ainda sem avaliações de freelancers.</p>`}</div>
   </aside>
-</div>`;
+</div>
+${barAction ? `<div class="mcta"><div class="mcta-info"><b class="mono">${price}</b><span class="hint">${esc(j.duration) || ""}</span></div>${barAction}</div>` : ""}`;
 };
 
 /* ---------- proposta guiada ---------- */
