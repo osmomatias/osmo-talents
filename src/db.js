@@ -134,6 +134,16 @@ CREATE TABLE IF NOT EXISTS oauth_pending (
 CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities(user_id);
 `);
 
+// --- migrações (versão 4: recuperar senha)
+db.exec(`
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
+`);
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

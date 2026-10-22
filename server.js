@@ -7,6 +7,7 @@ const crypto = require("node:crypto");
 const { one, all, run, tx } = require("./src/db");
 const asaas = require("./src/asaas");
 const oauth = require("./src/oauth");
+const mail = require("./src/mail");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -190,6 +191,61 @@ route("POST", "/api/auth/logout", ({ req, res }) => {
   return { ok: true };
 }, { auth: false });
 
+// --- recuperar senha: link por e-mail, válido por 1 hora e de uso único
+const RESET_MIN = 60;
+const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+function resetRow(token) {
+  const t = String(token || "");
+  if (!/^[a-f0-9]{64}$/.test(t)) return null;
+  run("DELETE FROM password_resets WHERE expires_at < ?", new Date().toISOString());
+  return one("SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id WHERE r.token_hash = ?", sha(t));
+}
+route("POST", "/api/auth/forgot", ({ body, ip }) => {
+  if (!mail.ENABLED) fail(503, "A recuperação de senha ainda não está ativa. Fale com a Osmo.");
+  limit("forgot:" + ip, 5, 900_000);
+  const email = str(body.email, 160).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
+  // a resposta é sempre a mesma, para não revelar quais e-mails têm conta
+  const u = one("SELECT id, name, email FROM users WHERE email = ?", email);
+  if (!u) return { ok: true };
+  try { limit("forgot-mail:" + u.id, 3, 3600_000); } catch { return { ok: true }; }
+  const token = crypto.randomBytes(32).toString("hex");
+  run("DELETE FROM password_resets WHERE user_id = ?", u.id);
+  run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), u.id, new Date(Date.now() + RESET_MIN * 60e3).toISOString());
+  const link = `${PUBLIC_URL}/#recuperar-${token}`, first = u.name.split(" ")[0];
+  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  mail.send({
+    to: u.email, subject: "Criar uma senha nova na Osmo Talents",
+    text: `Olá, ${first}.\n\nRecebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.\n\nPara escolher a senha nova, abra este link (vale por ${RESET_MIN} minutos e funciona uma vez só):\n${link}\n\nSe não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.\n\nOsmo Talents`,
+    html: `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
+<p>Olá, ${escHtml(first)}.</p>
+<p>Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.</p>
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Criar senha nova</a></p>
+<p style="color:#666">O link vale por ${RESET_MIN} minutos e funciona uma vez só.<br>Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.</p>
+<p>Osmo Talents</p></div>`,
+  }).catch(e => console.error(new Date().toISOString(), "mail", e.message));
+  return { ok: true };
+}, { auth: false });
+route("GET", "/api/auth/reset", ({ query }) => {
+  const r = resetRow(query.get("token"));
+  if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
+  return { email: r.email };
+}, { auth: false });
+route("POST", "/api/auth/reset", ({ body, res, ip }) => {
+  limit("reset:" + ip, 10, 600_000);
+  const password = typeof body.password === "string" ? body.password : "";
+  const r = resetRow(body.token);
+  if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
+  if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
+  tx(() => {
+    run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(password), r.user_id);
+    run("DELETE FROM password_resets WHERE user_id = ?", r.user_id);
+    run("DELETE FROM sessions WHERE user_id = ?", r.user_id); // encerra a conta em outros aparelhos
+  });
+  createSession(res, r.user_id);
+  return { ok: true };
+}, { auth: false });
+
 // --- login social: conta nova escolhe o perfil (freelancer ou cliente)
 function pendingRow(token) {
   const t = String(token || "");
@@ -214,7 +270,7 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 }, { auth: false });
 
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED };
   if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)

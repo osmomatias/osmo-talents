@@ -437,6 +437,7 @@ body.menu-open{overflow:hidden}
 .auth{max-width:460px; margin:0 auto}
 .auth .seg{display:flex; margin:0 0 18px}
 .auth .seg button{flex:1}
+.link-btn{align-self:flex-start; background:none; border:0; padding:4px 0; color:var(--accent); font:inherit; font-size:.9rem; font-weight:600; text-decoration:underline; text-underline-offset:3px; cursor:pointer}
 .err{background:var(--coral-soft); color:var(--coral); border-radius:12px; padding:10px 14px; font-weight:600}
 .empty{background:var(--sunken); border-radius:16px; padding:22px; display:flex; flex-direction:column; gap:8px; align-items:flex-start}
 .prop{border-top:1px solid var(--line); padding-top:16px; display:flex; flex-direction:column; gap:10px}

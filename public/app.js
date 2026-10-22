@@ -49,13 +49,13 @@ const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18
 const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pass" aria-label="Mostrar senha" aria-pressed="false" aria-controls="a_pass">${EYE}</button>`;
 
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [];
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false;
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; } catch { ME = null; }
   renderChrome();
 }
 
@@ -203,7 +203,7 @@ V.entrar = async () => {
       <label class="check"><input type="radio" name="role" value="freela" checked><span>Trabalhar como freelancer</span></label>
       <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label></div>` : ""}
     <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" required></div>
-    <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : ""}</div>
+    <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
   </form>
@@ -230,6 +230,33 @@ const OAUTH_ERR = {
   indisponivel: "Esse jeito de entrar ainda não está ativo.",
   tentativas: "Muitas tentativas seguidas. Espere alguns minutos.",
   falhou: "Não deu para entrar com o provedor agora. Tente de novo ou use e-mail e senha.",
+};
+
+/* ---------- recuperar senha ---------- */
+V.esqueci = async () => `<div class="auth stack">
+  <div><span class="label">Recuperar senha</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Esqueci minha senha</h1>
+  <p class="muted" style="margin-top:8px">Escreva o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova.</p></div>
+  <form class="panel stack" id="forgotForm" novalidate>
+    <div class="field"><label for="f_email">E-mail</label><input class="input" id="f_email" type="email" autocomplete="email" required value="${esc(S.forgotEmail || "")}"></div>
+    <div id="forgotErr" class="err" role="alert" hidden></div>
+    <button class="btn hl" type="submit">Enviar link</button>
+  </form>
+  <button class="btn ghost" data-go="entrar">Voltar para entrar</button></div>`;
+
+V.recuperar = async () => {
+  const token = location.hash.split("-")[1] || "";
+  let d;
+  try { d = await api("GET", "/api/auth/reset?token=" + encodeURIComponent(token)); }
+  catch (e) { return `<div class="auth stack">${emptyBox("Esse link não funciona mais.", e.status === 404 ? "Ele vale por 1 hora e só pode ser usado uma vez. Peça um link novo." : e.message, "esqueci", "Pedir link novo")}</div>`; }
+  return `<div class="auth stack">
+  <div><span class="label">Recuperar senha</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Criar senha nova</h1>
+  <p class="muted" style="margin-top:8px">Conta: ${esc(d.email)}</p></div>
+  <form class="panel stack" id="resetForm" novalidate data-token="${esc(token)}">
+    <input type="email" autocomplete="username" value="${esc(d.email)}" hidden>
+    <div class="field"><label for="a_pass">Senha nova</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="new-password" minlength="8" required>${eyeBtn()}</div><span class="hint">Pelo menos 8 caracteres. Ao salvar, sua conta sai dos outros aparelhos.</span></div>
+    <div id="resetErr" class="err" role="alert" hidden></div>
+    <button class="btn hl" type="submit">Salvar senha nova</button>
+  </form></div>`;
 };
 
 /* ---------- escolher perfil (conta nova pelo login social) ---------- */
@@ -683,6 +710,7 @@ document.addEventListener("click", async e => {
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
+    case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
     case "ms-add": W.ms.push({ title: "", value: "" }); saveDraft(); $("#msBox").innerHTML = msRows(); return;
@@ -762,6 +790,16 @@ document.addEventListener("submit", async e => {
       toast(authMode === "criar" ? "Conta criada" : "Bem-vindo de volta");
       const next = S.next; S.next = null;
       return go(next || (authMode === "criar" ? (ME.role === "freela" ? "perfil" : "publicar") : "painel"));
+    }
+    if (f.id === "forgotForm") {
+      const email = $("#f_email").value.trim();
+      try { await api("POST", "/api/auth/forgot", { email }); } catch (err) { return showErr("#forgotErr", err.message); }
+      f.outerHTML = `<div class="panel stack" role="status"><b>Confira seu e-mail</b><p class="muted">Se existir uma conta com ${esc(email)}, você vai receber um link em alguns minutos. Ele vale por 1 hora. Se não aparecer, olhe também a caixa de spam.</p></div>`;
+      return;
+    }
+    if (f.id === "resetForm") {
+      try { await api("POST", "/api/auth/reset", { token: f.dataset.token, password: $("#a_pass").value }); } catch (err) { return showErr("#resetErr", err.message); }
+      history.replaceState(null, "", "/#painel"); await refreshMe(); toast("Senha nova salva"); return route();
     }
     if (f.id === "compose") {
       const v = $("#msgIn").value.trim(); if (!v) return;

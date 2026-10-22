@@ -147,9 +147,28 @@ Como funciona:
 - Conta nova pela tela **Criar conta** usa o perfil escolhido ali. Pela tela **Entrar**, o app pergunta se a pessoa quer trabalhar ou contratar.
 - O app não recebe nem guarda a senha da pessoa no provedor.
 
+## Recuperar senha por e-mail
+
+O link "Esqueci minha senha" só aparece depois que o envio de e-mail é configurado.
+
+1. Pegue os dados de SMTP do seu provedor de e-mail (servidor, porta, usuário e senha). Vale criar uma caixa só para isso, por exemplo `nao-responda@osmo.com.br`.
+2. No terminal do editor: `bash configurar-email.sh` e responda as perguntas.
+3. Teste pedindo um link para o seu próprio e-mail.
+
+Como funciona:
+
+- A pessoa informa o e-mail e recebe um link que vale por 1 hora e funciona uma vez só.
+- A resposta na tela é sempre a mesma, exista ou não uma conta com aquele e-mail.
+- Limite de 3 e-mails por conta a cada hora.
+- Ao salvar a senha nova, a conta sai de todos os outros aparelhos.
+- Quem entrou só com Google, LinkedIn, Adobe ou GitHub também pode usar o link para criar uma senha.
+
+Para não cair no spam, configure SPF e DKIM do domínio no seu provedor de e-mail.
+
 ## O que esta versão faz
 
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
+- Recuperar senha por e-mail
 - Perfil com "Como eu trabalho melhor" e identificação opcional
 - Publicar vaga com nota de clareza (mínimo de 50% para publicar)
 - Busca de vagas com filtros: briefing claro, assíncrono, prazo flexível
@@ -163,7 +182,6 @@ Como funciona:
 
 ## Ainda não faz (próximas versões)
 
-- Recuperar senha por e-mail
 - Envio de arquivos e imagens de portfólio
 - Avaliações depois do contrato
 - Notificações por e-mail
