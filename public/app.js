@@ -58,7 +58,8 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 /* ---------- estado ---------- */
 let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false;
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
-const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false }, store.get("prefs", {}));
+// vidro líquido vem ligado, exceto para quem pediu menos transparência no sistema
+const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
 // versão nova publicada: a página recarrega na próxima troca de tela (nunca no meio de um formulário)
@@ -1242,14 +1243,14 @@ const themeHTML = () => { const cur = getTheme(); return `<div class="field"><sp
   <span class="hint">"Sistema" segue o modo claro ou escuro do seu celular ou computador.</span></div>`; };
 
 /* ---------- conforto ---------- */
-function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
+function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus", "glass"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
 function openA11y() {
   $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer" role="dialog" aria-modal="true" aria-label="Conforto">
     <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
     ${themeHTML()}
-    ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
+    ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"], ["glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
   </div>`;
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);

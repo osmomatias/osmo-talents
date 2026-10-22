@@ -633,3 +633,80 @@ body.menu-open{overflow:hidden}
 /* ---------- escolha de tema (mesmo seletor arredondado de "Entrar / Criar conta") ---------- */
 .theme-seg{display:flex}
 .theme-seg button{flex:1; min-height:44px}
+
+/* ---------- vidro líquido: superfícies translúcidas sobre um fundo com luz da marca (desliga em Conforto) ---------- */
+:root{
+  --glass-bg:rgb(255 255 255 / .58); --glass-bg-strong:rgb(255 255 255 / .78); --glass-sunken:rgb(122 11 60 / .06);
+  --glass-line:rgb(255 255 255 / .7); --glass-edge:rgb(122 11 60 / .1);
+  --glass-hi:inset 0 1px 0 rgb(255 255 255 / .9), inset 0 -1px 0 rgb(255 255 255 / .25);
+  --glass-shadow:0 8px 32px rgb(97 9 48 / .1), 0 1px 3px rgb(97 9 48 / .06);
+  --glass-blur:blur(22px) saturate(180%);
+  --glass-brand:rgb(122 11 60 / .78);
+  --glass-glow-1:rgb(232 101 15 / .16); --glass-glow-2:rgb(122 11 60 / .14); --glass-glow-3:rgb(255 182 193 / .32);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --glass-bg:rgb(40 16 28 / .52); --glass-bg-strong:rgb(34 16 26 / .82); --glass-sunken:rgb(255 255 255 / .05);
+  --glass-line:rgb(255 255 255 / .12); --glass-edge:rgb(0 0 0 / .3);
+  --glass-hi:inset 0 1px 0 rgb(255 255 255 / .14), inset 0 -1px 0 rgb(255 255 255 / .03);
+  --glass-shadow:0 10px 36px rgb(0 0 0 / .4), 0 1px 3px rgb(0 0 0 / .3);
+  --glass-brand:rgb(97 9 48 / .7);
+  --glass-glow-1:rgb(232 101 15 / .14); --glass-glow-2:rgb(255 182 193 / .1); --glass-glow-3:rgb(122 11 60 / .45)}}
+:root[data-theme="dark"]{
+  --glass-bg:rgb(40 16 28 / .52); --glass-bg-strong:rgb(34 16 26 / .82); --glass-sunken:rgb(255 255 255 / .05);
+  --glass-line:rgb(255 255 255 / .12); --glass-edge:rgb(0 0 0 / .3);
+  --glass-hi:inset 0 1px 0 rgb(255 255 255 / .14), inset 0 -1px 0 rgb(255 255 255 / .03);
+  --glass-shadow:0 10px 36px rgb(0 0 0 / .4), 0 1px 3px rgb(0 0 0 / .3);
+  --glass-brand:rgb(97 9 48 / .7);
+  --glass-glow-1:rgb(232 101 15 / .14); --glass-glow-2:rgb(255 182 193 / .1); --glass-glow-3:rgb(122 11 60 / .45)}
+
+/* fundo: manchas de luz paradas (não rolam nem se mexem) para o vidro ter o que refratar */
+html.glass body{background:
+  radial-gradient(60vmax 50vmax at 0% 0%, var(--glass-glow-3), transparent 60%),
+  radial-gradient(50vmax 45vmax at 100% 20%, var(--glass-glow-1), transparent 60%),
+  radial-gradient(55vmax 50vmax at 40% 100%, var(--glass-glow-2), transparent 60%),
+  var(--bg); background-attachment:fixed}
+
+/* superfícies de vidro */
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){
+  background:var(--glass-bg); border-color:var(--glass-line);
+  -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur);
+  box-shadow:var(--glass-hi), var(--glass-shadow)}
+html.glass :is(.job,.talent,.cat):hover{border-color:var(--accent); box-shadow:var(--glass-hi), 0 12px 40px rgb(97 9 48 / .16)}
+html.glass :is(.sunk,.pref,.how,.seg){background:var(--glass-sunken); box-shadow:inset 0 0 0 1px var(--glass-edge)}
+html.glass .seg button[aria-pressed="true"]{background:var(--glass-bg-strong); box-shadow:var(--glass-hi), 0 2px 8px rgb(0 0 0 / .1)}
+html.glass :is(.threads,.convo-head,.compose,.thread){border-color:var(--glass-line)}
+html.glass .thread{background:none}
+html.glass .thread[aria-current="true"]{background:var(--accent-soft)}
+
+/* controles */
+html.glass .btn:not(.primary):not(.hl):not(.ghost){background:var(--glass-bg); border-color:var(--glass-line);
+  -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur); box-shadow:var(--glass-hi), 0 2px 8px rgb(0 0 0 / .06)}
+html.glass .btn:not(.primary):not(.hl):not(.ghost):hover{border-color:var(--fg)}
+html.glass :is(.btn.primary,.btn.hl){box-shadow:inset 0 1px 0 rgb(255 255 255 / .35), 0 4px 14px rgb(97 9 48 / .22)}
+html.glass :is(.input,select.input,textarea.input,.icon-btn,.quick button,.energy button,.rate span){background:var(--glass-bg); border-color:var(--glass-line); box-shadow:var(--glass-hi)}
+html.glass .input:focus{border-color:var(--accent)}
+html.glass .search{background:var(--glass-bg); border-color:var(--glass-line); -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur); box-shadow:var(--glass-hi), var(--glass-shadow)}
+html.glass .energy button[aria-pressed="true"],html.glass .rate input:checked + span{background:var(--accent-soft); border-color:var(--accent)}
+
+/* barras e painéis flutuantes */
+html.glass .top,html.glass body::before{background-color:var(--glass-brand); -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur)}
+html.glass .top{box-shadow:inset 0 -1px 0 rgb(255 255 255 / .14), 0 6px 24px rgb(97 9 48 / .18)}
+html.glass :is(.tabbar,.mcta){background:var(--glass-bg-strong); border-top-color:var(--glass-line);
+  -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur); box-shadow:inset 0 1px 0 var(--glass-line)}
+html.glass :is(.drawer,.mmenu){background:var(--glass-bg-strong); border-color:var(--glass-line);
+  -webkit-backdrop-filter:blur(30px) saturate(180%); backdrop-filter:blur(30px) saturate(180%)}
+html.glass :is(.scrim,.mm-scrim){-webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px)}
+html.glass .toast{background:rgb(28 11 18 / .78); color:#fff; -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur); box-shadow:inset 0 1px 0 rgb(255 255 255 / .18), 0 8px 24px rgb(0 0 0 / .2)}
+html.glass .top .btn:not(.primary):not(.hl){background:rgb(255 255 255 / .1); color:#fff; border-color:rgb(255 255 255 / .4); box-shadow:inset 0 1px 0 rgb(255 255 255 / .2)}
+html.glass .top .btn:not(.primary):not(.hl):hover{border-color:#fff}
+html.glass .hero .seg{background:rgb(255 255 255 / .12); box-shadow:inset 0 0 0 1px rgb(255 255 255 / .18)}
+html.glass .hero .seg button[aria-pressed="true"]{background:#fff; color:var(--brand-deep)}
+html.glass .hero .wcard{background:var(--glass-bg-strong)}
+html.glass .hero .search{background:rgb(255 255 255 / .9)}
+html.glass .foot{border-top-color:var(--glass-line)}
+
+/* sem desfoque no navegador: o vidro fica mais opaco para o texto continuar legível */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.search){background:var(--glass-bg-strong)}
+  html.glass .top,html.glass body::before{background-color:var(--brand)}
+}
