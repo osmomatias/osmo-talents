@@ -165,10 +165,20 @@ Como funciona:
 
 Para não cair no spam, configure SPF e DKIM do domínio no seu provedor de e-mail.
 
+## Avisos por e-mail
+
+Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
+
+- Tudo que acontece numa conversa (convite, proposta, contrato, etapas, pagamentos e mensagens) vira um aviso para a outra pessoa.
+- O app espera 2 minutos sem novidades e junta tudo num e-mail só. Quem já viu a conversa no site não recebe.
+- No máximo um e-mail por conversa a cada 15 minutos.
+- Cada pessoa escolhe em **Meu perfil**: Tudo, Só o importante (sem mensagens de conversa) ou Nenhum. Todo e-mail tem um link para mudar isso sem entrar na conta.
+
 ## O que esta versão faz
 
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
 - Recuperar senha por e-mail
+- Avisos por e-mail, com escolha de quanto receber
 - Perfil com "Como eu trabalho melhor" e identificação opcional
 - Foto de perfil ou logo da empresa (opcional), recortada e reduzida no navegador e guardada no próprio banco
 - Publicar vaga com nota de clareza (mínimo de 50% para publicar)
@@ -185,4 +195,3 @@ Para não cair no spam, configure SPF e DKIM do domínio no seu provedor de e-ma
 
 - Envio de arquivos e imagens de portfólio
 - Avaliações depois do contrato
-- Notificações por e-mail

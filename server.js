@@ -87,7 +87,7 @@ function currentUser(req) {
   if (!tok) return null;
   const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
   if (!s || s.expires_at < new Date().toISOString()) return null;
-  return one("SELECT id, name, email, role, energy FROM users WHERE id = ?", s.user_id) || null;
+  return one("SELECT id, name, email, role, energy, notify_level notify FROM users WHERE id = ?", s.user_id) || null;
 }
 function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("base64url");
@@ -290,6 +290,7 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
     str(how.com, 200), str(how.resp, 200), str(how.fb, 200), str(how.foco, 200), str(body.tag, 80), str(body.company, 100), user.id);
   const name = str(body.name, 80);
   if (name.length >= 2) run("UPDATE users SET name = ? WHERE id = ?", name, user.id);
+  if (NOTIFY.includes(body.notify)) run("UPDATE users SET notify_level = ? WHERE id = ?", body.notify, user.id);
   if (typeof body.cpfCnpj === "string" && body.cpfCnpj.trim()) {
     const doc = body.cpfCnpj.replace(/\D/g, "");
     if (!validDoc(doc)) fail(400, "CPF ou CNPJ inválido. Confira os números.");
@@ -693,6 +694,70 @@ route("POST", "/api/threads", ({ user, body }) => {
   return { thread: th };
 });
 
+/* ---------------- avisos por e-mail ---------------- */
+// Uma varredura por minuto: quem tem mensagens não lidas numa conversa recebe um e-mail só, com o resumo.
+// Espera 2 minutos sem mensagens novas (junta tudo que chegou junto), pula quem já leu
+// e manda no máximo um e-mail por conversa a cada 15 minutos.
+// "importante" = só avisos do sistema (propostas, contratos, etapas, pagamentos); "tudo" inclui mensagens das pessoas.
+const NOTIFY = ["tudo", "importante", "nada"];
+function notifyToken(userId) {
+  const u = one("SELECT notify_token FROM users WHERE id = ?", userId);
+  if (u.notify_token) return u.notify_token;
+  const t = crypto.randomBytes(24).toString("hex");
+  run("UPDATE users SET notify_token = ? WHERE id = ?", t, userId);
+  return t;
+}
+function notifySweep() {
+  const pairs = all(`SELECT t.id thread_id, u.id user_id, u.name, u.email, u.notify_level, j.title job_title, n.last_at,
+      CASE WHEN u.id = t.client_id THEN t.client_read_at ELSE t.freela_read_at END read_at
+    FROM threads t JOIN users u ON u.id IN (t.client_id, t.freela_id) LEFT JOIN jobs j ON j.id = t.job_id
+    LEFT JOIN notify_log n ON n.thread_id = t.id AND n.user_id = u.id
+    WHERE t.updated_at > datetime('now', '-30 minutes') AND u.notify_level != 'nada'
+      AND (n.last_at IS NULL OR n.last_at < datetime('now', '-15 minutes'))`);
+  for (const p of pairs) {
+    const msgs = all(`SELECT m.body, m.sender_id, m.created_at, s.name sender FROM messages m LEFT JOIN users s ON s.id = m.sender_id
+      WHERE m.thread_id = ? AND (m.sender_id IS NULL OR m.sender_id != ?) AND m.created_at > ? AND m.created_at > ?
+        AND m.created_at > datetime('now', '-30 minutes') ${p.notify_level === "importante" ? "AND m.sender_id IS NULL" : ""}
+      ORDER BY m.id`, p.thread_id, p.user_id, p.read_at, p.last_at || "1970-01-01");
+    if (!msgs.length || msgs.some(m => m.created_at > new Date(Date.now() - 120e3).toISOString().replace("T", " ").slice(0, 19))) continue;
+    run("INSERT INTO notify_log (thread_id, user_id, last_at) VALUES (?,?,datetime('now')) ON CONFLICT(thread_id, user_id) DO UPDATE SET last_at = excluded.last_at", p.thread_id, p.user_id);
+    sendNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "aviso", e.message));
+  }
+}
+async function sendNotice(p, msgs) {
+  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const link = `${PUBLIC_URL}/#mensagens-${p.thread_id}`, prefs = `${PUBLIC_URL}/#avisos-${notifyToken(p.user_id)}`;
+  const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
+  const about = p.job_title ? `"${p.job_title}"` : "sua conversa";
+  const subject = people.length && msgs.every(m => m.sender) ? `${people[0]} mandou mensagem sobre ${about}` : `Novidade em ${about}`;
+  const shown = msgs.slice(-5), more = msgs.length - shown.length;
+  const line = m => (m.sender ? `${m.sender}: ` : "") + (m.body.length > 400 ? m.body.slice(0, 400) + "…" : m.body);
+  const first = p.name.split(" ")[0];
+  const text = `Olá, ${first}.\n\n${more ? `(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)\n` : ""}${shown.map(line).join("\n\n")}\n\nAbrir a conversa: ${link}\n\n--\nOsmo Talents. Para mudar ou desligar estes avisos: ${prefs}`;
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
+<p>Olá, ${escHtml(first)}.</p>${more ? `<p style="color:#666">(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)</p>` : ""}
+${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1">${m.sender ? `<b>${escHtml(m.sender)}</b><br>` : ""}${escHtml(line({ ...m, sender: "" })).replace(/\n/g, "<br>")}</p>`).join("")}
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Abrir conversa</a></p>
+<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">Mudar ou desligar estes avisos</a></p></div>`;
+  await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
+}
+if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
+
+// preferências pelo link do e-mail (sem precisar entrar na conta)
+const byNotifyToken = t => /^[a-f0-9]{48}$/.test(String(t || "")) ? one("SELECT id, name, notify_level FROM users WHERE notify_token = ?", String(t)) : null;
+route("GET", "/api/notify", ({ query }) => {
+  const u = byNotifyToken(query.get("token"));
+  if (!u) fail(404, "Esse link não funciona mais. Entre na sua conta e ajuste os avisos em Meu perfil.");
+  return { name: u.name, level: u.notify_level };
+}, { auth: false });
+route("POST", "/api/notify", ({ body }) => {
+  const u = byNotifyToken(body.token);
+  if (!u) fail(404, "Esse link não funciona mais. Entre na sua conta e ajuste os avisos em Meu perfil.");
+  if (!NOTIFY.includes(body.level)) fail(400, "Escolha uma opção.");
+  run("UPDATE users SET notify_level = ? WHERE id = ?", body.level, u.id);
+  return { level: body.level };
+}, { auth: false });
+
 /* ---------------- login social (/auth/...) ---------------- */
 function createOAuthUser(r, role) {
   if (one("SELECT 1 FROM users WHERE email = ?", r.email)) fail(409, "Já existe uma conta com esse e-mail. Entre com e-mail e senha.");
@@ -844,4 +909,4 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`Osmo Talents rodando em http://${HOST}:${PORT}`));
 }
-module.exports = { server, hashPassword, clarity, autoRelease };
+module.exports = { server, hashPassword, clarity, autoRelease, notifySweep };

@@ -56,7 +56,7 @@ function connect() {
   });
 }
 
-async function send({ to, subject, text, html }) {
+async function send({ to, subject, text, html, headers = {} }) {
   if (DEV) { console.log(`\n--- e-mail (MAIL_DEV) para ${to}\nAssunto: ${subject}\n\n${text}\n---\n`); return; }
   if (!ENABLED) throw new Error("E-mail não configurado (SMTP_HOST e MAIL_FROM).");
   const domain = addr(FROM).split("@")[1] || "localhost";
@@ -64,6 +64,7 @@ async function send({ to, subject, text, html }) {
   const msg = [
     `From: ${fromHeader(FROM)}`, `To: ${to}`, `Subject: ${header(subject)}`, `Date: ${new Date().toUTCString()}`,
     `Message-ID: <${crypto.randomBytes(16).toString("hex")}@${domain}>`, "MIME-Version: 1.0",
+    ...Object.entries(headers).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     `Content-Type: multipart/alternative; boundary="${boundary}"`, "",
     `--${boundary}`, "Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64", "", wrap(b64(text)),
     `--${boundary}`, "Content-Type: text/html; charset=utf-8", "Content-Transfer-Encoding: base64", "", wrap(b64(html)),

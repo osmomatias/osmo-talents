@@ -152,6 +152,18 @@ CREATE TABLE IF NOT EXISTS avatars (
 );
 `);
 
+// --- migrações (versão 6: avisos por e-mail)
+addColumn("users", "notify_level", "TEXT NOT NULL DEFAULT 'tudo'"); // tudo | importante | nada
+addColumn("users", "notify_token", "TEXT NOT NULL DEFAULT ''");
+db.exec(`
+CREATE TABLE IF NOT EXISTS notify_log (
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_at TEXT NOT NULL,
+  PRIMARY KEY (thread_id, user_id)
+);
+`);
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

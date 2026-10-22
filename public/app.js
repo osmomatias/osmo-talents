@@ -577,6 +577,21 @@ V.painel = async () => {
 <div class="stack">${side}<section class="stack" style="gap:12px"><h2>Contratos</h2>${contracts}</section></div>`;
 };
 
+/* ---------- avisos por e-mail ---------- */
+const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos e mensagens das pessoas"],
+  ["importante", "Só o importante", "Propostas, contratos, etapas e pagamentos. Sem mensagens de conversa"], ["nada", "Nenhum", "Não mandar e-mails de aviso"]];
+const notifyOpts = cur => `<div class="field" role="radiogroup" aria-label="Avisos por e-mail">${NOTIFY_OPTS.map(([v, t, d]) =>
+  `<label class="check"><input type="radio" name="notify" value="${v}" ${cur === v ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>`;
+V.avisos = async () => {
+  const token = location.hash.split("-")[1] || "";
+  const d = await api("GET", "/api/notify?token=" + encodeURIComponent(token));
+  return `<div class="auth stack">
+  <div><span class="label">Avisos por e-mail</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">O que você quer receber?</h1>
+  <p class="muted" style="margin-top:8px">Conta de ${esc(d.name)}. Dá para mudar quando quiser, aqui ou em Meu perfil.</p></div>
+  <form class="panel stack" id="notifyForm" data-token="${esc(token)}">${notifyOpts(d.level)}
+    <button class="btn hl" type="submit">Salvar</button></form></div>`;
+};
+
 /* ---------- perfil ---------- */
 // recorta o centro em quadrado e reduz para 512 px antes de enviar
 async function uploadAvatar(file) {
@@ -625,6 +640,8 @@ V.perfil = async () => {
     </div>
     <div class="panel stack">${ta("p_port", "Portfólio", p.portfolio.join("\n"), 4, "Um projeto por linha.")}</div>` : ""}
     ${isF && PAY.enabled ? payoutHTML() : ""}
+    ${MAIL ? `<div class="panel stack"><div><h2>Avisos por e-mail</h2><p class="muted">Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.</p></div>
+      ${notifyOpts(ME.notify || "tudo")}</div>` : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
     <div class="row"><button class="btn hl" type="submit">Salvar perfil</button><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div>
   </form></div>`;
@@ -827,6 +844,11 @@ document.addEventListener("submit", async e => {
       try { await api("POST", "/api/auth/reset", { token: f.dataset.token, password: $("#a_pass").value }); } catch (err) { return showErr("#resetErr", err.message); }
       history.replaceState(null, "", "/#painel"); await refreshMe(); toast("Senha nova salva"); return route();
     }
+    if (f.id === "notifyForm") {
+      const level = (f.querySelector('input[name="notify"]:checked') || {}).value;
+      try { await api("POST", "/api/notify", { token: f.dataset.token, level }); } catch (err) { return toast(err.message); }
+      return toast(level === "nada" ? "Avisos desligados" : "Preferência salva");
+    }
     if (f.id === "compose") {
       const v = $("#msgIn").value.trim(); if (!v) return;
       try { await api("POST", `/api/threads/${TH.thread.id}/messages`, { body: v }); } catch (err) { return toast(err.message); }
@@ -836,7 +858,7 @@ document.addEventListener("submit", async e => {
       const v = id => ($("#" + id) || {}).value || "";
       const body = { name: v("p_name"), title: v("p_title"), rate: Number(v("p_rate")) || 0, hours: Number(v("p_hours")) || 20, location: v("p_loc"),
         skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
-        portfolio: v("p_port").split("\n").map(s => s.trim()).filter(Boolean), how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
+        portfolio: v("p_port").split("\n").map(s => s.trim()).filter(Boolean), notify: (f.querySelector('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", err.message); }
       await refreshMe(); toast("Perfil salvo"); return;
     }
