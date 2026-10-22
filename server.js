@@ -295,7 +295,7 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 }, { auth: false });
 
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
@@ -1031,6 +1031,10 @@ function readBody(req, max = 200_000) {
   });
 }
 
+// carimbo de versão de cada arquivo (data de modificação): vai no endereço do arquivo e em /api/me,
+// para a página aberta perceber que saiu versão nova
+const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
+const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
@@ -1048,7 +1052,6 @@ function serveStatic(req, res, pathname) {
       // carimba app.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
         html = html.replace(/(src|href)="\/(app\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });

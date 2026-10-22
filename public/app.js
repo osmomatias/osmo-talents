@@ -61,8 +61,25 @@ const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "rece
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
+// versão nova publicada: a página recarrega na próxima troca de tela (nunca no meio de um formulário)
+const MY_V = ["app.js", "styles.css"].map(n => {
+  const el = document.querySelector(`script[src^="/${n}"], link[href^="/${n}"]`);
+  return ((el && (el.getAttribute("src") || el.getAttribute("href"))) || "").match(/[?&]v=([a-z0-9]+)/)?.[1] || "";
+}).join(".");
+let NEW_VERSION = false, lastVersionCheck = Date.now();
+const noteVersion = v => {
+  if (!v || !/^\w+\.\w+$/.test(MY_V) || v === MY_V) return;
+  try { if (sessionStorage.getItem("osmo-reload") === v) return; sessionStorage.setItem("osmo-reload", v); } catch { return; } // recarrega uma vez só por versão
+  NEW_VERSION = true;
+};
+async function checkVersion() {
+  if (Date.now() - lastVersionCheck < 60_000) return;
+  lastVersionCheck = Date.now();
+  try { noteVersion((await api("GET", "/api/me")).v); } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; } catch { ME = null; }
   renderChrome();
 }
 
@@ -120,6 +137,8 @@ function emptyBox(title, text, goTo, label) {
   return `<div class="empty"><b>${esc(title)}</b>${text ? `<p class="muted">${esc(text)}</p>` : ""}${goTo ? `<button class="btn" data-go="${goTo}">${esc(label)}</button>` : ""}</div>`;
 }
 async function route() {
+  if (NEW_VERSION) return location.reload();
+  checkVersion();
   clearInterval(pollTimer);
   const seq = ++renderSeq;
   const h = location.hash.slice(1) || "inicio";
