@@ -486,7 +486,9 @@ V.talento = async id => {
     ${has ? `<div class="stack" style="gap:12px"><h2>Como eu trabalho melhor</h2><div class="howgrid">
       ${[["Comunicação", t.how.com], ["Tempo de resposta", t.how.resp], ["Feedback", t.how.fb], ["Ritmo", t.how.foco]].filter(x => x[1]).map(x => `<div class="how"><span class="label">${x[0]}</span>${esc(x[1])}</div>`).join("")}
     </div></div>` : ""}
-    ${t.portfolio.length ? `<div class="stack" style="gap:12px"><h2>Portfólio</h2><div class="port">${t.portfolio.map((p, i) => `<div class="ptile t${i % 3}">${esc(p)}</div>`).join("")}</div></div>` : ""}
+    ${t.portfolio.length ? `<div class="stack" style="gap:12px"><h2>Portfólio</h2><div class="port">${t.portfolio.map((p, i) => `<figure class="pcard">
+      ${p.image ? `<a href="${esc(p.image)}" target="_blank" rel="noopener" aria-label="Ver imagem de ${esc(p.title)} em tamanho grande"><img src="${esc(p.image)}" alt="${esc(p.title)}" loading="lazy"></a>` : `<div class="ptile t${i % 3}" aria-hidden="true">${esc(p.title)}</div>`}
+      <figcaption><b>${esc(p.title)}</b>${p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener nofollow ugc">Ver projeto ↗</a>` : ""}</figcaption></figure>`).join("")}</div></div>` : ""}
     ${t.reviews.length ? `<div class="stack" style="gap:12px"><h2>Avaliações de clientes</h2>${tagSummary(t.rating)}<div class="stack" style="gap:0">${reviewList(t.reviews)}</div></div>` : ""}
   </article>
   <aside class="stack">
@@ -618,26 +620,61 @@ V.avisos = async () => {
 };
 
 /* ---------- perfil ---------- */
-// recorta o centro em quadrado e reduz para 512 px antes de enviar
-async function uploadAvatar(file) {
-  const err = $("#avatarErr"); err.hidden = true;
-  const showErr = m => { err.textContent = m; err.hidden = false; };
-  if (!file.type.startsWith("image/")) return showErr("Escolha um arquivo de imagem.");
-  if (file.size > 25e6) return showErr("Essa imagem é grande demais. Tente outra.");
+// abre a imagem escolhida e reduz no navegador antes de enviar (square: recorta o centro em quadrado)
+async function shrinkImage(file, max, square) {
+  if (!file.type.startsWith("image/")) throw new Error("Escolha um arquivo de imagem.");
+  if (file.size > 25e6) throw new Error("Essa imagem é grande demais. Tente outra.");
   const url = URL.createObjectURL(file);
   try {
-    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
-    const side = Math.min(img.naturalWidth, img.naturalHeight), out = Math.min(512, side);
-    const c = document.createElement("canvas"); c.width = c.height = out;
-    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, out, out);
-    g.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, out, out);
-    const r = await api("PUT", "/api/me/avatar", { image: c.toDataURL("image/jpeg", 0.86) });
-    ME.profile.avatar = r.avatar; toast("Foto salva"); route();
-  } catch (e) { showErr(e.status !== undefined ? e.message : "Não deu para abrir essa imagem. Tente uma foto JPG ou PNG."); }
-  finally { URL.revokeObjectURL(url); }
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error("Não deu para abrir essa imagem. Tente uma foto JPG ou PNG.")); i.src = url; });
+    const W = img.naturalWidth, H = img.naturalHeight, side = Math.min(W, H);
+    const sw = square ? side : W, sh = square ? side : H, k = Math.min(1, max / Math.max(sw, sh));
+    const c = document.createElement("canvas"); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(img, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.86);
+  } finally { URL.revokeObjectURL(url); }
 }
+async function uploadAvatar(file) {
+  const err = $("#avatarErr"); err.hidden = true;
+  try {
+    const r = await api("PUT", "/api/me/avatar", { image: await shrinkImage(file, 512, true) });
+    ME.profile.avatar = r.avatar; toast("Foto salva"); route();
+  } catch (e) { err.textContent = e.message; err.hidden = false; }
+}
+
+/* portfólio: cada projeto salva na hora, fora do formulário do perfil */
+let PE = null; // projeto sendo editado: { id, title, link, image (endereço ou data:), newImage, removeImage }
+function portBoxHTML() {
+  const items = ME.profile.portfolio, full = items.length >= 12;
+  const list = items.map((it, i) => `<div class="port-row">
+      ${it.image ? `<img src="${esc(it.image)}" alt="" class="port-thumb">` : `<div class="port-thumb ptile t${i % 3}" aria-hidden="true"></div>`}
+      <div style="min-width:0"><b>${esc(it.title)}</b>${it.link ? `<p class="hint port-link">${esc(it.link)}</p>` : ""}</div>
+      <div class="row" style="gap:6px; justify-content:flex-end">
+        <button type="button" class="icon-btn sm" data-act="port-move" data-id="${it.id}" data-dir="-1" aria-label="Subir ${esc(it.title)}" ${i === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" class="icon-btn sm" data-act="port-move" data-id="${it.id}" data-dir="1" aria-label="Descer ${esc(it.title)}" ${i === items.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" class="btn sm" data-act="port-edit" data-id="${it.id}">Editar</button>
+        <button type="button" class="btn sm ghost" data-act="port-del" data-id="${it.id}">Remover</button></div></div>`).join("");
+  const editor = PE ? `<div class="panel stack port-editor" style="gap:12px">
+      <b>${PE.id ? "Editar projeto" : "Novo projeto"}</b>
+      <div class="field"><label for="pe_title">Nome do projeto</label><input class="input" id="pe_title" maxlength="80" value="${esc(PE.title)}" placeholder="Ex.: Identidade visual da Padaria Trigal"></div>
+      <div class="field"><label for="pe_link">Link (opcional)</label><input class="input" id="pe_link" type="url" maxlength="300" value="${esc(PE.link)}" placeholder="https://"><span class="hint">Behance, Dribbble, site, PDF no Drive...</span></div>
+      <div class="field"><span class="flabel">Imagem (opcional)</span>
+        <div class="row">${PE.image && !PE.removeImage ? `<img src="${esc(PE.image)}" alt="Imagem escolhida" class="port-thumb lg">` : ""}
+          <label class="btn sm" for="peImg">${PE.image && !PE.removeImage ? "Trocar imagem" : "Escolher imagem"}</label><input type="file" id="peImg" accept="image/*" class="sr-only">
+          ${PE.image && !PE.removeImage ? `<button type="button" class="btn sm ghost" data-act="port-img-del">Tirar imagem</button>` : ""}</div>
+        <span class="hint">JPG, PNG ou foto do celular. A gente reduz o tamanho antes de enviar.</span></div>
+      <div id="peErr" class="err" role="alert" hidden></div>
+      <div class="row"><button type="button" class="btn hl" data-act="port-save">Salvar projeto</button><button type="button" class="btn ghost" data-act="port-cancel">Cancelar</button></div></div>`
+    : full ? `<p class="hint">O portfólio tem espaço para 12 projetos. Remova um para adicionar outro.</p>` : `<div><button type="button" class="btn" data-act="port-new">+ Adicionar projeto</button></div>`;
+  return `<div><h2>Portfólio</h2><p class="muted">Até 12 projetos, na ordem que você escolher. Cada projeto salva na hora.</p></div>
+    ${items.length ? `<div class="stack" style="gap:0">${list}</div>` : `<p class="hint">Nenhum projeto ainda.</p>`}${editor}`;
+}
+function renderPort(focusId) { const b = $("#portBox"); if (!b) return; b.innerHTML = portBoxHTML(); if (focusId) { const el = $("#" + focusId); if (el) el.focus(); } }
+function syncPE() { if (!PE) return; const t = $("#pe_title"), l = $("#pe_link"); if (t) PE.title = t.value; if (l) PE.link = l.value; }
 V.perfil = async () => {
   if (needLogin()) return;
+  PE = null;
   const p = ME.profile, isF = ME.role === "freela";
   const f = (id, label, val, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${esc(val)}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   const ta = (id, label, val, rows = 4, hint = "") => `<div class="field"><label for="${id}">${label}</label><textarea class="input" id="${id}" rows="${rows}">${esc(val)}</textarea>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
@@ -663,13 +700,14 @@ V.perfil = async () => {
       ${f("w_foco", "Ritmo", p.how.foco, 'placeholder="Ex.: Entregas a cada 2 ou 3 dias"')}
       ${f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")}
     </div>
-    <div class="panel stack">${ta("p_port", "Portfólio", p.portfolio.join("\n"), 4, "Um projeto por linha.")}</div>` : ""}
+` : ""}
     ${isF && PAY.enabled ? payoutHTML() : ""}
     ${MAIL ? `<div class="panel stack"><div><h2>Avisos por e-mail</h2><p class="muted">Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.</p></div>
       ${notifyOpts(ME.notify || "tudo")}</div>` : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
     <div class="row"><button class="btn hl" type="submit">Salvar perfil</button><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div>
-  </form></div>`;
+  </form>
+  ${isF ? `<div class="panel stack" id="portBox" style="margin-top:18px">${portBoxHTML()}</div>` : ""}</div>`;
 };
 
 function payoutHTML() {
@@ -776,6 +814,25 @@ document.addEventListener("click", async e => {
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
+    case "port-new": PE = { id: 0, title: "", link: "", image: "" }; return renderPort("pe_title");
+    case "port-edit": { const it = ME.profile.portfolio.find(x => x.id === id); PE = { ...it }; return renderPort("pe_title"); }
+    case "port-cancel": PE = null; return renderPort();
+    case "port-img-del": syncPE(); PE.removeImage = true; PE.newImage = ""; return renderPort();
+    case "port-save": return busy(async () => {
+      syncPE();
+      let link = PE.link.trim(); if (link && !/^https?:\/\//i.test(link)) link = "https://" + link; // aceita "behance.net/fulana"
+      const body = { title: PE.title, link };
+      if (PE.newImage) body.image = PE.newImage; else if (PE.removeImage) body.removeImage = true;
+      try { const r = await api(PE.id ? "PUT" : "POST", "/api/me/portfolio" + (PE.id ? "/" + PE.id : ""), body); ME.profile.portfolio = r.portfolio; }
+      catch (e) { const b = $("#peErr"); b.textContent = e.message; b.hidden = false; return; }
+      toast(PE.id ? "Projeto atualizado" : "Projeto adicionado"); PE = null; renderPort();
+    })();
+    case "port-del": return busy(async () => {
+      const it = ME.profile.portfolio.find(x => x.id === id);
+      if (!confirm(`Remover "${it.title}" do portfólio?`)) return;
+      ME.profile.portfolio = (await api("DELETE", "/api/me/portfolio/" + id)).portfolio; if (PE && PE.id === id) PE = null; toast("Projeto removido"); renderPort();
+    })();
+    case "port-move": return busy(async () => { ME.profile.portfolio = (await api("POST", `/api/me/portfolio/${id}/move`, { dir: Number(act.dataset.dir) })).portfolio; renderPort(); })();
     case "avatar-del": return busy(async () => { await api("DELETE", "/api/me/avatar"); ME.profile.avatar = ""; toast("Foto removida"); route(); })();
     case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
@@ -840,6 +897,8 @@ document.addEventListener("change", e => {
   if (id === "wsplit") { W.split = t.checked; if (W.split && W.ms.length === 1 && !W.ms[0].value) W.ms[0] = { title: "Entrega completa", value: W.value }; $("#msBox").hidden = !W.split; $("#msBox").innerHTML = msRows(); saveDraft(); }
   if (t.dataset.pref) { PREFS[t.dataset.pref] = t.checked; applyPrefs(); }
   if (id === "avatarIn" && t.files[0]) uploadAvatar(t.files[0]);
+  if (id === "peImg" && t.files[0]) { syncPE(); shrinkImage(t.files[0], 1600, false).then(d => { PE.newImage = PE.image = d; PE.removeImage = false; renderPort(); })
+    .catch(e2 => { const b = $("#peErr"); b.textContent = e2.message; b.hidden = false; }); }
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
 });
 document.addEventListener("submit", async e => {
@@ -891,7 +950,7 @@ document.addEventListener("submit", async e => {
       const v = id => ($("#" + id) || {}).value || "";
       const body = { name: v("p_name"), title: v("p_title"), rate: Number(v("p_rate")) || 0, hours: Number(v("p_hours")) || 20, location: v("p_loc"),
         skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
-        portfolio: v("p_port").split("\n").map(s => s.trim()).filter(Boolean), notify: (f.querySelector('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
+        notify: (f.querySelector('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", err.message); }
       await refreshMe(); toast("Perfil salvo"); return;
     }

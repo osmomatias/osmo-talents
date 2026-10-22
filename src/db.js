@@ -179,6 +179,26 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_id);
 `);
 
+// --- migrações (versão 8: portfólio com imagens; cada projeto vira um item com título, link e imagem opcionais)
+db.exec(`
+CREATE TABLE IF NOT EXISTS portfolio_items (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pos INTEGER NOT NULL, title TEXT NOT NULL, link TEXT NOT NULL DEFAULT '',
+  mime TEXT NOT NULL DEFAULT '', image BLOB, v INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_port_user ON portfolio_items(user_id, pos);
+`);
+// o portfólio antigo (uma linha de texto por projeto) vira itens sem imagem
+for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfolio NOT IN ('', '[]')").all()) {
+  let titles = []; try { titles = JSON.parse(p.portfolio); } catch {}
+  const start = db.prepare("SELECT COUNT(*) n FROM portfolio_items WHERE user_id = ?").get(p.user_id).n;
+  titles.filter(t => typeof t === "string" && t.trim()).slice(0, Math.max(0, 12 - start))
+    .forEach((t, i) => db.prepare("INSERT INTO portfolio_items (user_id, pos, title) VALUES (?,?,?)").run(p.user_id, start + i, t.trim().slice(0, 80)));
+  db.prepare("UPDATE profiles SET portfolio = '[]' WHERE user_id = ?").run(p.user_id);
+}
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

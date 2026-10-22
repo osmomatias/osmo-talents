@@ -302,7 +302,7 @@ img.av{object-fit:cover; background:var(--sunken)}
   .bub{max-width:88%}
   .prof-head{gap:16px}
   .av.lg{width:72px; height:72px; font-size:1.6rem}
-  .port{grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px}
+  .port{grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px}
   .ptile{font-size:.8rem; padding:8px}
   .listhead .field{min-width:0!important; width:100%}
   .cat{padding:14px}
@@ -494,3 +494,19 @@ body.menu-open{overflow:hidden}
 .chip-check{align-items:center; padding:6px 12px; border:1.5px solid var(--line); border-radius:999px; font-size:.88rem}
 .chip-check input{margin:0}
 .chip-check:has(input:checked){border-color:var(--accent); background:var(--accent-soft)}
+
+/* ---------- portfólio ---------- */
+.port-row{display:grid; grid-template-columns:64px minmax(0,1fr) auto; gap:14px; align-items:center; padding:12px 0; border-top:1px solid var(--line)}
+.port-row:first-child{border-top:0}
+.port-thumb{width:64px; height:48px; border-radius:8px; object-fit:cover; padding:0; display:block}
+.port-thumb.lg{width:120px; height:90px}
+.port-link{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.icon-btn.sm{width:36px; height:36px; font-size:1rem; border-radius:10px}
+.icon-btn:disabled{opacity:.35; cursor:default}
+.port-editor{background:var(--sunken)}
+.pcard{margin:0; display:flex; flex-direction:column; gap:8px; min-width:0}
+.pcard img{width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; display:block; background:var(--sunken)}
+.pcard .ptile{width:100%}
+.pcard figcaption{display:flex; flex-direction:column; gap:2px; font-size:.92rem}
+.pcard figcaption a{font-size:.85rem; font-weight:600}
+@media (max-width:600px){ .port-row{grid-template-columns:56px minmax(0,1fr)} .port-row>.row{grid-column:1 / -1; justify-content:flex-start} }

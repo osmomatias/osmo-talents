@@ -59,8 +59,9 @@ const JOBS = [
 tx(() => {
   const fIds = FREELAS.map(f => {
     const id = Number(run("INSERT INTO users (name,email,pass_hash,role) VALUES (?,?,?,'freela')", f.name, f.email, hash).lastInsertRowid);
-    run(`INSERT INTO profiles (user_id,title,bio,location,rate,hours,skills,portfolio,ws_com,ws_resp,ws_fb,ws_foco,tag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      id, f.title, f.bio, f.location, f.rate, f.hours, JSON.stringify(f.skills), JSON.stringify(f.portfolio), ...f.how, f.tag);
+    run(`INSERT INTO profiles (user_id,title,bio,location,rate,hours,skills,ws_com,ws_resp,ws_fb,ws_foco,tag) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, f.title, f.bio, f.location, f.rate, f.hours, JSON.stringify(f.skills), ...f.how, f.tag);
+    f.portfolio.forEach((t, pos) => run("INSERT INTO portfolio_items (user_id, pos, title) VALUES (?,?,?)", id, pos, t));
     return id;
   });
   const cIds = CLIENTES.map(c => {

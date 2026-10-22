@@ -179,6 +179,7 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
 - Recuperar senha por e-mail
 - Avisos por e-mail, com escolha de quanto receber
+- Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
 - Avaliações depois do contrato (nota de 1 a 5, destaques e comentário), públicas só quando os dois lados avaliam ou após 14 dias
 - Perfil com "Como eu trabalho melhor" e identificação opcional
 - Foto de perfil ou logo da empresa (opcional), recortada e reduzida no navegador e guardada no próprio banco
@@ -194,4 +195,4 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 
 ## Ainda não faz (próximas versões)
 
-- Envio de arquivos e imagens de portfólio
+- Envio de arquivos (PDF etc.) dentro do site. Por enquanto, cada projeto do portfólio aceita um link para o arquivo.

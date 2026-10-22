@@ -119,13 +119,15 @@ function reviewsOf(userId) {
     JOIN users u ON u.id = r.author_id JOIN contracts c ON c.id = r.contract_id JOIN jobs j ON j.id = c.job_id
     WHERE r.target_id = ? AND ${REVIEW_VISIBLE} ORDER BY r.created_at DESC LIMIT 30`, userId).map(r => ({ ...r, tags: parse(r.tags) }));
 }
+const portfolioOf = userId => all("SELECT id, title, link, v FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", userId)
+  .map(p => ({ id: p.id, title: p.title, link: p.link, image: p.v ? `/portfolio/${p.id}?v=${p.v}` : "" }));
 function profileOf(userId) {
   const u = one("SELECT u.id, u.name, u.role, a.v avatar_v, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?", userId);
   if (!u) return null;
   const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
   return {
     id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
-    rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: parse(u.portfolio || "[]"),
+    rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
     tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id),
   };
@@ -304,9 +306,9 @@ route("GET", "/api/me", ({ user }) => {
 
 route("PUT", "/api/me/profile", ({ user, body }) => {
   const how = body.how || {};
-  run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, portfolio=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
+  run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
     str(body.title, 100), str(body.bio, 1200), str(body.location, 80), int(body.rate, 0, 100000), int(body.hours, 1, 60),
-    JSON.stringify(list(body.skills, 12, 40)), JSON.stringify(list(body.portfolio, 12, 80)),
+    JSON.stringify(list(body.skills, 12, 40)),
     str(how.com, 200), str(how.resp, 200), str(how.fb, 200), str(how.foco, 200), str(body.tag, 80), str(body.company, 100), user.id);
   const name = str(body.name, 80);
   if (name.length >= 2) run("UPDATE users SET name = ? WHERE id = ?", name, user.id);
@@ -321,21 +323,68 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
 
 // --- foto de perfil: o navegador já envia recortada e reduzida (JPEG ou PNG, quadrada)
 const IMG_SIG = { "image/jpeg": [0xff, 0xd8, 0xff], "image/png": [0x89, 0x50, 0x4e, 0x47] };
-route("PUT", "/api/me/avatar", ({ user, body, ip }) => {
-  limit("avatar:" + ip, 20, 600_000);
-  const m = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(typeof body.image === "string" ? body.image : "");
+function decodeImage(dataUrl, maxBytes) {
+  const m = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(typeof dataUrl === "string" ? dataUrl : "");
   if (!m) fail(400, "Envie uma imagem JPG ou PNG.");
   const buf = Buffer.from(m[2], "base64");
   if (!IMG_SIG[m[1]].every((b, i) => buf[i] === b)) fail(400, "Esse arquivo não parece uma imagem válida.");
-  if (buf.length > 500_000) fail(413, "Imagem grande demais. Tente outra foto.");
+  if (buf.length > maxBytes) fail(413, "Imagem grande demais. Tente outra.");
+  return { mime: m[1], buf };
+}
+route("PUT", "/api/me/avatar", ({ user, body, ip }) => {
+  limit("avatar:" + ip, 20, 600_000);
+  const img = decodeImage(body.image, 500_000);
   const v = Date.now();
-  run("INSERT INTO avatars (user_id, mime, data, v) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, v = excluded.v", user.id, m[1], buf, v);
+  run("INSERT INTO avatars (user_id, mime, data, v) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, v = excluded.v", user.id, img.mime, img.buf, v);
   return { avatar: avatarUrl(user.id, v) };
 });
 route("DELETE", "/api/me/avatar", ({ user }) => {
   run("DELETE FROM avatars WHERE user_id = ?", user.id);
   return { avatar: "" };
 });
+
+// --- portfólio: até 12 projetos, cada um com título, link e imagem opcionais (reduzida no navegador)
+const PORT_MAX = 12;
+function portfolioFields(body) {
+  const title = str(body.title, 80), link = str(body.link, 300);
+  if (title.length < 2) fail(400, "Dê um nome ao projeto.");
+  if (link && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(link)) fail(400, "O link precisa começar com https:// (ou deixe em branco).");
+  return { title, link };
+}
+const ownItem = (user, id) => one("SELECT * FROM portfolio_items WHERE id = ? AND user_id = ?", id, user.id) || fail(404, "Projeto não encontrado.");
+route("POST", "/api/me/portfolio", ({ user, body, ip }) => {
+  limit("port:" + ip, 60, 600_000);
+  const { title, link } = portfolioFields(body);
+  const n = one("SELECT COUNT(*) n, COALESCE(MAX(pos), -1) last FROM portfolio_items WHERE user_id = ?", user.id);
+  if (n.n >= PORT_MAX) fail(409, `O portfólio tem espaço para ${PORT_MAX} projetos. Remova um para adicionar outro.`);
+  const img = body.image ? decodeImage(body.image, 1_500_000) : null;
+  run("INSERT INTO portfolio_items (user_id, pos, title, link, mime, image, v) VALUES (?,?,?,?,?,?,?)",
+    user.id, n.last + 1, title, link, img ? img.mime : "", img ? img.buf : null, img ? Date.now() : 0);
+  return { portfolio: portfolioOf(user.id) };
+}, { role: "freela" });
+route("PUT", "/api/me/portfolio/:id", ({ user, params, body, ip }) => {
+  limit("port:" + ip, 60, 600_000);
+  const it = ownItem(user, params.id);
+  const { title, link } = portfolioFields(body);
+  run("UPDATE portfolio_items SET title = ?, link = ? WHERE id = ?", title, link, it.id);
+  if (body.image) { const img = decodeImage(body.image, 1_500_000); run("UPDATE portfolio_items SET mime = ?, image = ?, v = ? WHERE id = ?", img.mime, img.buf, Date.now(), it.id); }
+  else if (body.removeImage) run("UPDATE portfolio_items SET mime = '', image = NULL, v = 0 WHERE id = ?", it.id);
+  return { portfolio: portfolioOf(user.id) };
+}, { role: "freela" });
+route("DELETE", "/api/me/portfolio/:id", ({ user, params }) => {
+  run("DELETE FROM portfolio_items WHERE id = ?", ownItem(user, params.id).id);
+  return { portfolio: portfolioOf(user.id) };
+}, { role: "freela" });
+route("POST", "/api/me/portfolio/:id/move", ({ user, params, body }) => {
+  ownItem(user, params.id);
+  const ids = all("SELECT id FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", user.id).map(r => r.id);
+  const i = ids.indexOf(params.id), j = i + (body.dir < 0 ? -1 : 1);
+  if (j >= 0 && j < ids.length) {
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    tx(() => ids.forEach((id, pos) => run("UPDATE portfolio_items SET pos = ? WHERE id = ?", pos, id)));
+  }
+  return { portfolio: portfolioOf(user.id) };
+}, { role: "freela" });
 
 route("PUT", "/api/me/energy", ({ user, body }) => {
   if (!ENERGY.includes(body.energy)) fail(400, "Escolha baixa, média ou alta.");
@@ -921,9 +970,10 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
   }
-  const av = url.pathname.match(/^\/avatar\/(\d+)$/);
+  const av = url.pathname.match(/^\/(avatar|portfolio)\/(\d+)$/);
   if (av && (req.method === "GET" || req.method === "HEAD")) {
-    const a = one("SELECT mime, data, v FROM avatars WHERE user_id = ?", Number(av[1]));
+    const a = av[1] === "avatar" ? one("SELECT mime, data, v FROM avatars WHERE user_id = ?", Number(av[2]))
+      : one("SELECT mime, image data, v FROM portfolio_items WHERE id = ? AND v > 0", Number(av[2]));
     if (!a) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
     // o endereço muda (?v=) a cada foto nova, então pode ficar em cache por muito tempo
     return send(res, 200, Buffer.from(a.data), { "Content-Type": a.mime, "Cache-Control": url.searchParams.get("v") === String(a.v) ? "public, max-age=31536000, immutable" : "no-cache" });
@@ -941,7 +991,7 @@ const server = http.createServer(async (req, res) => {
     const user = currentUser(req);
     if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
-    const body = req.method === "GET" ? {} : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : 200_000);
+    const body = req.method === "GET" ? {} : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);
     const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
     send(res, 200, out ?? { ok: true });
   } catch (e) {
