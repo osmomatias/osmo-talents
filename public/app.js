@@ -197,7 +197,6 @@ V.entrar = async () => {
   return `<div class="auth stack">
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
-  ${socialHTML(reg)}
   <form class="panel stack" id="authForm" novalidate>
     ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" required></div>
     <div class="field"><span class="flabel">Eu quero</span>
@@ -207,7 +206,8 @@ V.entrar = async () => {
     <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : ""}</div>
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
-  </form></div>`;
+  </form>
+  ${socialHTML(reg)}</div>`;
 };
 
 const SOCIAL = {
@@ -220,8 +220,8 @@ function socialHTML(reg) {
   if (!OAUTH.length) return "";
   const role = reg ? (document.querySelector('input[name="role"]:checked') || {}).value || "freela" : "";
   return `<div class="stack" style="gap:10px" id="socialBox">
-    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
-    <div class="divider"><span>ou com e-mail</span></div></div>`;
+    <div class="divider"><span>${reg ? "ou crie a conta com" : "ou entre com"}</span></div>
+    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}</div>`;
 }
 const OAUTH_ERR = {
   cancelado: "Você cancelou a entrada. Tente de novo quando quiser.",
