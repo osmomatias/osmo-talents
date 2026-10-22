@@ -144,6 +144,14 @@ CREATE TABLE IF NOT EXISTS password_resets (
 CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
 `);
 
+// --- migrações (versão 5: foto de perfil, guardada no próprio banco para o backup continuar sendo um arquivo só)
+db.exec(`
+CREATE TABLE IF NOT EXISTS avatars (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  mime TEXT NOT NULL, data BLOB NOT NULL, v INTEGER NOT NULL
+);
+`);
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

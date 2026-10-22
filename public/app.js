@@ -30,7 +30,7 @@ function when(iso) {
 }
 function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
 function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
-const av = (name, id, size = "") => `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
+const av = (name, id, size = "", src = "") => src ? `<img class="av ${size}" src="${esc(src)}" alt="" loading="lazy">` : `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
 function clarBar(v) { const cls = v >= 80 ? "" : v >= 65 ? "mid" : "low"; return `<span class="clarity" title="Clareza do briefing"><span class="bar ${cls}"><i style="width:${v}%"></i></span>${v}% claro</span>`; }
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
@@ -155,7 +155,7 @@ V.inicio = async () => {
     </form>
   </div>
   ${featured ? `<aside class="wcard" aria-label="Perfil em destaque">
-    <div class="row">${av(featured.name, featured.id)}<div style="min-width:0"><h3>${esc(featured.name)}</h3><p class="muted">${esc(featured.title)}${featured.location ? " · " + esc(featured.location) : ""}</p></div></div>
+    <div class="row">${av(featured.name, featured.id, "", featured.avatar)}<div style="min-width:0"><h3>${esc(featured.name)}</h3><p class="muted">${esc(featured.title)}${featured.location ? " · " + esc(featured.location) : ""}</p></div></div>
     <span class="label">Como eu trabalho melhor</span>
     <div class="grid2">
       <div class="pref"><b>${esc(featured.how.com)}</b><span>Comunicação</span></div>
@@ -335,7 +335,7 @@ V.vaga = async id => {
   else if (owner && j.status === "aberta") action = `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>`;
   const props = owner ? `<section class="panel stack"><h2>Propostas (${d.proposals.length})</h2>${d.proposals.length ? d.proposals.map(p => `
     <div class="prop">
-      <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm")}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button><p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
+      <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button><p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
       <p class="mono"><b>${brl(p.value)}</b> · ${p.days} dias úteis · você recebe a entrega em ${p.milestones.length} etapa(s)</p>
       <p style="white-space:pre-wrap">${esc(p.text)}</p>
       ${p.freela.how.com ? `<p class="hint">Como trabalha melhor: ${esc(p.freela.how.com)} ${esc(p.freela.how.resp)}</p>` : ""}
@@ -434,7 +434,7 @@ function msRows() {
 /* ---------- talentos ---------- */
 function talentCard(t) {
   return `<button class="talent" data-go="talento-${t.id}">
-    <div class="row">${av(t.name, t.id)}<div style="min-width:0"><h3>${esc(t.name)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
+    <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
     ${t.tag ? `<div class="row" style="gap:6px"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}
     <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></div>
     ${t.skills.length ? `<div class="row" style="gap:6px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
@@ -458,7 +458,7 @@ V.talento = async id => {
   return `<button class="back" data-go="talentos">← Voltar para talentos</button>
 <div class="detail">
   <article class="stack">
-    <div class="prof-head">${av(t.name, t.id, "lg")}
+    <div class="prof-head">${av(t.name, t.id, "lg", t.avatar)}
       <div class="stack" style="gap:6px"><h1 style="font-size:clamp(1.8rem,4vw,2.6rem)">${esc(t.name)}</h1><p class="muted">${esc(t.title || "Perfil em construção")}${t.location ? " · " + esc(t.location) : ""}</p>${t.tag ? `<div class="row"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}</div></div>
     ${t.bio ? `<p style="max-width:65ch; white-space:pre-wrap">${esc(t.bio)}</p>` : ""}
     ${has ? `<div class="stack" style="gap:12px"><h2>Como eu trabalho melhor</h2><div class="howgrid">
@@ -493,7 +493,7 @@ V.mensagens = async id => {
   if (openId) { const t = threads.find(x => x.id === openId); if (t) t.unread = 0; refreshMe(); }
   return `<h2 style="margin-bottom:18px">Mensagens</h2>
 <div class="msgs ${openId ? "show-convo" : ""}">
-  <div class="threads" role="list">${threads.map(t => `<button class="thread" role="listitem" data-go="mensagens-${t.id}" aria-current="${t.id === openId}">${av(t.with, t.withId, "sm")}<div class="tx"><b>${esc(t.with)}${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</b><p>${esc(t.job)}</p><p>${esc(t.last)}</p></div></button>`).join("")}</div>
+  <div class="threads" role="list">${threads.map(t => `<button class="thread" role="listitem" data-go="mensagens-${t.id}" aria-current="${t.id === openId}">${av(t.with, t.withId, "sm", t.withAvatar)}<div class="tx"><b>${esc(t.with)}${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</b><p>${esc(t.job)}</p><p>${esc(t.last)}</p></div></button>`).join("")}</div>
   <div class="convo">${TH ? convoHTML() : ""}</div>
 </div>`;
 };
@@ -578,12 +578,36 @@ V.painel = async () => {
 };
 
 /* ---------- perfil ---------- */
+// recorta o centro em quadrado e reduz para 512 px antes de enviar
+async function uploadAvatar(file) {
+  const err = $("#avatarErr"); err.hidden = true;
+  const showErr = m => { err.textContent = m; err.hidden = false; };
+  if (!file.type.startsWith("image/")) return showErr("Escolha um arquivo de imagem.");
+  if (file.size > 25e6) return showErr("Essa imagem é grande demais. Tente outra.");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    const side = Math.min(img.naturalWidth, img.naturalHeight), out = Math.min(512, side);
+    const c = document.createElement("canvas"); c.width = c.height = out;
+    const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, out, out);
+    g.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, out, out);
+    const r = await api("PUT", "/api/me/avatar", { image: c.toDataURL("image/jpeg", 0.86) });
+    ME.profile.avatar = r.avatar; toast("Foto salva"); route();
+  } catch (e) { showErr(e.status !== undefined ? e.message : "Não deu para abrir essa imagem. Tente uma foto JPG ou PNG."); }
+  finally { URL.revokeObjectURL(url); }
+}
 V.perfil = async () => {
   if (needLogin()) return;
   const p = ME.profile, isF = ME.role === "freela";
   const f = (id, label, val, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${esc(val)}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   const ta = (id, label, val, rows = 4, hint = "") => `<div class="field"><label for="${id}">${label}</label><textarea class="input" id="${id}" rows="${rows}">${esc(val)}</textarea>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   return `<div class="wiz"><div class="row" style="justify-content:space-between; margin-bottom:18px"><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Meu perfil</h1>${isF ? `<button class="btn sm" data-go="talento-${ME.id}">Ver como os outros veem</button>` : ""}</div>
+  <div class="panel avatar-edit" style="margin-bottom:18px"><div id="avatarBox">${av(ME.name, ME.id, "lg", p.avatar)}</div>
+    <div class="stack" style="gap:8px"><b>${isF ? "Sua foto" : "Foto ou logo da empresa"} <span class="muted" style="font-weight:400">(opcional)</span></b>
+      <p class="hint">JPG, PNG ou foto do celular. A gente recorta em quadrado e reduz o tamanho.</p>
+      <div class="row"><label class="btn sm" for="avatarIn">${p.avatar ? "Trocar foto" : "Escolher foto"}</label><input type="file" id="avatarIn" accept="image/*" class="sr-only">
+      ${p.avatar ? `<button type="button" class="btn sm ghost" data-act="avatar-del">Remover</button>` : ""}</div>
+      <div id="avatarErr" class="err" role="alert" hidden></div></div></div>
   <form class="stack" id="profForm">
     <div class="panel stack">${f("p_name", "Nome", ME.name, 'autocomplete="name"')}
       ${isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
@@ -710,6 +734,7 @@ document.addEventListener("click", async e => {
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
+    case "avatar-del": return busy(async () => { await api("DELETE", "/api/me/avatar"); ME.profile.avatar = ""; toast("Foto removida"); route(); })();
     case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
@@ -772,6 +797,7 @@ document.addEventListener("change", e => {
   if (["f_clear", "f_async", "f_flex"].includes(id)) { S[id.slice(2)] = t.checked; refreshJobs(); }
   if (id === "wsplit") { W.split = t.checked; if (W.split && W.ms.length === 1 && !W.ms[0].value) W.ms[0] = { title: "Entrega completa", value: W.value }; $("#msBox").hidden = !W.split; $("#msBox").innerHTML = msRows(); saveDraft(); }
   if (t.dataset.pref) { PREFS[t.dataset.pref] = t.checked; applyPrefs(); }
+  if (id === "avatarIn" && t.files[0]) uploadAvatar(t.files[0]);
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
 });
 document.addEventListener("submit", async e => {

@@ -170,6 +170,7 @@ Para não cair no spam, configure SPF e DKIM do domínio no seu provedor de e-ma
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
 - Recuperar senha por e-mail
 - Perfil com "Como eu trabalho melhor" e identificação opcional
+- Foto de perfil ou logo da empresa (opcional), recortada e reduzida no navegador e guardada no próprio banco
 - Publicar vaga com nota de clareza (mínimo de 50% para publicar)
 - Busca de vagas com filtros: briefing claro, assíncrono, prazo flexível
 - Proposta guiada em 4 passos, com rascunho salvo e divisão em etapas

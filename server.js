@@ -98,15 +98,16 @@ function createSession(res, userId) {
 }
 
 /* ---------------- formatação ---------------- */
+const avatarUrl = (id, v) => v ? `/avatar/${id}?v=${v}` : "";
 function profileOf(userId) {
-  const u = one("SELECT u.id, u.name, u.role, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?", userId);
+  const u = one("SELECT u.id, u.name, u.role, a.v avatar_v, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?", userId);
   if (!u) return null;
   const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
   return {
     id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: parse(u.portfolio || "[]"),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
-    tag: u.tag || "", company: u.company || "", done: stats.n,
+    tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v),
   };
 }
 function jobOut(j) {
@@ -295,6 +296,24 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
     run("UPDATE profiles SET cpf_cnpj = ?, asaas_customer_id = '' WHERE user_id = ?", doc, user.id);
   }
   return { profile: profileOf(user.id) };
+});
+
+// --- foto de perfil: o navegador já envia recortada e reduzida (JPEG ou PNG, quadrada)
+const IMG_SIG = { "image/jpeg": [0xff, 0xd8, 0xff], "image/png": [0x89, 0x50, 0x4e, 0x47] };
+route("PUT", "/api/me/avatar", ({ user, body, ip }) => {
+  limit("avatar:" + ip, 20, 600_000);
+  const m = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(typeof body.image === "string" ? body.image : "");
+  if (!m) fail(400, "Envie uma imagem JPG ou PNG.");
+  const buf = Buffer.from(m[2], "base64");
+  if (!IMG_SIG[m[1]].every((b, i) => buf[i] === b)) fail(400, "Esse arquivo não parece uma imagem válida.");
+  if (buf.length > 500_000) fail(413, "Imagem grande demais. Tente outra foto.");
+  const v = Date.now();
+  run("INSERT INTO avatars (user_id, mime, data, v) VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, v = excluded.v", user.id, m[1], buf, v);
+  return { avatar: avatarUrl(user.id, v) };
+});
+route("DELETE", "/api/me/avatar", ({ user }) => {
+  run("DELETE FROM avatars WHERE user_id = ?", user.id);
+  return { avatar: "" };
 });
 
 route("PUT", "/api/me/energy", ({ user, body }) => {
@@ -628,13 +647,14 @@ route("POST", "/api/webhooks/asaas", async ({ req, body }) => {
 // --- mensagens
 route("GET", "/api/threads", ({ user }) => {
   const rows = all(`SELECT t.*, j.title job_title, uc.name client_name, uf.name freela_name,
+      (SELECT v FROM avatars WHERE user_id = CASE WHEN t.client_id = ? THEN t.freela_id ELSE t.client_id END) with_v,
       (SELECT body FROM messages WHERE thread_id = t.id ORDER BY id DESC LIMIT 1) last,
       (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND (m.sender_id IS NULL OR m.sender_id != ?)
          AND m.created_at > CASE WHEN t.client_id = ? THEN t.client_read_at ELSE t.freela_read_at END) unread
     FROM threads t LEFT JOIN jobs j ON j.id = t.job_id JOIN users uc ON uc.id = t.client_id JOIN users uf ON uf.id = t.freela_id
-    WHERE t.client_id = ? OR t.freela_id = ? ORDER BY t.updated_at DESC`, user.id, user.id, user.id, user.id);
+    WHERE t.client_id = ? OR t.freela_id = ? ORDER BY t.updated_at DESC`, user.id, user.id, user.id, user.id, user.id);
   return { threads: rows.map(t => ({ id: t.id, job: t.job_title || "Conversa direta", with: t.client_id === user.id ? t.freela_name : t.client_name,
-    withId: t.client_id === user.id ? t.freela_id : t.client_id, last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
+    withId: t.client_id === user.id ? t.freela_id : t.client_id, withAvatar: avatarUrl(t.client_id === user.id ? t.freela_id : t.client_id, t.with_v), last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
 });
 
 function threadAccess(user, id) {
@@ -740,7 +760,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 function send(res, status, data, headers = {}) {
@@ -749,10 +769,10 @@ function send(res, status, data, headers = {}) {
   res.end(body);
 }
 
-function readBody(req) {
+function readBody(req, max = 200_000) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
-    req.on("data", c => { size += c.length; if (size > 200_000) { reject(new HttpError(413, "Conteúdo grande demais.")); req.destroy(); } else chunks.push(c); });
+    req.on("data", c => { size += c.length; if (size > max) { reject(new HttpError(413, "Conteúdo grande demais.")); req.destroy(); } else chunks.push(c); });
     req.on("end", () => { if (!chunks.length) return resolve({}); try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { reject(new HttpError(400, "JSON inválido.")); } });
     req.on("error", reject);
   });
@@ -791,6 +811,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
   }
+  const av = url.pathname.match(/^\/avatar\/(\d+)$/);
+  if (av && (req.method === "GET" || req.method === "HEAD")) {
+    const a = one("SELECT mime, data, v FROM avatars WHERE user_id = ?", Number(av[1]));
+    if (!a) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+    // o endereço muda (?v=) a cada foto nova, então pode ficar em cache por muito tempo
+    return send(res, 200, Buffer.from(a.data), { "Content-Type": a.mime, "Cache-Control": url.searchParams.get("v") === String(a.v) ? "public, max-age=31536000, immutable" : "no-cache" });
+  }
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
     return serveStatic(req, res, url.pathname);
@@ -804,7 +831,7 @@ const server = http.createServer(async (req, res) => {
     const user = currentUser(req);
     if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
-    const body = req.method === "GET" ? {} : await readBody(req);
+    const body = req.method === "GET" ? {} : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : 200_000);
     const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
     send(res, 200, out ?? { ok: true });
   } catch (e) {

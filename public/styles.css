@@ -153,6 +153,11 @@ html.focus .detail{grid-template-columns:1fr}
 .av.c0{background:var(--accent-soft); color:var(--accent)} .av.c1{background:var(--plum-soft); color:var(--plum)}
 .av.c2{background:var(--sun-soft); color:var(--warn)} .av.c3{background:var(--coral-soft); color:var(--coral)}
 .prof-head{display:flex; gap:22px; align-items:center; flex-wrap:wrap}
+img.av{object-fit:cover; background:var(--sunken)}
+.avatar-edit{display:flex; gap:20px; align-items:center; flex-wrap:wrap}
+.avatar-edit label.btn{cursor:pointer}
+.avatar-edit label:has(+ input:focus-visible){outline:3px solid var(--accent); outline-offset:2px}
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
 .howgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
 .how{background:var(--sunken); border-radius:10px; padding:14px 16px}
 .how .label{display:block; margin-bottom:4px}
