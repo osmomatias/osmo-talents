@@ -710,3 +710,15 @@ html.glass .foot{border-top-color:var(--glass-line)}
   html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.search){background:var(--glass-bg-strong)}
   html.glass .top,html.glass body::before{background-color:var(--brand)}
 }
+
+/* ---------- topo: 30% maior parado no início, volta ao tamanho normal ao rolar ---------- */
+.top{--top-h:64px; --logo-h:22px}
+.top .wrap{min-height:var(--top-h); transition:min-height .25s ease}
+.top .brand svg{height:var(--logo-h); transition:height .25s ease}
+.top .brand .sub{font-size:.7rem} /* "Talents" 30% menor e fixo: não acompanha a rolagem */
+html.top-big .top{--top-h:83px; --logo-h:28.6px}
+@media (max-width:700px){
+  .top{--top-h:56px; --logo-h:20px}
+  .top .brand .sub{font-size:.6rem}
+  html.top-big .top{--top-h:73px; --logo-h:26px}
+}

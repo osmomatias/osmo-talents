@@ -12,4 +12,5 @@
     if (typeof p.glass === "boolean") glass = p.glass;
   } catch (e) {}
   if (glass) r.classList.add("glass");
+  r.classList.add("top-big"); // topo começa grande; app.js encolhe ao rolar
 })();

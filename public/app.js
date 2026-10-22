@@ -1288,6 +1288,9 @@ document.addEventListener("keydown", e => {
 /* ---------- início ---------- */
 setInterval(() => { if (ME && !document.hidden) refreshMe(); }, 30000);
 applyPrefs();
+/* topo maior parado no início; a folga entre 8 e 40 px evita que ele fique alternando bem no limite */
+function syncTopSize() { const y = scrollY, r = document.documentElement; if (y <= 8) r.classList.add("top-big"); else if (y > 40) r.classList.remove("top-big"); }
+addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
 if (oauthErr) history.replaceState(null, "", "/" + location.hash);
 refreshMe().then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });
