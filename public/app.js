@@ -996,6 +996,11 @@ document.addEventListener("click", async e => {
   const fq = t.closest("[data-fchip]"); if (fq) { const k = fq.dataset.fchip; S[k] = !S[k]; const cb = $("#f_" + k); if (cb) cb.checked = S[k]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const au = t.closest("[data-auth]"); if (au) { authMode = au.dataset.auth; return route(); }
+  const th = t.closest("[data-theme-set]"); if (th) {
+    setTheme(th.dataset.themeSet);
+    $$("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b === th)));
+    return toast({ light: "Tema claro", dark: "Tema escuro", system: "Tema do sistema" }[th.dataset.themeSet]);
+  }
   const q = t.closest("[data-quick]"); if (q) { $("#msgIn").value = q.dataset.quick; return $("#msgIn").focus(); }
   if (t.closest("#newMsg")) { const b = $("#bubbles"); b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
   if (t.closest("#pinText")) { $("#pinBox").classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
@@ -1225,6 +1230,17 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
+/* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
+const THEMES = [["light", "Claro"], ["dark", "Escuro"], ["system", "Sistema"]];
+function getTheme() { try { const t = localStorage.getItem("osmo-theme"); return t === "light" || t === "dark" ? t : "system"; } catch { return "system"; } }
+function setTheme(t) {
+  try { t === "system" ? localStorage.removeItem("osmo-theme") : localStorage.setItem("osmo-theme", t); } catch {}
+  const r = document.documentElement; t === "system" ? r.removeAttribute("data-theme") : r.setAttribute("data-theme", t);
+}
+const themeHTML = () => { const cur = getTheme(); return `<div class="field"><span class="flabel" id="themeLbl">Tema</span>
+  <div class="seg theme-seg" role="group" aria-labelledby="themeLbl">${THEMES.map(([k, n]) => `<button type="button" data-theme-set="${k}" aria-pressed="${cur === k}">${n}</button>`).join("")}</div>
+  <span class="hint">"Sistema" segue o modo claro ou escuro do seu celular ou computador.</span></div>`; };
+
 /* ---------- conforto ---------- */
 function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
 function openA11y() {
@@ -1232,6 +1248,7 @@ function openA11y() {
     <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
+    ${themeHTML()}
     ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
   </div>`;
   $("#a11yClose").focus();

@@ -6,8 +6,8 @@
   --orange:#E8650F; --orange-ink:#2B0714; --orange-soft:#FDE6D6; --hi:#B44708;
   --bg:#FAF6F7; --surface:#FFFFFF; --sunken:#F4EAEE; --line:#E8D7DE;
   --fg:#1C0B12; --muted:#6F5862; --accent:#7A0B3C; --accent-ink:#FFFFFF; --accent-soft:#FBE3EA;
-  --sun:#B7791F; --sun-soft:#F8EBD3; --plum:#610930; --plum-soft:#F6DDE6; --coral:#B5523F; --coral-soft:#F5DDD6;
-  --ok:#2F7D4A; --warn:#9A6212;
+  --sun:#B7791F; --sun-soft:#F8EBD3; --plum:#610930; --plum-soft:#F6DDE6; --coral:#A14838; --coral-soft:#F5DDD6;
+  --ok:#2F7D4A; --warn:#935E11; /* coral e aviso levemente mais escuros: contraste mínimo de 4,5:1 (WCAG AA) */
   --f-display:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
   --f-body:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
   --f-mono:"DIN Pro", "Barlow", "DIN Alternate", system-ui, sans-serif;
@@ -629,3 +629,7 @@ body.menu-open{overflow:hidden}
 .sk-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px}
 .sk-row{display:flex; gap:18px; align-items:center}
 .sk-col{flex:1; display:flex; flex-direction:column; gap:10px}
+
+/* ---------- escolha de tema (mesmo seletor arredondado de "Entrar / Criar conta") ---------- */
+.theme-seg{display:flex}
+.theme-seg button{flex:1; min-height:44px}
