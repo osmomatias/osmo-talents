@@ -4,8 +4,9 @@
   var r = document.documentElement;
   try {
     var t = localStorage.getItem("osmo-theme");
-    if (t === "light" || t === "dark") r.setAttribute("data-theme", t);
   } catch (e) {}
+  if (t !== "light" && t !== "system") t = "dark"; // escuro é o padrão
+  if (t !== "system") r.setAttribute("data-theme", t);
   var glass = !(window.matchMedia && matchMedia("(prefers-reduced-transparency: reduce)").matches);
   try {
     var p = JSON.parse(localStorage.getItem("osmo.prefs") || "{}");

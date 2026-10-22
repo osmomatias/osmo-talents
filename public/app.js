@@ -1233,9 +1233,10 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
 
 /* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
 const THEMES = [["light", "Claro"], ["dark", "Escuro"], ["system", "Sistema"]];
-function getTheme() { try { const t = localStorage.getItem("osmo-theme"); return t === "light" || t === "dark" ? t : "system"; } catch { return "system"; } }
+// escuro é o padrão; "sistema" fica salvo explicitamente para não cair de volta no escuro
+function getTheme() { try { const t = localStorage.getItem("osmo-theme"); return t === "light" || t === "system" ? t : "dark"; } catch { return "dark"; } }
 function setTheme(t) {
-  try { t === "system" ? localStorage.removeItem("osmo-theme") : localStorage.setItem("osmo-theme", t); } catch {}
+  try { localStorage.setItem("osmo-theme", t); } catch {}
   const r = document.documentElement; t === "system" ? r.removeAttribute("data-theme") : r.setAttribute("data-theme", t);
 }
 const themeHTML = () => { const cur = getTheme(); return `<div class="field"><span class="flabel" id="themeLbl">Tema</span>
