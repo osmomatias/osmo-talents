@@ -31,7 +31,7 @@ html.calm *{animation:none!important; transition:none!important}
 @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
 
 *{box-sizing:border-box}
-body{background:var(--bg); color:var(--fg); font-family:var(--f-body); font-size:var(--fs); line-height:var(--lh)}
+body{margin:0; background:var(--bg); color:var(--fg); font-family:var(--f-body); font-size:var(--fs); line-height:var(--lh)}
 body::before{content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); z-index:30; background:var(--surface)}
 h1,h2,h3,h4{font-family:var(--f-display); line-height:1.15; margin:0; text-wrap:balance; letter-spacing:-.01em}
 h1{font-size:clamp(2rem,5vw,3.4rem); font-weight:700}
