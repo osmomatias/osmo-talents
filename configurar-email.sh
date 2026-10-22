@@ -10,11 +10,15 @@ echo "Envio de e-mails (SMTP)"
 echo "-----------------------"
 echo "Use os dados de SMTP do seu provedor de e-mail (Google Workspace, Hostinger, Zoho, Brevo, Resend...)."
 echo ""
-read -r -p "Servidor SMTP (ex.: smtp.hostinger.com): " HOST
-read -r -p "Porta [465]: " PORT; PORT="${PORT:-465}"
-read -r -p "Usuário (geralmente o e-mail completo): " USER
-read -r -s -p "Senha (não aparece na tela): " PASS; echo ""
-read -r -p "Remetente [Osmo Talents <$USER>]: " FROM; FROM="${FROM:-Osmo Talents <$USER>}"
+# Dá para pular perguntas passando os valores antes do comando, por exemplo:
+#   SMTP_HOST=smtp.hostinger.com SMTP_USER=nao-responda@osmo.com.br bash configurar-email.sh
+HOST="$SMTP_HOST"; PORT="$SMTP_PORT"; USER="$SMTP_USER"; FROM="$MAIL_FROM"
+[ -n "$HOST" ] || read -r -p "Servidor SMTP (ex.: smtp.hostinger.com): " HOST
+[ -n "$PORT" ] || { read -r -p "Porta [465]: " PORT; PORT="${PORT:-465}"; }
+[ -n "$USER" ] || read -r -p "Usuário (geralmente o e-mail completo): " USER
+[ -n "$FROM" ] || FROM="Osmo Talents <$USER>"
+echo "Servidor: $HOST:$PORT   Usuário: $USER"
+read -r -s -p "Cole a senha do e-mail (Cmd+V; ela não aparece na tela) e aperte Enter: " PASS; echo ""
 [ -n "$HOST" ] && [ -n "$USER" ] && [ -n "$PASS" ] || { echo "Faltou o servidor, o usuário ou a senha. Nada foi alterado."; exit 1; }
 LINES="PUBLIC_URL=https://$DOMAIN
 SMTP_HOST=$HOST
