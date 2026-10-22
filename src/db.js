@@ -164,6 +164,21 @@ CREATE TABLE IF NOT EXISTS notify_log (
 );
 `);
 
+// --- migrações (versão 7: avaliações depois do contrato)
+db.exec(`
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY,
+  contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+  author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  tags TEXT NOT NULL DEFAULT '[]', comment TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (contract_id, author_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_id);
+`);
+
 const one = (sql, ...p) => db.prepare(sql).get(...p);
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

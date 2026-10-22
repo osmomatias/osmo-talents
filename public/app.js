@@ -367,7 +367,8 @@ V.vaga = async id => {
       <div class="kv"><span class="muted">Publicada</span><b>${when(j.created_at)}</b></div>
       ${action}
     </div>
-    <div class="panel stack side-extra" style="gap:6px"><span class="label">Quem contrata</span><h3>${esc(j.company || j.client)}</h3>${j.company ? `<p class="muted">${esc(j.client)}</p>` : ""}</div>
+    <div class="panel stack side-extra" style="gap:6px"><span class="label">Quem contrata</span><h3>${esc(j.company || j.client)}</h3>${j.company ? `<p class="muted">${esc(j.client)}</p>` : ""}
+      ${j.clientRating && j.clientRating.n ? `${stars(j.clientRating.avg, j.clientRating.n)}${tagSummary(j.clientRating)}${j.clientReviews.length ? `<details><summary class="hint">Ler o que freelancers disseram</summary><div class="stack" style="gap:0">${reviewList(j.clientReviews)}</div></details>` : ""}` : `<p class="hint">Ainda sem avaliações de freelancers.</p>`}</div>
   </aside>
 </div>`;
 };
@@ -431,12 +432,33 @@ function msRows() {
     + `<div class="row" style="justify-content:space-between"><button class="btn sm" type="button" data-act="ms-add" ${W.ms.length >= 8 ? "disabled" : ""}>+ Adicionar etapa</button><span class="hint" id="msDiff">${diff === 0 ? "As etapas somam o valor total." : diff > 0 ? `Faltam ${brl(diff)} para fechar o total.` : `As etapas passam ${brl(-diff)} do total.`}</span></div>`;
 }
 
+/* ---------- avaliações ---------- */
+const RATE_WORDS = ["", "Ruim", "Fraco", "Ok", "Bom", "Excelente"];
+const stars = (avg, n) => n ? `<span class="stars" title="Nota média ${String(avg).replace(".", ",")} de 5, ${n} ${n === 1 ? "avaliação" : "avaliações"}"><span aria-hidden="true">★</span> <b class="mono">${String(avg).replace(".", ",")}</b> <span class="muted">(${n})</span></span>` : "";
+const tagSummary = r => r.tags.length ? `<div class="row" style="gap:6px">${r.tags.slice(0, 4).map(t => `<span class="chip accent">${esc(t.tag)} · ${t.n}</span>`).join("")}</div>` : "";
+function reviewList(list) {
+  return list.map(r => `<div class="review"><div class="row" style="justify-content:space-between"><b>${esc(r.author)}</b><span class="stars" aria-label="Nota ${r.rating} de 5">${"★".repeat(r.rating)}<span class="off">${"★".repeat(5 - r.rating)}</span></span></div>
+    <p class="hint">${esc(r.job)} · ${when(r.created_at)}</p>${r.tags.length ? `<div class="row" style="gap:6px">${r.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${r.comment ? `<p style="white-space:pre-wrap">${esc(r.comment)}</p>` : ""}</div>`).join("");
+}
+function reviewBox(c) {
+  const isF = ME.id === c.freela_id, other = isF ? c.client_name : c.freela_name, r = c.review;
+  if (r.mine) return `<div class="ms-review"><p class="hint">Você avaliou com <b>${r.mine} de 5</b>. ${r.theirs ? "As duas avaliações já estão publicadas." : `Ela aparece quando ${esc(other.split(" ")[0])} avaliar também, ou em 14 dias.`}</p></div>`;
+  return `<form class="ms-review stack review-form" data-contract="${c.id}" style="gap:12px">
+    <div><b>Como foi trabalhar com ${esc(other)}?</b><p class="hint">${r.theirs ? `${esc(other.split(" ")[0])} já avaliou. ` : ""}Sua avaliação só fica visível quando os dois avaliarem, ou em 14 dias.</p></div>
+    <div class="rate" role="radiogroup" aria-label="Nota">${[1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="rating" value="${n}" required><span><b>${n}</b>${RATE_WORDS[n]}</span></label>`).join("")}</div>
+    <div class="field"><span class="flabel">Destaques (opcional)</span><div class="row" style="gap:8px">${r.tags.map(t => `<label class="check chip-check"><input type="checkbox" name="tags" value="${esc(t)}"><span>${esc(t)}</span></label>`).join("")}</div></div>
+    <div class="field"><label for="rc-${c.id}">Comentário (opcional)</label><textarea class="input" id="rc-${c.id}" name="comment" rows="3" maxlength="600" placeholder="O que funcionou bem? O que outra pessoa deveria saber antes de trabalhar junto?"></textarea></div>
+    <div class="err" role="alert" hidden></div>
+    <div><button class="btn hl" type="submit">Enviar avaliação</button></div></form>`;
+}
+
 /* ---------- talentos ---------- */
 function talentCard(t) {
   return `<button class="talent" data-go="talento-${t.id}">
     <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
     ${t.tag ? `<div class="row" style="gap:6px"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}
-    <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></div>
+    <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="row" style="gap:10px">${stars(t.rating.avg, t.rating.n)}<span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></span></div>
     ${t.skills.length ? `<div class="row" style="gap:6px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
   </button>`;
 }
@@ -465,11 +487,13 @@ V.talento = async id => {
       ${[["Comunicação", t.how.com], ["Tempo de resposta", t.how.resp], ["Feedback", t.how.fb], ["Ritmo", t.how.foco]].filter(x => x[1]).map(x => `<div class="how"><span class="label">${x[0]}</span>${esc(x[1])}</div>`).join("")}
     </div></div>` : ""}
     ${t.portfolio.length ? `<div class="stack" style="gap:12px"><h2>Portfólio</h2><div class="port">${t.portfolio.map((p, i) => `<div class="ptile t${i % 3}">${esc(p)}</div>`).join("")}</div></div>` : ""}
+    ${t.reviews.length ? `<div class="stack" style="gap:12px"><h2>Avaliações de clientes</h2>${tagSummary(t.rating)}<div class="stack" style="gap:0">${reviewList(t.reviews)}</div></div>` : ""}
   </article>
   <aside class="stack">
     <div class="panel stack" style="gap:12px">
       <div class="kv"><span class="muted">Valor</span><b class="mono">${t.rate ? brl(t.rate) + "/h" : "A combinar"}</b></div>
       <div class="kv"><span class="muted">Trabalhos concluídos</span><b class="mono">${t.done}</b></div>
+      ${t.rating.n ? `<div class="kv"><span class="muted">Avaliação</span>${stars(t.rating.avg, t.rating.n)}</div>` : ""}
       <div class="field"><span class="flabel">Disponível ${t.hours} h por semana</span><div class="avail" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<i class="${i < Math.round(t.hours / 5) ? "on" : ""}"></i>`).join("")}</div></div>
       ${self ? `<button class="btn primary" data-go="perfil">Editar meu perfil</button>` : ""}
       ${!ME ? `<button class="btn hl" data-act="login-then" data-next="talento-${t.id}">Entrar para convidar</button>` : ""}
@@ -556,6 +580,7 @@ V.painel = async () => {
     <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</div>
     <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="#mensagens-${c.thread}">Abrir conversa</a></p>
     ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
+    ${c.status === "concluido" ? reviewBox(c) : ""}
   </div>`).join("") : emptyBox("Nenhum contrato ainda.", isF ? "Quando um cliente aceitar sua proposta, o contrato aparece aqui." : "Quando você aceitar uma proposta, o contrato aparece aqui.");
   let side;
   if (isF) {
@@ -843,6 +868,14 @@ document.addEventListener("submit", async e => {
     if (f.id === "resetForm") {
       try { await api("POST", "/api/auth/reset", { token: f.dataset.token, password: $("#a_pass").value }); } catch (err) { return showErr("#resetErr", err.message); }
       history.replaceState(null, "", "/#painel"); await refreshMe(); toast("Senha nova salva"); return route();
+    }
+    if (f.classList.contains("review-form")) {
+      const rating = Number((f.querySelector('input[name="rating"]:checked') || {}).value || 0);
+      const err = f.querySelector(".err");
+      if (!rating) { err.textContent = "Escolha uma nota de 1 a 5."; err.hidden = false; return; }
+      try { await api("POST", `/api/contracts/${f.dataset.contract}/review`, { rating, tags: [...f.querySelectorAll('input[name="tags"]:checked')].map(i => i.value), comment: f.querySelector("textarea").value }); }
+      catch (e2) { err.textContent = e2.message; err.hidden = false; return; }
+      toast("Avaliação enviada"); return route();
     }
     if (f.id === "notifyForm") {
       const level = (f.querySelector('input[name="notify"]:checked') || {}).value;

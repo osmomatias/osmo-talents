@@ -99,6 +99,26 @@ function createSession(res, userId) {
 
 /* ---------------- formatação ---------------- */
 const avatarUrl = (id, v) => v ? `/avatar/${id}?v=${v}` : "";
+
+// avaliações: ficam públicas quando os dois lados avaliaram o contrato, ou 14 dias depois (ninguém avalia "em resposta")
+const REVIEW_TAGS = {
+  freela: ["Comunicação clara", "Cumpriu os prazos", "Entrega caprichada", "Respeitou o combinado"],
+  cliente: ["Briefing claro", "Feedback objetivo", "Pagou em dia", "Respeitou o ritmo combinado"],
+};
+const REVIEW_VISIBLE = `(r.created_at <= datetime('now', '-14 days') OR EXISTS (SELECT 1 FROM reviews o WHERE o.contract_id = r.contract_id AND o.author_id = r.target_id))`;
+function ratingOf(userId) {
+  const rows = all(`SELECT r.rating, r.tags FROM reviews r WHERE r.target_id = ? AND ${REVIEW_VISIBLE}`, userId);
+  if (!rows.length) return { avg: 0, n: 0, tags: [] };
+  const count = {};
+  rows.forEach(r => parse(r.tags).forEach(t => { count[t] = (count[t] || 0) + 1; }));
+  return { avg: Math.round(rows.reduce((a, r) => a + r.rating, 0) / rows.length * 10) / 10, n: rows.length,
+    tags: Object.entries(count).sort((a, b) => b[1] - a[1]).map(([tag, n]) => ({ tag, n })) };
+}
+function reviewsOf(userId) {
+  return all(`SELECT r.rating, r.tags, r.comment, r.created_at, u.name author, j.title job FROM reviews r
+    JOIN users u ON u.id = r.author_id JOIN contracts c ON c.id = r.contract_id JOIN jobs j ON j.id = c.job_id
+    WHERE r.target_id = ? AND ${REVIEW_VISIBLE} ORDER BY r.created_at DESC LIMIT 30`, userId).map(r => ({ ...r, tags: parse(r.tags) }));
+}
 function profileOf(userId) {
   const u = one("SELECT u.id, u.name, u.role, a.v avatar_v, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?", userId);
   if (!u) return null;
@@ -107,7 +127,7 @@ function profileOf(userId) {
     id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: parse(u.portfolio || "[]"),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
-    tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v),
+    tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id),
   };
 }
 function jobOut(j) {
@@ -335,7 +355,7 @@ route("GET", "/api/talents", ({ query }) => {
 route("GET", "/api/talents/:id", ({ params }) => {
   const t = profileOf(params.id);
   if (!t || t.role !== "freela") fail(404, "Perfil não encontrado.");
-  return { talent: t };
+  return { talent: { ...t, reviews: reviewsOf(t.id) } };
 }, { auth: false });
 
 // --- vagas
@@ -356,7 +376,7 @@ route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.c
 route("GET", "/api/jobs/:id", ({ params, user }) => {
   const j = one(JOB_SELECT + " WHERE j.id = ?", params.id);
   if (!j) fail(404, "Vaga não encontrada.");
-  const out = { job: jobOut(j) };
+  const out = { job: { ...jobOut(j), clientRating: ratingOf(j.client_id), clientReviews: reviewsOf(j.client_id).slice(0, 5) } };
   if (user && user.id === j.client_id) {
     out.proposals = all(`SELECT pr.*, u.name freela_name FROM proposals pr JOIN users u ON u.id = pr.freela_id WHERE pr.job_id = ? ORDER BY pr.created_at`, j.id)
       .map(p => ({ ...p, milestones: parse(p.milestones), freela: profileOf(p.freela_id) }));
@@ -484,6 +504,9 @@ route("GET", "/api/contracts", ({ user }) => {
   for (const c of cs) {
     c.milestones = all("SELECT * FROM milestones WHERE contract_id = ? ORDER BY pos", c.id);
     c.thread = threadFor(c.job_id, c.client_id, c.freela_id);
+    const mine = one("SELECT rating, created_at FROM reviews WHERE contract_id = ? AND author_id = ?", c.id, user.id);
+    const theirs = one("SELECT 1 FROM reviews WHERE contract_id = ? AND author_id != ?", c.id, user.id);
+    c.review = { mine: mine ? mine.rating : 0, theirs: !!theirs, tags: REVIEW_TAGS[c.freela_id === user.id ? "cliente" : "freela"] };
   }
   const mine = cs.flatMap(c => c.milestones.map(m => ({ ...m, side: c.freela_id === user.id ? "freela" : "cliente" })));
   const sum = arr => arr.reduce((a, m) => a + m.value, 0);
@@ -644,6 +667,28 @@ route("POST", "/api/webhooks/asaas", async ({ req, body }) => {
   if (evId) run("INSERT OR IGNORE INTO webhook_events (id, event) VALUES (?,?)", evId, ev);
   return { received: true };
 }, { auth: false });
+
+// --- avaliações
+route("POST", "/api/contracts/:id/review", ({ user, params, body }) => {
+  const c = one("SELECT * FROM contracts WHERE id = ? AND (client_id = ? OR freela_id = ?)", params.id, user.id, user.id);
+  if (!c) fail(404, "Contrato não encontrado.");
+  if (c.status !== "concluido") fail(409, "Dá para avaliar quando todas as etapas forem aprovadas.");
+  if (one("SELECT 1 FROM reviews WHERE contract_id = ? AND author_id = ?", c.id, user.id)) fail(409, "Você já avaliou este contrato.");
+  const rating = int(body.rating, 0, 5);
+  if (rating < 1) fail(400, "Escolha uma nota de 1 a 5.");
+  const targetId = c.freela_id === user.id ? c.client_id : c.freela_id;
+  const allowed = REVIEW_TAGS[c.freela_id === user.id ? "cliente" : "freela"];
+  const tags = (Array.isArray(body.tags) ? body.tags : []).filter(t => allowed.includes(t));
+  tx(() => {
+    run("INSERT INTO reviews (contract_id, author_id, target_id, rating, tags, comment) VALUES (?,?,?,?,?,?)",
+      c.id, user.id, targetId, rating, JSON.stringify([...new Set(tags)]), str(body.comment, 600));
+    const both = one("SELECT COUNT(*) n FROM reviews WHERE contract_id = ?", c.id).n === 2;
+    postMessage(threadFor(c.job_id, c.client_id, c.freela_id), null, both
+      ? `${user.name} avaliou o contrato. As duas avaliações já estão publicadas nos perfis.`
+      : `${user.name} avaliou o contrato. A avaliação fica guardada até você avaliar também (pelo Painel), ou por 14 dias.`, user.id);
+  });
+  return { ok: true };
+});
 
 // --- mensagens
 route("GET", "/api/threads", ({ user }) => {
