@@ -354,6 +354,12 @@ V.vaga = async id => {
       <section><span class="label">Comunicação</span><p>${esc(b.com) || '<span class="muted">Não informado</span>'}</p></section>
       <section><span class="label">Feedback</span><p>${esc(b.fb) || '<span class="muted">Não informado</span>'}</p></section>
       <section><span class="label">Referências</span><p>${esc(b.ref) || '<span class="muted">Não informado</span>'}</p></section>
+      ${j.filesCount || owner ? `<section><span class="label">Arquivos</span><div class="stack" style="gap:10px">
+        ${!ME ? `<p>${j.filesCount} ${j.filesCount === 1 ? "arquivo anexado" : "arquivos anexados"}. <button class="link-btn" data-act="login-then" data-next="vaga-${j.id}">Entre para ver</button></p>`
+          : j.files.length ? `<ul class="files">${j.files.map(f => fileRow(f, owner, j.id)).join("")}</ul>` : `<p class="muted">Nenhum arquivo anexado.</p>`}
+        ${owner && j.files.length < 6 ? `<div><label class="btn sm" for="jFiles">Anexar arquivos</label><input type="file" id="jFiles" data-job="${j.id}" multiple accept="${FILE_ACCEPT}" class="sr-only"></div>
+          <span class="hint">Até 6 arquivos de 10 MB. Só pessoas com conta na Osmo conseguem abrir.</span>` : ""}
+        <div id="jFilesErr" class="err" role="alert" hidden></div></div></section>` : ""}
       ${j.skills.length ? `<section><span class="label">Habilidades</span><div class="row" style="gap:6px">${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div></section>` : ""}
     </div>
     ${j.clarity < 70 ? `<div class="sunk"><b>Este briefing tem pontos em aberto.</b><p class="muted">A proposta guiada sugere perguntas para esclarecer antes de aceitar.</p></div>` : ""}
@@ -737,6 +743,46 @@ function payoutHTML() {
     <button class="btn hl" type="button" data-act="payout">Ativar recebimentos</button></div>`;
 }
 
+/* ---------- arquivos do briefing ---------- */
+const FILE_EXTS = ["pdf", "ai", "psd", "png", "jpg", "jpeg", "webp", "docx", "xlsx", "pptx", "odt", "ods", "odp", "txt", "csv", "md"];
+const FILE_ACCEPT = FILE_EXTS.map(e => "." + e).join(",");
+const fileExt = n => (String(n).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || "";
+const fileSize = b => b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + " KB" : (b / 1048576).toFixed(1).replace(".", ",") + " MB";
+function checkFile(f) {
+  if (!FILE_EXTS.includes(fileExt(f.name))) return `"${f.name}": tipo não aceito. Envie PDF, imagem, PSD, AI, Word, Excel, PowerPoint ou texto.`;
+  if (f.size > 10 * 1048576) return `"${f.name}" tem ${fileSize(f.size)}. O limite é 10 MB por arquivo.`;
+  if (!f.size) return `"${f.name}" está vazio.`;
+  return "";
+}
+async function uploadFile(jobId, f) {
+  let res;
+  try { res = await fetch(`/api/jobs/${jobId}/files`, { method: "POST", credentials: "same-origin", body: f,
+    headers: { "X-Osmo": "1", "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(f.name) } }); }
+  catch { throw new Error("Sem conexão com o servidor. Confira sua internet e tente de novo."); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || (res.status === 413 ? `"${f.name}" é grande demais.` : "Não deu para enviar o arquivo."));
+  return data.files;
+}
+async function addJobFiles(jobId, files) {
+  const errs = [];
+  for (const [i, f] of files.entries()) {
+    const e2 = checkFile(f); if (e2) { errs.push(e2); continue; }
+    toast(`Enviando ${i + 1} de ${files.length}: ${f.name}`);
+    try { await uploadFile(jobId, f); } catch (e3) { errs.push(e3.message); }
+  }
+  await route();
+  if (errs.length) { const b = $("#jFilesErr"); if (b) { b.textContent = errs.join(" "); b.hidden = false; } } else toast("Arquivos anexados");
+}
+const fileRow = (f, owner, jobId) => `<li class="file-row"><span class="file-ext" aria-hidden="true">${esc(f.ext || fileExt(f.name))}</span>
+  ${f.id ? `<a href="/arquivo/${f.id}" target="_blank" rel="noopener">${esc(f.name)}</a>` : `<span>${esc(f.name)}</span>`}<span class="hint">${fileSize(f.size)}</span>
+  ${owner ? `<button type="button" class="btn sm ghost" data-act="${f.id ? "file-del" : "pfile-del"}" data-id="${f.id || 0}" data-job="${jobId || 0}" data-name="${esc(f.name)}" aria-label="Remover ${esc(f.name)}">Remover</button>` : ""}</li>`;
+let PFILES = []; // arquivos escolhidos antes de publicar (ficam só na memória; sobem depois que a vaga é criada)
+function pfilesHTML() {
+  return `${PFILES.length ? `<ul class="files">${PFILES.map((f, i) => fileRow({ name: f.name, size: f.size, idx: i }, true)).join("")}</ul>` : ""}
+    ${PFILES.length < 6 ? `<div><label class="btn sm" for="pFiles">Escolher arquivos</label><input type="file" id="pFiles" multiple accept="${FILE_ACCEPT}" class="sr-only"></div>` : ""}
+    <div id="pFilesErr" class="err" role="alert" hidden></div>`;
+}
+
 /* ---------- publicar vaga ---------- */
 const POST0 = { title: "", cat: "", obj: "", ent: "", fora: "", com: "", fb: "", ref: "", budget_type: "fixo", budget: "", duration: "", skills: "", async: true, flex: false };
 let P = Object.assign({}, POST0, store.get("post-draft", {}));
@@ -763,6 +809,9 @@ V.publicar = async () => {
       ${fld("p_com", "Como prefere se comunicar", `<select class="input" id="p_com" data-p="com"><option value="">Escolha</option>${["Somente texto, pelo chat da plataforma.", "Texto e uma chamada inicial curta.", "Chamada semanal de 30 min."].map(o => `<option ${P.com === o ? "selected" : ""}>${o}</option>`).join("")}</select>`)}
       ${fld("p_fb", "Como será o feedback", `<input class="input" id="p_fb" data-p="fb" value="${esc(P.fb)}" placeholder="Ex.: Duas rodadas de ajustes por escrito">`)}
       ${fld("p_ref", "Referências", `<input class="input" id="p_ref" data-p="ref" value="${esc(P.ref)}" placeholder="Ex.: Painel de referências enviado após contratar">`)}
+      <div class="field"><span class="flabel">Arquivos do briefing (opcional)</span>
+        <span class="hint">PDF, imagens, PSD, AI, Word, Excel, PowerPoint ou texto. Até 6 arquivos de 10 MB. Só pessoas com conta na Osmo conseguem abrir.</span>
+        <div class="stack" style="gap:10px; margin-top:6px" id="pFilesBox">${pfilesHTML()}</div></div>
       ${fld("p_skills", "Habilidades desejadas", `<input class="input" id="p_skills" data-p="skills" value="${esc(P.skills)}" placeholder="Branding, Logotipo">`, "Separe por vírgula.")}
       <label class="check"><input type="checkbox" id="p_async" data-p="async" ${P.async ? "checked" : ""}><span>Sem reuniões obrigatórias</span></label>
       <label class="check"><input type="checkbox" id="p_flex" data-p="flex" ${P.flex ? "checked" : ""}><span>Prazo flexível</span></label>
@@ -814,6 +863,11 @@ document.addEventListener("click", async e => {
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
+    case "pfile-del": { const i = PFILES.findIndex(f => f.name === act.dataset.name); if (i >= 0) PFILES.splice(i, 1); $("#pFilesBox").innerHTML = pfilesHTML(); return; }
+    case "file-del": return busy(async () => {
+      if (!confirm(`Remover "${act.dataset.name}" da vaga?`)) return;
+      await api("DELETE", `/api/jobs/${act.dataset.job}/files/${id}`); toast("Arquivo removido"); route();
+    })();
     case "port-new": PE = { id: 0, title: "", link: "", image: "" }; return renderPort("pe_title");
     case "port-edit": { const it = ME.profile.portfolio.find(x => x.id === id); PE = { ...it }; return renderPort("pe_title"); }
     case "port-cancel": PE = null; return renderPort();
@@ -897,6 +951,13 @@ document.addEventListener("change", e => {
   if (id === "wsplit") { W.split = t.checked; if (W.split && W.ms.length === 1 && !W.ms[0].value) W.ms[0] = { title: "Entrega completa", value: W.value }; $("#msBox").hidden = !W.split; $("#msBox").innerHTML = msRows(); saveDraft(); }
   if (t.dataset.pref) { PREFS[t.dataset.pref] = t.checked; applyPrefs(); }
   if (id === "avatarIn" && t.files[0]) uploadAvatar(t.files[0]);
+  if (id === "pFiles" && t.files.length) {
+    const errs = [];
+    for (const f of t.files) { const e2 = checkFile(f); if (e2) errs.push(e2); else if (PFILES.length < 6) PFILES.push(f); else errs.push(`"${f.name}": cada vaga aceita até 6 arquivos.`); }
+    $("#pFilesBox").innerHTML = pfilesHTML();
+    if (errs.length) { const b = $("#pFilesErr"); b.textContent = errs.join(" "); b.hidden = false; }
+  }
+  if (id === "jFiles" && t.files.length) addJobFiles(Number(t.dataset.job), [...t.files]);
   if (id === "peImg" && t.files[0]) { syncPE(); shrinkImage(t.files[0], 1600, false).then(d => { PE.newImage = PE.image = d; PE.removeImage = false; renderPort(); })
     .catch(e2 => { const b = $("#peErr"); b.textContent = e2.message; b.hidden = false; }); }
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
@@ -957,7 +1018,15 @@ document.addEventListener("submit", async e => {
     if (f.id === "postForm") {
       const body = { ...P, ent: P.ent.split("\n"), fora: P.fora.split("\n"), skills: P.skills.split(",").map(s => s.trim()).filter(Boolean), budget: Number(P.budget) || 0 };
       let r; try { r = await api("POST", "/api/jobs", body); } catch (err) { return showErr("#postErr", err.message); }
-      P = Object.assign({}, POST0); store.set("post-draft", null); toast(`Vaga publicada com ${r.clarity}% de clareza`); return go("vaga-" + r.id);
+      const failed = [];
+      for (const [i, file] of PFILES.entries()) {
+        if (btn) btn.textContent = `Enviando arquivo ${i + 1} de ${PFILES.length}…`;
+        try { await uploadFile(r.id, file); } catch (e2) { failed.push(e2.message); }
+      }
+      P = Object.assign({}, POST0); PFILES = []; store.set("post-draft", null);
+      toast(failed.length ? `Vaga publicada, mas ${failed.length} arquivo(s) não subiram. Tente de novo na página da vaga.` : `Vaga publicada com ${r.clarity}% de clareza`);
+      if (failed.length) console.warn(failed);
+      return go("vaga-" + r.id);
     }
   } finally { if (btn) btn.disabled = false; }
 });

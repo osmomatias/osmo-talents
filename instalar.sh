@@ -96,7 +96,7 @@ server {
     listen 80;
 $LISTEN6
     server_name $DOMAIN www.$DOMAIN;
-    client_max_body_size 1m;
+    client_max_body_size 12m;
 
     location / {
         proxy_pass http://127.0.0.1:$PORT;

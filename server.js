@@ -177,7 +177,7 @@ function dateBR(addDays = 0) { const d = new Date(Date.now() - 3 * 3600e3 + addD
 const routes = [];
 const route = (method, pattern, handler, opts = {}) => {
   const keys = []; const re = new RegExp("^" + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return "(\\d+)"; }) + "$");
-  routes.push({ method, re, keys, handler, auth: opts.auth !== false, role: opts.role });
+  routes.push({ method, re, keys, handler, auth: opts.auth !== false, role: opts.role, raw: opts.raw });
 };
 
 // --- autenticação
@@ -425,7 +425,9 @@ route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.c
 route("GET", "/api/jobs/:id", ({ params, user }) => {
   const j = one(JOB_SELECT + " WHERE j.id = ?", params.id);
   if (!j) fail(404, "Vaga não encontrada.");
-  const out = { job: { ...jobOut(j), clientRating: ratingOf(j.client_id), clientReviews: reviewsOf(j.client_id).slice(0, 5) } };
+  const files = filesOf(j.id);
+  const out = { job: { ...jobOut(j), clientRating: ratingOf(j.client_id), clientReviews: reviewsOf(j.client_id).slice(0, 5),
+    files: user ? files : [], filesCount: files.length } };
   if (user && user.id === j.client_id) {
     out.proposals = all(`SELECT pr.*, u.name freela_name FROM proposals pr JOIN users u ON u.id = pr.freela_id WHERE pr.job_id = ? ORDER BY pr.created_at`, j.id)
       .map(p => ({ ...p, milestones: parse(p.milestones), freela: profileOf(p.freela_id) }));
@@ -460,6 +462,62 @@ route("POST", "/api/jobs/:id/close", ({ user, params }) => {
   run("UPDATE jobs SET status = 'fechada' WHERE id = ?", j.id);
   return { ok: true };
 }, { role: "cliente" });
+
+// --- arquivos do briefing: até 6 por vaga, 10 MB cada; só quem tem conta baixa
+// O tipo é conferido pelo conteúdo do arquivo (não só pelo nome) e a lista de tipos é fechada.
+const FILE_MAX = 10 * 1024 * 1024, FILES_PER_JOB = 6;
+const starts = (b, ...sig) => sig.every((x, i) => b[i] === x);
+const zipOffice = b => starts(b, 0x50, 0x4b, 0x03, 0x04);
+const isText = b => !b.subarray(0, 8192).includes(0) && (() => { try { new TextDecoder("utf-8", { fatal: true }).decode(b.subarray(0, 8192)); return true; } catch { return false; } })();
+const FILE_TYPES = {
+  pdf: ["application/pdf", b => starts(b, 0x25, 0x50, 0x44, 0x46)],
+  ai: ["application/pdf", b => starts(b, 0x25, 0x50, 0x44, 0x46) || starts(b, 0x25, 0x21)],
+  psd: ["image/vnd.adobe.photoshop", b => starts(b, 0x38, 0x42, 0x50, 0x53)],
+  png: ["image/png", b => starts(b, 0x89, 0x50, 0x4e, 0x47)],
+  jpg: ["image/jpeg", b => starts(b, 0xff, 0xd8, 0xff)], jpeg: ["image/jpeg", b => starts(b, 0xff, 0xd8, 0xff)],
+  webp: ["image/webp", b => starts(b, 0x52, 0x49, 0x46, 0x46) && b.subarray(8, 12).toString() === "WEBP"],
+  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipOffice],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipOffice],
+  pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation", zipOffice],
+  odt: ["application/vnd.oasis.opendocument.text", zipOffice], ods: ["application/vnd.oasis.opendocument.spreadsheet", zipOffice],
+  odp: ["application/vnd.oasis.opendocument.presentation", zipOffice],
+  txt: ["text/plain; charset=utf-8", isText], csv: ["text/csv; charset=utf-8", isText], md: ["text/markdown; charset=utf-8", isText],
+};
+const filesOf = jobId => all("SELECT id, name, ext, size FROM job_files WHERE job_id = ? ORDER BY id", jobId);
+route("POST", "/api/jobs/:id/files", ({ user, params, req, body, ip }) => {
+  limit("files:" + ip, 40, 600_000);
+  const j = one("SELECT id FROM jobs WHERE id = ? AND client_id = ?", params.id, user.id);
+  if (!j) fail(404, "Vaga não encontrada.");
+  if (one("SELECT COUNT(*) n FROM job_files WHERE job_id = ?", j.id).n >= FILES_PER_JOB) fail(409, `Cada vaga aceita até ${FILES_PER_JOB} arquivos. Remova um para enviar outro.`);
+  let name = ""; try { name = decodeURIComponent(String(req.headers["x-filename"] || "")); } catch {}
+  name = name.replace(/[\x00-\x1f\x7f/\\]/g, "").trim().slice(-120);
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || "";
+  const type = FILE_TYPES[ext];
+  if (!type) fail(400, "Tipo de arquivo não aceito. Envie PDF, imagem (JPG, PNG, WebP), PSD, AI, Word, Excel, PowerPoint ou texto.");
+  if (!body.length) fail(400, "O arquivo está vazio.");
+  if (!type[1](body)) fail(400, `Esse arquivo não parece um .${ext} de verdade.`);
+  run("INSERT INTO job_files (job_id, name, ext, size, data) VALUES (?,?,?,?,?)", j.id, name, ext, body.length, body);
+  return { files: filesOf(j.id) };
+}, { role: "cliente", raw: FILE_MAX });
+route("DELETE", "/api/jobs/:id/files/:fid", ({ user, params }) => {
+  const f = one("SELECT f.id FROM job_files f JOIN jobs j ON j.id = f.job_id WHERE f.id = ? AND j.id = ? AND j.client_id = ?", params.fid, params.id, user.id);
+  if (!f) fail(404, "Arquivo não encontrado.");
+  run("DELETE FROM job_files WHERE id = ?", f.id);
+  return { files: filesOf(params.id) };
+}, { role: "cliente" });
+function serveFile(req, res, id) {
+  if (!currentUser(req)) return send(res, 401, "Entre na sua conta para baixar os arquivos da vaga.", { "Content-Type": "text/plain; charset=utf-8" });
+  const f = one("SELECT name, ext, data FROM job_files WHERE id = ?", id);
+  if (!f) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  // imagens e PDF abrem no navegador; o resto sempre baixa. O arquivo nunca roda como página do site.
+  const inline = ["pdf", "png", "jpg", "jpeg", "webp"].includes(f.ext);
+  const ascii = f.name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  send(res, 200, Buffer.from(f.data), {
+    "Content-Type": FILE_TYPES[f.ext][0], "Cache-Control": "private, no-cache",
+    "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+    ...(f.ext === "pdf" ? {} : { "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" }),
+  });
+}
 
 route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ? AND status = 'aberta'", params.id, user.id);
@@ -928,6 +986,15 @@ function send(res, status, data, headers = {}) {
   res.end(body);
 }
 
+function readRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    // passou do limite: descarta o resto mas lê até o fim, para conseguir responder com a mensagem certa
+    let size = 0; const chunks = [];
+    req.on("data", c => { size += c.length; if (size <= max) chunks.push(c); else chunks.length = 0; });
+    req.on("end", () => size > max ? reject(new HttpError(413, `Arquivo grande demais. O limite é ${Math.round(max / 1048576)} MB.`)) : resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
 function readBody(req, max = 200_000) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -970,6 +1037,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
   }
+  const fm = url.pathname.match(/^\/arquivo\/(\d+)$/);
+  if (fm && (req.method === "GET" || req.method === "HEAD")) return serveFile(req, res, Number(fm[1]));
   const av = url.pathname.match(/^\/(avatar|portfolio)\/(\d+)$/);
   if (av && (req.method === "GET" || req.method === "HEAD")) {
     const a = av[1] === "avatar" ? one("SELECT mime, data, v FROM avatars WHERE user_id = ?", Number(av[2]))
@@ -991,7 +1060,7 @@ const server = http.createServer(async (req, res) => {
     const user = currentUser(req);
     if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
-    const body = req.method === "GET" ? {} : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);
+    const body = req.method === "GET" ? {} : r.raw ? await readRaw(req, r.raw) : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);
     const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
     send(res, 200, out ?? { ok: true });
   } catch (e) {

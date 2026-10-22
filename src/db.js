@@ -190,6 +190,17 @@ CREATE TABLE IF NOT EXISTS portfolio_items (
 );
 CREATE INDEX IF NOT EXISTS idx_port_user ON portfolio_items(user_id, pos);
 `);
+// --- migrações (versão 9: arquivos anexados ao briefing da vaga)
+db.exec(`
+CREATE TABLE IF NOT EXISTS job_files (
+  id INTEGER PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, ext TEXT NOT NULL, size INTEGER NOT NULL, data BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_job_files ON job_files(job_id);
+`);
+
 // o portfólio antigo (uma linha de texto por projeto) vira itens sem imagem
 for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfolio NOT IN ('', '[]')").all()) {
   let titles = []; try { titles = JSON.parse(p.portfolio); } catch {}

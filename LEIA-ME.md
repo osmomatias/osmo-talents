@@ -180,6 +180,7 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - Recuperar senha por e-mail
 - Avisos por e-mail, com escolha de quanto receber
 - Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
+- Arquivos no briefing da vaga: até 6 por vaga, 10 MB cada (PDF, imagens, PSD, AI, Office e texto), só para quem tem conta
 - Avaliações depois do contrato (nota de 1 a 5, destaques e comentário), públicas só quando os dois lados avaliam ou após 14 dias
 - Perfil com "Como eu trabalho melhor" e identificação opcional
 - Foto de perfil ou logo da empresa (opcional), recortada e reduzida no navegador e guardada no próprio banco
@@ -195,4 +196,4 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 
 ## Ainda não faz (próximas versões)
 
-- Envio de arquivos (PDF etc.) dentro do site. Por enquanto, cada projeto do portfólio aceita um link para o arquivo.
+- Arquivos nas propostas, mensagens e entregas das etapas (hoje só o briefing da vaga aceita arquivos)
