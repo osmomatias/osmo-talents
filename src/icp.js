@@ -6,7 +6,9 @@
 //  2. o resumo (hash) do conteúdo bate com o que foi assinado e a assinatura confere com a chave do certificado;
 //  3. o certificado encadeia até uma das raízes oficiais da ICP-Brasil (certs/icp-brasil) e estava válido na data da assinatura;
 //  4. é um certificado de pessoa da ICP-Brasil (política 2.16.76.1.2.*) com uso para assinatura;
-//  5. o certificado traz o registro no CRM (OID 2.16.76.1.4.2.2.*, atribuído pelo ITI ao Conselho Federal de Medicina);
+//  5. o certificado é de médico: traz o registro no CRM (OID 2.16.76.1.4.2.2.*, atribuído pelo ITI ao Conselho Federal de Medicina)
+//     ou foi emitido pela Autoridade de Registro do CFM/CRM ("AR CFM" na OU, gravada pela AC). Muitos certificados
+//     do programa do CFM para médicos saem pela AR CFM sem o número do CRM; nesse caso não sabemos qual é o CRM;
 //  6. o certificado não aparece na lista de revogados (LCR) da AC emissora, quando a lista pode ser baixada.
 // Não dá para conferir o conteúdo do laudo (diagnóstico, nome do paciente): isso fica como declaração da pessoa.
 const crypto = require("node:crypto");
@@ -114,6 +116,8 @@ function certInfo(derBuf) {
   }
   const cn = (x.subject.match(/(?:^|\n)CN=([^\n]+)/) || [])[1] || "";
   info.name = cn.split(":")[0].trim(); // e-CPF: "NOME COMPLETO:CPF"
+  // OU com o nome da Autoridade de Registro que conferiu a identidade (ex.: "AR CFM", "AR CRMDF")
+  info.medicalAr = (x.subject.match(/(?:^|\n)OU=([^\n]+)/g) || []).map(o => o.replace(/^\n?OU=/, "").trim()).find(o => /^AR\s+(CFM|CRM[A-Z]{0,3})\b/i.test(o)) || "";
   return info;
 }
 function loadPem(file) {
@@ -175,7 +179,19 @@ function signaturesOf(pdf) {
     if (a !== 0 || b <= 0 || c <= b || c + d > pdf.length || pdf[b] !== 0x3c || pdf[c - 1] !== 0x3e) continue;
     const hex = pdf.subarray(b + 1, c - 1).toString("latin1").replace(/\s/g, "");
     if (!/^[0-9a-fA-F]+$/.test(hex)) continue;
-    out.push({ range: [a, b, c, d], cms: Buffer.from(hex, "hex"), whole: c + d === pdf.length });
+    // data da assinatura no dicionário do PDF (/M), que também fica protegida pela assinatura
+    // o objeto inteiro da assinatura ("N 0 obj ... endobj"): /M pode vir antes do /Contents, que é grande
+    const objStart = s.lastIndexOf(" obj", m.index), objEnd = s.indexOf("endobj", m.index);
+    const dict = s.slice(objStart >= 0 && m.index - objStart < 300_000 ? objStart : Math.max(0, m.index - 3000), objEnd >= 0 ? objEnd : c + 3000);
+    const md = /\/M\s*\(D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?([Z+-])?(\d{2})?'?(\d{2})?'?\)/.exec(dict);
+    let pdfTime = null;
+    if (md) {
+      const [, Y, M, D, h = "00", mi = "00", se = "00", z = "Z", oh = "00", om = "00"] = md;
+      const off = z === "Z" ? 0 : (z === "-" ? -1 : 1) * (Number(oh) * 60 + Number(om));
+      pdfTime = new Date(Date.UTC(+Y, +M - 1, +D, +h, +mi, +se) - off * 60e3);
+      if (isNaN(pdfTime)) pdfTime = null;
+    }
+    out.push({ range: [a, b, c, d], cms: Buffer.from(hex, "hex"), whole: c + d === pdf.length, pdfTime });
   }
   return out;
 }
@@ -225,15 +241,17 @@ async function checkSignature(pdf, sig, opts) {
   if (!sig.whole) no("O PDF recebeu alterações depois da assinatura do médico. Envie o arquivo exatamente como foi assinado.");
 
   STAGE = 4;
-  const at = signedAt && signedAt <= new Date(Date.now() + 5 * 60e3) ? signedAt : new Date();
+  // data da assinatura: a do próprio CMS; senão a do PDF (/M); senão agora
+  const soon = new Date(Date.now() + 5 * 60e3);
+  const at = signedAt && signedAt <= soon ? signedAt : sig.pdfTime && sig.pdfTime <= soon ? sig.pdfTime : new Date();
   const chain = buildChain(signer.x, embedded.map(e => e.x).concat(inter), roots, at);
   STAGE = 5;
   if (!signer.policies.some(p => p.startsWith("2.16.76.1.2."))) no("O certificado não é um certificado de pessoa da ICP-Brasil.");
   if (!(signer.keyUsage & 0xc0)) no("O certificado não é de uso para assinatura.");
-  if (!signer.crm) no("A assinatura é ICP-Brasil, mas o certificado não identifica um médico (não traz o registro no CRM). O laudo precisa ser assinado com o certificado do médico.");
+  if (!signer.crm && !signer.medicalAr) no("A assinatura é ICP-Brasil, mas o certificado não identifica um médico (não traz o registro no CRM nem foi emitido pela AR do CFM). O laudo precisa ser assinado com o certificado do médico.");
   const rev = opts.skipRevocation ? "indisponivel" : await revoked(signer, chain[1]);
   if (rev === "revogado") no("O certificado do médico foi revogado.");
-  return { crm: signer.crm, uf: signer.crmUf, doctor: signer.name, signedAt: at, revocation: rev };
+  return { crm: signer.crm, uf: signer.crmUf, ar: signer.medicalAr, doctor: signer.name, signedAt: at, revocation: rev };
 }
 
 // Confere o PDF. Devolve { crm, uf, doctor, signedAt, revocation, sha256 } ou lança IcpError com o motivo.

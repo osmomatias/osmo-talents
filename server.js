@@ -360,7 +360,7 @@ route("POST", "/api/me/verify", async ({ user, req, body }) => {
   run(`INSERT INTO verifications (user_id, doc_sha256, crm, signed_at, revocation) VALUES (?,?,?,?,?)
     ON CONFLICT(user_id) DO UPDATE SET doc_sha256 = excluded.doc_sha256, crm = excluded.crm, signed_at = excluded.signed_at,
     revocation = excluded.revocation, verified_at = datetime('now')`,
-    user.id, r.sha256, `CRM${r.uf ? "-" + r.uf : ""} ${r.crm}`, r.signedAt.toISOString(), r.revocation);
+    user.id, r.sha256, r.crm ? `CRM${r.uf ? "-" + r.uf : ""} ${r.crm}` : `${r.ar} (sem número do CRM no certificado)`, r.signedAt.toISOString(), r.revocation);
   return { verified: true, revocation: r.revocation };
 }, { role: "freela", raw: 10 * 1024 * 1024 });
 route("DELETE", "/api/me/verify", ({ user }) => {

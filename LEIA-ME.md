@@ -182,7 +182,7 @@ O que o site confere (`src/icp.js`, sem bibliotecas externas):
 
 - a assinatura digital é válida e cobre o PDF inteiro (nada mudou depois de assinar);
 - o certificado encadeia até uma raiz oficial da ICP-Brasil (`certs/icp-brasil`) e estava válido na data da assinatura;
-- o certificado é de um médico: traz o registro no CRM (OID 2.16.76.1.4.2.2, atribuído pelo ITI ao CFM). Um e-CPF comum é recusado;
+- o certificado é de um médico: traz o registro no CRM (OID 2.16.76.1.4.2.2, atribuído pelo ITI ao CFM) **ou** foi emitido pela Autoridade de Registro do CFM/CRM ("AR CFM" no certificado, caso comum no programa de certificados do CFM, que nem sempre grava o número do CRM). Um e-CPF comum é recusado;
 - o certificado não está na lista de revogados da AC (quando a lista pode ser baixada);
 - o mesmo laudo não vale para duas contas, e quem assinou não pode ser a própria pessoa.
 
