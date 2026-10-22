@@ -704,7 +704,8 @@ function readBody(req) {
 
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
-  if (rel === "/" || !path.extname(rel)) rel = "/index.html";
+  if (rel === "/privacidade" || rel === "/termos") rel += ".html";
+  else if (rel === "/" || !path.extname(rel)) rel = "/index.html";
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
   fs.stat(file, (err, st) => {
