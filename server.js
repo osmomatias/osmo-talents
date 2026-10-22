@@ -313,6 +313,7 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
     JSON.stringify(list(body.skills, 12, 40)),
     str(how.com, 200), str(how.resp, 200), str(how.fb, 200), str(how.foco, 200), str(body.tag, 80), str(body.company, 100), user.id);
   const name = str(body.name, 80);
+  if (body.name !== undefined && name.length < 2) fail(400, "O nome precisa ter pelo menos 2 letras.");
   if (name.length >= 2) run("UPDATE users SET name = ? WHERE id = ?", name, user.id);
   if (NOTIFY.includes(body.notify)) run("UPDATE users SET notify_level = ? WHERE id = ?", body.notify, user.id);
   if (typeof body.cpfCnpj === "string" && body.cpfCnpj.trim()) {
@@ -421,7 +422,7 @@ route("PUT", "/api/me/energy", ({ user, body }) => {
 route("GET", "/api/talents", ({ query }) => {
   const q = str(query.get("q") || "", 80).toLowerCase();
   const rows = all("SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200");
-  let out = rows.map(r => profileOf(r.id));
+  let out = rows.map(r => profileOf(r.id)).filter(Boolean);
   if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
   return { talents: out };
 }, { auth: false });
@@ -1049,10 +1050,10 @@ function serveStatic(req, res, pathname) {
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
     if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
     if (ext === ".html") {
-      // carimba app.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
+      // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
