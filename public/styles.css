@@ -728,4 +728,73 @@ html.top-big .top{--top-h:83px; --logo-h:28.6px}
 .sugs:empty{display:none}
 .chip.sug{border:1px dashed var(--line); background:none; color:var(--fg); cursor:pointer; font:inherit; font-size:.82rem; font-weight:600; min-height:32px}
 .chip.sug:hover{border-color:var(--accent); color:var(--accent)}
-.cats{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+
+/* ---------- telas maiores: iPad (em pé e deitado), MacBook e iMac ---------- */
+/* áreas: 4 colunas com a primeira em destaque (2 + 1 + 1 / 1 + 1 + 1 + 1 fecha as 7 sem sobra); 2 colunas no celular */
+.cats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.cats .cat:first-child{grid-column:span 2; background-image:linear-gradient(135deg, var(--accent-soft), transparent 70%)}
+@media (max-width:700px){ .cats{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* iPad em pé (768 a 900 px): filtros e painéis voltam para o lado, em vez de empilhar */
+@media (min-width:768px) and (max-width:900px){
+  .layout{grid-template-columns:230px minmax(0,1fr); gap:20px}
+  .filters{position:sticky; top:calc(env(safe-area-inset-top,0px) + 96px)}
+  .detail{grid-template-columns:minmax(0,1fr) 270px; gap:20px}
+  .brief section{grid-template-columns:120px minmax(0,1fr); gap:14px}
+  .meter{position:sticky; top:calc(env(safe-area-inset-top,0px) + 96px)}
+  .msgs{grid-template-columns:260px minmax(0,1fr)}
+  .threads{border-right:1px solid var(--line); border-bottom:0; max-height:none}
+  .steps{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .principles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hero .wcard .grid2{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+/* do iPad para cima: a conversa ocupa a altura da tela e só a lista de mensagens rola */
+@media (min-width:768px){
+  .msgs{height:calc(100dvh - 260px); min-height:520px}
+  .threads{overflow-y:auto}
+  .convo,.bubbles{min-height:0}
+}
+@media (min-width:768px) and (max-width:980px){ .msgs{height:calc(100dvh - 330px)} } /* desconta a barra de baixo */
+/* iPad em geral (toque, 768 a 1366 px): alvos de toque maiores nos filtros e listas */
+@media (min-width:768px) and (max-width:1366px) and (pointer:coarse){
+  .check{min-height:44px; align-items:center}
+  .check input{margin-top:0}
+  .nav button{min-height:44px}
+  .thread{min-height:64px}
+}
+
+/* iPad deitado e telas de 981 a 1180 px: o menu de cima cabe numa linha só */
+@media (min-width:981px) and (max-width:1180px){
+  .top .wrap{flex-wrap:nowrap; gap:12px}
+  .nav{flex-wrap:nowrap; gap:0}
+  .nav button{padding:8px 10px; font-size:.95rem; white-space:nowrap}
+  .top-actions{flex:none}
+}
+/* MacBook (a partir de 1400 px): coluna mais larga e conversa ocupando a altura da tela */
+@media (min-width:1400px){
+  .wrap{max-width:1320px}
+  .layout{grid-template-columns:280px minmax(0,1fr); gap:36px}
+  .detail{grid-template-columns:minmax(0,1fr) 360px; gap:36px}
+  .msgs{grid-template-columns:340px minmax(0,1fr)}
+  .tgrid{grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:20px}
+  .hero{padding:64px}
+}
+/* iMac e monitores grandes: texto e coluna crescem juntos, para não virar uma faixa estreita no meio */
+@media (min-width:1800px){
+  html{font-size:17px} :root{--fs:17.5px}
+  html.big{--fs:19.5px}
+  .wrap{max-width:1480px}
+  .layout{grid-template-columns:300px minmax(0,1fr)}
+  .detail{grid-template-columns:minmax(0,1fr) 400px}
+  .msgs{grid-template-columns:380px minmax(0,1fr)}
+  .tgrid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  .hero{padding:80px; gap:64px}
+  .hero p.lead{font-size:1.25rem}
+}
+@media (min-width:2300px){
+  html{font-size:18.5px} :root{--fs:19px}
+  html.big{--fs:21px}
+  .wrap{max-width:1640px}
+  .top{--top-h:72px; --logo-h:25px}
+  html.top-big .top{--top-h:94px; --logo-h:32px}
+}
