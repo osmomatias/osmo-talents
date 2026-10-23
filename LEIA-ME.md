@@ -221,6 +221,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `publicar.sh`: empacota a pasta e leva para o servidor.
 - `instalar.sh`: monta tudo no servidor em 7 passos (Node.js, serviço, nginx, HTTPS).
 - `configurar-email.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
+- `configurar-admin.sh`: diz quais e-mails podem abrir o painel do dono em `/#panorama` (números gerais, evolução por semana, funil, dinheiro e o que está parado). A página não aparece em nenhum menu e, para as outras pessoas, responde como se não existisse.
 - `scripts/seed.js`: cria pessoas e vagas de exemplo.
 - `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
 - `scripts/conferir-laudo.js`: testa um laudo no computador, sem enviar ao site.

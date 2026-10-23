@@ -1070,6 +1070,83 @@ route("POST", "/api/threads", ({ user, body }) => {
   return { thread: th };
 });
 
+// PAINEL DO DONO (panorama da plataforma): só quem entrou com um e-mail da lista ADMIN_EMAILS do .env vê.
+// Para todo mundo, inclusive quem está logado, a rota responde "não encontrada", como se não existisse.
+// Junta numa resposta só os números gerais, a evolução das últimas 12 semanas, o funil de contratação,
+// o dinheiro que passou pela plataforma, os pontos que precisam de atenção e as últimas novidades.
+const ADMINS = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+const isAdmin = user => !!user && ADMINS.includes(String(user.email).toLowerCase());
+route("GET", "/api/admin/overview", ({ user }) => {
+  if (!isAdmin(user)) fail(404, "Rota não encontrada.");
+  const count = (sql, ...p) => one(sql, ...p).n;
+  const byKey = (sql, ...p) => Object.fromEntries(all(sql, ...p).map(r => [r.k, r.n]));
+  // semana começa na segunda: "weekday 0" leva ao domingo seguinte (ou fica, se já é domingo) e voltamos 6 dias
+  const weekly = (table, extra = "") => byKey(`SELECT date(created_at, 'weekday 0', '-6 days') k, COUNT(*) n FROM ${table}
+    WHERE created_at >= date('now', '-84 days') ${extra} GROUP BY k`);
+  const weeks = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - (11 - i) * 7); return d.toISOString().slice(0, 10); });
+  const [wUsers, wJobs, wContracts] = [weekly("users"), weekly("jobs"), weekly("contracts")];
+  const wMoney = byKey(`SELECT date(created_at, 'weekday 0', '-6 days') k, SUM(value) n FROM contracts WHERE created_at >= date('now', '-84 days') GROUP BY k`);
+
+  // dinheiro: com pagamentos ligados vale o que o Asaas confirmou; sem eles, etapa aprovada conta como paga (simulação)
+  const ms = all("SELECT status, pay_status, value FROM milestones");
+  const sum = f => ms.filter(f).reduce((a, m) => a + m.value, 0);
+  const released = asaas.ENABLED ? sum(m => m.pay_status === "liberado") : sum(m => m.status === "aprovada");
+  const held = asaas.ENABLED ? sum(m => m.pay_status === "pago") : sum(m => m.status !== "aprovada");
+  const toPay = asaas.ENABLED ? sum(m => ["a_pagar", "aguardando"].includes(m.pay_status)) : 0;
+
+  const jobsTotal = count("SELECT COUNT(*) n FROM jobs");
+  return {
+    generatedAt: new Date().toISOString(),
+    config: { payments: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS, mail: mail.ENABLED, oauth: oauth.list(), version: appVersion() },
+    people: {
+      freelas: count("SELECT COUNT(*) n FROM users WHERE role = 'freela'"), clientes: count("SELECT COUNT(*) n FROM users WHERE role = 'cliente'"),
+      new7: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-7 days')"),
+      new30: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-30 days')"),
+      active7: count("SELECT COUNT(DISTINCT sender_id) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
+      verified: count("SELECT COUNT(*) n FROM verifications"),
+      withPayout: count("SELECT COUNT(*) n FROM payout_accounts"),
+      profilesReady: count("SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''"),
+    },
+    jobs: { byStatus: byKey("SELECT status k, COUNT(*) n FROM jobs GROUP BY status"), total: jobsTotal,
+      avgClarity: Math.round(one("SELECT AVG(clarity) n FROM jobs").n || 0),
+      byCat: byKey("SELECT cat k, COUNT(*) n FROM jobs GROUP BY cat") },
+    proposals: { byStatus: byKey("SELECT status k, COUNT(*) n FROM proposals GROUP BY status"),
+      perJob: jobsTotal ? Math.round(count("SELECT COUNT(*) n FROM proposals") / jobsTotal * 10) / 10 : 0 },
+    // funil: de todas as vagas publicadas, quantas receberam proposta, viraram contrato e foram concluídas
+    funnel: { published: jobsTotal, withProposal: count("SELECT COUNT(DISTINCT job_id) n FROM proposals"),
+      hired: count("SELECT COUNT(DISTINCT job_id) n FROM contracts"), done: count("SELECT COUNT(*) n FROM contracts WHERE status = 'concluido'") },
+    money: { contracted: one("SELECT COALESCE(SUM(value), 0) n FROM contracts").n, released, held, toPay, feeEarned: Math.round(released * FEE),
+      contracts: byKey("SELECT status k, COUNT(*) n FROM contracts GROUP BY status"),
+      milestones: byKey("SELECT status k, COUNT(*) n FROM milestones GROUP BY status") },
+    talk: { messages7: count("SELECT COUNT(*) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
+      threads7: count("SELECT COUNT(*) n FROM threads WHERE updated_at >= datetime('now', '-7 days')"),
+      reviews: one("SELECT COUNT(*) n, ROUND(AVG(rating), 1) avg FROM reviews") },
+    weekly: weeks.map(w => ({ week: w, users: wUsers[w] || 0, jobs: wJobs[w] || 0, contracts: wContracts[w] || 0, value: wMoney[w] || 0 })),
+    // o que precisa de alguém olhando: coisas paradas há mais tempo do que deveriam
+    attention: {
+      deliveredWaiting: all(`SELECT ms.id, ms.title, ms.value, ms.delivered_at at, j.title job, uc.name client, uf.name freela FROM milestones ms
+        JOIN contracts c ON c.id = ms.contract_id JOIN jobs j ON j.id = c.job_id JOIN users uc ON uc.id = c.client_id JOIN users uf ON uf.id = c.freela_id
+        WHERE ms.status = 'entregue' AND ms.delivered_at != '' AND ms.delivered_at < datetime('now', '-3 days') ORDER BY ms.delivered_at LIMIT 20`),
+      proposalsWaiting: all(`SELECT pr.id, pr.value, pr.created_at at, j.id job_id, j.title job, u.name freela FROM proposals pr
+        JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = pr.freela_id
+        WHERE pr.status = 'enviada' AND pr.created_at < datetime('now', '-7 days') ORDER BY pr.created_at LIMIT 20`),
+      jobsNoProposal: all(`SELECT j.id, j.title, j.clarity, j.created_at at, u.name client FROM jobs j JOIN users u ON u.id = j.client_id
+        WHERE j.status = 'aberta' AND j.created_at < datetime('now', '-7 days') AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.job_id = j.id)
+        ORDER BY j.created_at LIMIT 20`),
+      unpaid: asaas.ENABLED ? all(`SELECT ms.id, ms.title, ms.value, j.title job, uc.name client FROM milestones ms JOIN contracts c ON c.id = ms.contract_id
+        JOIN jobs j ON j.id = c.job_id JOIN users uc ON uc.id = c.client_id WHERE ms.pay_status = 'aguardando' LIMIT 20`) : [],
+    },
+    recent: {
+      users: all("SELECT u.id, u.name, u.email, u.role, u.created_at at, (SELECT 1 FROM verifications v WHERE v.user_id = u.id) verified FROM users u ORDER BY u.id DESC LIMIT 10"),
+      jobs: all(`SELECT j.id, j.title, j.status, j.clarity, j.cat, j.created_at at, u.name client, (SELECT COUNT(*) FROM proposals p WHERE p.job_id = j.id) props
+        FROM jobs j JOIN users u ON u.id = j.client_id ORDER BY j.id DESC LIMIT 10`),
+      contracts: all(`SELECT c.id, c.value, c.status, c.created_at at, j.title job, uc.name client, uf.name freela,
+        (SELECT COUNT(*) FROM milestones m WHERE m.contract_id = c.id AND m.status = 'aprovada') done, (SELECT COUNT(*) FROM milestones m WHERE m.contract_id = c.id) total
+        FROM contracts c JOIN jobs j ON j.id = c.job_id JOIN users uc ON uc.id = c.client_id JOIN users uf ON uf.id = c.freela_id ORDER BY c.id DESC LIMIT 10`),
+    },
+  };
+}, { auth: false }); // auth:false para quem não entrou também receber "não encontrada" (e não "entre na sua conta")
+
 // CARTEIRO PACIENTE: em vez de mandar um e-mail a cada mensagem (seria chato!), uma vez por
 // minuto ele olha as conversas e só manda se:
 // - tem coisa não lida há pelo menos 2 minutos sem nada novo (junta tudo num e-mail só);

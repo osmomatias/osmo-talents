@@ -880,6 +880,109 @@ V.painel = async () => {
 <div class="stack">${side}<section class="stack" style="gap:12px"><h2>Contratos</h2>${contracts}</section></div>`;
 };
 
+// PAINEL DO DONO (#panorama): uma tela que não aparece em nenhum menu. Mostra o panorama da plataforma inteira:
+// números gerais, evolução por semana, funil de contratação, dinheiro, o que está parado e as últimas novidades.
+// Quem decide quem pode ver é o servidor (lista ADMIN_EMAILS); para qualquer outra pessoa a página "não existe".
+// Enquanto está aberta, se atualiza sozinha a cada minuto.
+/* ---------- panorama (painel do dono) ---------- */
+const ADM_MS = { pendente: "A seguir", andamento: "Em andamento", entregue: "Entregue", ajustes: "Ajustes", aprovada: "Aprovada" };
+const num = n => Number(n || 0).toLocaleString("pt-BR");
+const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "–";
+// barras de uma série por semana, desenhadas à mão em SVG (sem bibliotecas); o texto escondido descreve o gráfico para leitores de tela
+function weekBars(title, rows, key, fmt = num) {
+  const max = Math.max(1, ...rows.map(r => r[key])), W = 12 * 22, H = 90, total = rows.reduce((a, r) => a + r[key], 0);
+  const bars = rows.map((r, i) => { const h = Math.round(r[key] / max * (H - 18)); const last = i === rows.length - 1;
+    return `<rect x="${i * 22 + 3}" y="${H - 14 - h}" width="16" height="${Math.max(h, 1)}" rx="3" class="${last ? "adm-bar now" : "adm-bar"}"><title>Semana de ${r.week.slice(8, 10)}/${r.week.slice(5, 7)}: ${fmt(r[key])}</title></rect>`; }).join("");
+  const label = (i, anchor) => `<text x="${i * 22 + 11}" y="${H - 2}" text-anchor="${anchor}" class="adm-axis">${rows[i].week.slice(8, 10)}/${rows[i].week.slice(5, 7)}</text>`;
+  const desc = `${title}, últimas 12 semanas: ${rows.map(r => fmt(r[key])).join(", ")}.`;
+  return `<div class="panel adm-chart"><div class="row" style="justify-content:space-between"><span class="label">${title}</span><b class="mono">${fmt(rows[rows.length - 1][key])} <span class="hint">nesta semana</span></b></div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(desc)}" preserveAspectRatio="none">${bars}${label(0, "start")}${label(11, "end")}</svg>
+    <span class="hint">${fmt(total)} em 12 semanas</span></div>`;
+}
+// barras horizontais simples (funil, áreas): o comprimento é a parte de cada linha em relação à maior
+function hBars(rows) {
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return `<div class="adm-hbars">${rows.map(([name, n, note]) => `<div class="adm-hrow"><span>${esc(name)}</span><span class="adm-htrack"><i style="width:${Math.round(n / max * 100)}%"></i></span><b class="mono">${num(n)}</b>${note ? `<span class="hint">${note}</span>` : "<span></span>"}</div>`).join("")}</div>`;
+}
+const admList = (title, items, row, empty) => `<div class="panel stack" style="gap:10px"><div class="row" style="justify-content:space-between"><h3>${title}</h3><span class="badge ${items.length ? "" : "off"}">${items.length}</span></div>
+  ${items.length ? `<ul class="adm-list">${items.map(row).join("")}</ul>` : `<p class="hint">${empty}</p>`}</div>`;
+V.panorama = async () => {
+  if (needLogin()) return;
+  let d;
+  try { d = await api("GET", "/api/admin/overview"); }
+  catch (e) { if (e.status === 404) return emptyBox("Página não encontrada.", "", "inicio", "Voltar ao início"); throw e; }
+  const p = d.people, m = d.money, f = d.funnel, a = d.attention, js = d.jobs.byStatus;
+  const kpi = (label, value, note = "") => `<div class="panel adm-kpi"><span class="label">${label}</span><b class="mono">${value}</b>${note ? `<span class="hint">${note}</span>` : ""}</div>`;
+  const chip = (on, yes, no) => `<span class="status ${on ? "ok" : "off"}">${on ? yes : no}</span>`;
+  return `<div class="adm stack">
+  <div class="row" style="justify-content:space-between; align-items:flex-end">
+    <div><span class="label">Só para a Osmo</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Panorama da plataforma</h1>
+      <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
+    <div class="row" style="gap:6px">${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+  </div>
+
+  <div class="adm-kpis">
+    ${kpi("Pessoas", num(p.freelas + p.clientes), `${num(p.freelas)} freelas · ${num(p.clientes)} clientes`)}
+    ${kpi("Novas pessoas", num(p.new7), `nos últimos 7 dias · ${num(p.new30)} em 30`)}
+    ${kpi("Ativas na semana", num(p.active7), "mandaram mensagem em 7 dias")}
+    ${kpi("Vagas abertas", num(js.aberta || 0), `${num(d.jobs.total)} publicadas · clareza média ${d.jobs.avgClarity}%`)}
+    ${kpi("Contratos ativos", num(m.contracts.ativo || 0), `${num(m.contracts.concluido || 0)} concluídos`)}
+    ${kpi("Valor contratado", brl(m.contracted), "soma de todos os contratos")}
+    ${kpi(d.config.payments ? "Liberado aos freelas" : "Aprovado (simulado)", brl(m.released), `receita Osmo ${brl(m.feeEarned)}`)}
+    ${kpi("Protegido / a pagar", `${brl(m.held)}`, d.config.payments ? `${brl(m.toPay)} ainda a pagar` : "etapas ainda não aprovadas")}
+  </div>
+
+  <div class="adm-charts">
+    ${weekBars("Cadastros por semana", d.weekly, "users")}
+    ${weekBars("Vagas publicadas por semana", d.weekly, "jobs")}
+    ${weekBars("Contratos fechados por semana", d.weekly, "contracts")}
+    ${weekBars("Valor contratado por semana", d.weekly, "value", brl)}
+  </div>
+
+  <div class="adm-two">
+    <div class="panel stack" style="gap:12px"><h3>Funil de contratação</h3>
+      ${hBars([["Vagas publicadas", f.published], ["Receberam proposta", f.withProposal, pct(f.withProposal, f.published)], ["Viraram contrato", f.hired, pct(f.hired, f.published)], ["Contrato concluído", f.done, pct(f.done, f.published)]])}
+      <p class="hint">${d.proposals.perJob} propostas por vaga em média · ${num(d.proposals.byStatus.enviada || 0)} propostas aguardando resposta agora.</p></div>
+    <div class="panel stack" style="gap:12px"><h3>Saúde da comunidade</h3>
+      ${hBars([["Freelas", p.freelas], ["Perfil completo", p.profilesReady, pct(p.profilesReady, p.freelas)], ["Com selo verificado", p.verified, pct(p.verified, p.freelas)], ["Com conta de recebimento", p.withPayout, pct(p.withPayout, p.freelas)]])}
+      <p class="hint">${num(d.talk.messages7)} mensagens e ${num(d.talk.threads7)} conversas ativas em 7 dias · ${d.talk.reviews.n ? `nota média ${String(d.talk.reviews.avg).replace(".", ",")} em ${num(d.talk.reviews.n)} avaliações` : "nenhuma avaliação ainda"}.</p></div>
+  </div>
+
+  <div class="adm-two">
+    <div class="panel stack" style="gap:12px"><h3>Etapas dos contratos</h3>
+      ${hBars(Object.keys(ADM_MS).map(k => [ADM_MS[k], m.milestones[k] || 0]))}</div>
+    <div class="panel stack" style="gap:12px"><h3>Vagas por área</h3>
+      ${hBars(CATS.map(c => [c.n, d.jobs.byCat[c.id] || 0]).sort((x, y) => y[1] - x[1]))}</div>
+  </div>
+
+  <h2>Precisa de atenção</h2>
+  <div class="adm-two">
+    ${admList("Entregas sem resposta há 3+ dias", a.deliveredWaiting, x => `<li><b>${esc(x.title)}</b> · ${brl(x.value)}<br><span class="hint">${esc(x.job)} · ${esc(x.client)} ainda não aprovou · entregue ${when(x.at)}</span></li>`, "Nenhuma entrega esperando aprovação.")}
+    ${admList("Propostas sem resposta há 7+ dias", a.proposalsWaiting, x => `<li><a href="#vaga-${x.job_id}"><b>${esc(x.job)}</b></a> · ${brl(x.value)}<br><span class="hint">${esc(x.freela)} · enviada ${when(x.at)}</span></li>`, "Todas as propostas recentes tiveram resposta.")}
+    ${admList("Vagas abertas há 7+ dias sem proposta", a.jobsNoProposal, x => `<li><a href="#vaga-${x.id}"><b>${esc(x.title)}</b></a> · ${x.clarity}% claro<br><span class="hint">${esc(x.client)} · publicada ${when(x.at)}</span></li>`, "Toda vaga aberta já recebeu proposta.")}
+    ${d.config.payments ? admList("Cobranças aguardando pagamento", a.unpaid, x => `<li><b>${esc(x.title)}</b> · ${brl(x.value)}<br><span class="hint">${esc(x.job)} · ${esc(x.client)}</span></li>`, "Nenhuma cobrança em aberto.") : ""}
+  </div>
+
+  <h2>Últimas novidades</h2>
+  <div class="panel adm-table"><h3>Cadastros</h3><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Quando</th></tr></thead><tbody>
+    ${d.recent.users.map(u => `<tr><td>${u.role === "freela" ? `<a href="#talento-${u.id}">${esc(u.name)}</a>` : esc(u.name)}${vbadge(u.verified)}</td><td>${esc(u.email)}</td><td>${u.role === "freela" ? "Freela" : "Cliente"}</td><td>${when(u.at)}</td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="panel adm-table"><h3>Vagas</h3><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Situação</th><th>Clareza</th><th>Propostas</th><th>Quando</th></tr></thead><tbody>
+    ${d.recent.jobs.map(j => `<tr><td><a href="#vaga-${j.id}">${esc(j.title)}</a></td><td>${esc(j.client)}</td><td>${pill(JSTATUS, j.status)}</td><td class="mono">${j.clarity}%</td><td class="mono">${j.props}</td><td>${when(j.at)}</td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="panel adm-table"><h3>Contratos</h3><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Freela</th><th>Valor</th><th>Etapas</th><th>Quando</th></tr></thead><tbody>
+    ${d.recent.contracts.map(c => `<tr><td>${esc(c.job)}</td><td>${esc(c.client)}</td><td>${esc(c.freela)}</td><td class="mono">${brl(c.value)}</td><td class="mono">${c.done}/${c.total}${c.status === "concluido" ? " ✓" : ""}</td><td>${when(c.at)}</td></tr>`).join("")}
+  </tbody></table></div>
+  <p class="hint">Versão ${esc(d.config.version)} · liberação automática após ${d.config.autoRelease} dias sem resposta.</p>
+</div>`;
+};
+after.panorama = () => {
+  pollTimer = setInterval(async () => {
+    if (document.hidden || location.hash !== "#panorama") return;
+    try { const html = await V.panorama(); if (html && location.hash === "#panorama") $("#view").innerHTML = html; } catch {}
+  }, 60_000);
+};
+
 // SELO DE VERIFICADO: explica como funciona, pede a confirmação ("o laudo é meu") e envia o PDF
 // para o servidor conferir. Se já é verificado, mostra desde quando e o botão de remover.
 /* ---------- selo de verificado ---------- */
