@@ -276,6 +276,18 @@ CREATE TABLE IF NOT EXISTS verifications (
 );
 `);
 
+// --- migrações (versão 11: registro do que o dono da plataforma faz pela tela de gestão)
+// Cada criação, edição ou exclusão feita pelo dono vira uma linha aqui: quem fez, o quê, em qual
+// registro e o que mudou. É o "diário de bordo" para saber depois quem mexeu em quê.
+db.exec(`
+CREATE TABLE IF NOT EXISTS admin_log (
+  id INTEGER PRIMARY KEY,
+  admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL, entity TEXT NOT NULL, entity_id INTEGER, detail TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 // Antes, o portfólio era só uma lista de textos dentro do perfil. Este laço passa cada texto
 // antigo para a página nova de portfólio (no máximo 12) e depois esvazia a lista antiga,
 // para não copiar de novo da próxima vez que o programa ligar.

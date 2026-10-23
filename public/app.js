@@ -918,7 +918,7 @@ V.panorama = async () => {
   <div class="row" style="justify-content:space-between; align-items:flex-end">
     <div><span class="label">Só para a Osmo</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Panorama da plataforma</h1>
       <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
-    <div class="row" style="gap:6px">${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+    <div class="row" style="gap:6px"><a class="btn sm hl" href="#gestao">Gerenciar dados</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
   </div>
 
   <div class="adm-kpis">
@@ -982,6 +982,131 @@ after.panorama = () => {
     try { const html = await V.panorama(); if (html && location.hash === "#panorama") $("#view").innerHTML = html; } catch {}
   }, 60_000);
 };
+
+// GESTÃO DE DADOS (#gestao): outra tela escondida do dono, aberta pelo panorama. É o "CRUD":
+// criar, ler, editar e apagar pessoas, vagas, propostas, contratos, etapas e avaliações.
+// O servidor manda a "receita" de cada aba (quais colunas mostrar e quais campos editar), e esta tela só
+// desenha: uma tabela com busca e, ao clicar em Editar ou Novo, um painel lateral com o formulário.
+// Apagar sempre pede confirmação, e tudo o que o dono faz aparece na aba "Registro".
+/* ---------- gestão de dados (CRUD do dono) ---------- */
+const ADM = { schema: null, ent: "users", q: "", page: 0, rows: [], log: null };
+const admEnt = () => ADM.schema.entities.find(e => e.k === ADM.ent);
+// mostra cada célula do jeito certo: datas como "há 2 h", situações com o nome bonito, valores em reais
+function admCell(e, k, v) {
+  if (v === null || v === undefined || v === "") return `<span class="hint">–</span>`;
+  if (k === "created_at") return when(v);
+  const f = e.fields.find(x => x.k === k);
+  if (f && f.options) return esc((f.options.find(o => o.v === v) || { l: v }).l);
+  if (k === "role") return v === "freela" ? "Freela" : "Cliente";
+  if (k === "value") return brl(v);
+  return esc(String(v).length > 80 ? String(v).slice(0, 80) + "…" : v);
+}
+function gestaoTable() {
+  if (ADM.ent === "log") return `<div class="panel adm-table"><table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Registro</th><th>Detalhes</th></tr></thead><tbody>
+    ${ADM.log.length ? ADM.log.map(l => `<tr><td>${when(l.created_at)}</td><td>${esc(l.admin || "–")}</td><td>${esc(l.action)}</td><td>${esc((ADM.schema.entities.find(e => e.k === l.entity) || { label: l.entity }).label)} #${l.entity_id}</td><td class="adm-detail">${esc(l.detail.length > 160 ? l.detail.slice(0, 160) + "…" : l.detail)}</td></tr>`).join("") : `<tr><td colspan="5" class="hint">Nada registrado ainda.</td></tr>`}
+  </tbody></table></div>`;
+  const e = admEnt();
+  return `<div class="panel adm-table"><table><thead><tr><th>#</th>${e.cols.map(([, l]) => `<th>${esc(l)}</th>`).join("")}<th><span class="sr-only">Ações</span></th></tr></thead><tbody>
+    ${ADM.rows.length ? ADM.rows.map(r => `<tr><td class="mono">${r.id}</td>${e.cols.map(([k]) => `<td>${admCell(e, k, r[k])}</td>`).join("")}
+      <td class="adm-actions"><button class="btn sm" data-adm-edit="${r.id}">Editar</button><button class="btn sm ghost" data-adm-del="${r.id}">Apagar</button></td></tr>`).join("")
+      : `<tr><td colspan="${e.cols.length + 2}" class="hint">Nada encontrado.</td></tr>`}
+  </tbody></table></div>
+  <div class="row" style="justify-content:space-between"><span class="hint">Página ${ADM.page + 1} · até 50 por página</span>
+    <div class="row" style="gap:6px"><button class="btn sm" data-adm-page="-1" ${ADM.page ? "" : "disabled"}>Anterior</button><button class="btn sm" data-adm-page="1" ${ADM.rows.length === 50 ? "" : "disabled"}>Próxima</button></div></div>`;
+}
+async function admLoad() {
+  if (ADM.ent === "log") ADM.log = (await api("GET", "/api/admin/log")).log;
+  else ADM.rows = (await api("GET", `/api/admin/${ADM.ent}?q=${encodeURIComponent(ADM.q)}&page=${ADM.page}`)).rows;
+}
+async function admRefresh() { try { await admLoad(); const b = $("#admBox"); if (b) b.innerHTML = gestaoTable(); } catch (err) { toast(err.message); } }
+V.gestao = async () => {
+  if (needLogin()) return;
+  try { if (!ADM.schema) ADM.schema = await api("GET", "/api/admin/schema"); await admLoad(); }
+  catch (e) { if (e.status === 404) return emptyBox("Página não encontrada.", "", "inicio", "Voltar ao início"); throw e; }
+  const e = ADM.ent === "log" ? null : admEnt();
+  return `<div class="adm stack">
+  <div class="row" style="justify-content:space-between; align-items:flex-end">
+    <div><a href="#panorama" class="back">← Panorama</a><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Gestão de dados</h1>
+      <p class="hint">Criar, ver, editar e apagar registros da plataforma. Tudo fica anotado no Registro.</p></div>
+    ${e && e.canCreate ? `<button class="btn hl" data-adm-new="1">Novo: ${esc(e.label.replace(/s$/, "").toLowerCase())}</button>` : ""}
+  </div>
+  <div class="seg adm-tabs" role="group" aria-label="O que gerenciar">${ADM.schema.entities.map(x => `<button type="button" data-adm-tab="${x.k}" aria-pressed="${ADM.ent === x.k}">${esc(x.label)}</button>`).join("")}<button type="button" data-adm-tab="log" aria-pressed="${ADM.ent === "log"}">Registro</button></div>
+  ${e ? `<input class="input" id="admQ" type="search" placeholder="Buscar em ${esc(e.label.toLowerCase())}…" value="${esc(ADM.q)}" autocomplete="off">` : ""}
+  <div id="admBox" class="stack" style="gap:12px">${gestaoTable()}</div>
+</div>`;
+};
+// um campo do formulário, desenhado conforme o tipo que o servidor informou
+function admField(f, v) {
+  const id = "adm_" + f.k, lock = f.locked ? "disabled" : "", req = f.req ? "required" : "";
+  const label = `<label for="${id}">${esc(f.label)}${f.locked ? ' <span class="hint">(muda só pelo Asaas)</span>' : ""}</label>`;
+  if (f.type === "bool") return `<label class="check"><input type="checkbox" id="${id}" name="${f.k}" ${v ? "checked" : ""} ${lock}><span>${esc(f.label)}</span></label>`;
+  if (f.type === "select") return `<div class="field">${label}<select class="input" id="${id}" name="${f.k}" ${lock} ${req}>${f.req ? "" : `<option value="">–</option>`}${f.options.map(o => `<option value="${esc(o.v)}" ${o.v === v ? "selected" : ""}>${esc(o.l)}</option>`).join("")}</select></div>`;
+  if (f.type === "textarea" || f.type === "list") return `<div class="field">${label}<textarea class="input" id="${id}" name="${f.k}" rows="${f.type === "list" ? 4 : 5}" ${lock}>${esc(Array.isArray(v) ? v.join("\n") : v ?? "")}</textarea></div>`;
+  return `<div class="field">${label}<input class="input" id="${id}" name="${f.k}" type="${f.type === "int" ? "number" : f.type === "email" ? "email" : "text"}" value="${esc(v ?? "")}" ${lock} ${req}></div>`;
+}
+async function openAdmForm(id) {
+  const e = admEnt(); let values = {};
+  if (id) { try { values = (await api("GET", `/api/admin/${e.k}/${id}`)).values; } catch (err) { return toast(err.message); } }
+  const fields = e.fields.filter(f => id ? !f.create : true);
+  $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer adm-drawer" role="dialog" aria-modal="true" aria-label="${id ? "Editar" : "Novo"} registro">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="row" style="justify-content:space-between"><h2>${id ? `${esc(e.label)} #${id}` : `Novo registro em ${esc(e.label)}`}</h2><button class="btn sm ghost" data-adm-close="1">Fechar</button></div>
+    <form class="stack" id="admForm" data-id="${id || ""}">${fields.map(f => admField(f, values[f.k])).join("")}
+      <div id="admErr" class="err" role="alert" hidden></div>
+      <div class="sheet-actions"><button class="btn hl" type="submit">${id ? "Salvar" : "Criar"}</button>${id && e.k === "users" ? `<button type="button" class="btn" data-adm-pass="${id}">Gerar senha temporária</button>` : ""}</div>
+    </form></div>`;
+  const first = $("#admForm .input"); if (first) first.focus();
+}
+// a senha temporária aparece uma vez só, para o dono copiar e passar à pessoa por um canal seguro
+function showTempPassword(name, pass) {
+  $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer sheet" role="dialog" aria-modal="true" aria-label="Senha temporária">
+    <div class="sheet-grip" aria-hidden="true"></div><h2>Senha temporária</h2>
+    <p class="muted">Passe para ${esc(name)} por um canal seguro. Ela não aparece de novo; a pessoa pode trocar depois em "Esqueci minha senha".</p>
+    <input class="input mono" readonly value="${esc(pass)}" id="admPass">
+    <div class="sheet-actions"><button class="btn hl" data-adm-close="1">Pronto</button></div></div>`;
+  $("#admPass").focus(); $("#admPass").select();
+}
+document.addEventListener("click", async ev => {
+  const t = ev.target;
+  const tab = t.closest("[data-adm-tab]"); if (tab) { ADM.ent = tab.dataset.admTab; ADM.q = ""; ADM.page = 0; return route(); }
+  const pg = t.closest("[data-adm-page]"); if (pg) { ADM.page = Math.max(0, ADM.page + Number(pg.dataset.admPage)); return admRefresh(); }
+  if (t.closest("[data-adm-close]")) { $("#layer").innerHTML = ""; return; }
+  if (t.closest("[data-adm-new]")) return openAdmForm(null);
+  const ed = t.closest("[data-adm-edit]"); if (ed) return openAdmForm(Number(ed.dataset.admEdit));
+  const del = t.closest("[data-adm-del]"); if (del) {
+    const e = admEnt(), id = Number(del.dataset.admDel);
+    const extra = { users: "Apaga também o perfil, o portfólio e as vagas dessa pessoa.", jobs: "Apaga também as propostas e contratos dessa vaga.", contracts: "Apaga também as etapas e avaliações; a vaga volta a ficar aberta." }[e.k] || "";
+    if (!await confirmSheet({ title: `Apagar ${e.label.toLowerCase().replace(/s$/, "")} #${id}?`, text: `Não dá para desfazer. ${extra}`, ok: "Apagar" })) return;
+    try { await api("DELETE", `/api/admin/${e.k}/${id}`); toast("Apagado"); } catch (err) { return toast(err.message); }
+    return admRefresh();
+  }
+  const pw = t.closest("[data-adm-pass]"); if (pw) {
+    const id = Number(pw.dataset.admPass);
+    if (!await confirmSheet({ title: "Gerar uma senha temporária?", text: "A senha atual deixa de valer e a pessoa sai de todos os aparelhos.", ok: "Gerar senha" })) return;
+    try { const r = await api("POST", `/api/admin/users/${id}/password`); showTempPassword("a pessoa", r.tempPassword); } catch (err) { toast(err.message); }
+  }
+});
+document.addEventListener("input", ev => {
+  if (ev.target.id !== "admQ") return;
+  ADM.q = ev.target.value; ADM.page = 0;
+  clearTimeout(ADM.t); ADM.t = setTimeout(admRefresh, 250); // espera parar de digitar para não buscar a cada letra
+});
+document.addEventListener("submit", async ev => {
+  if (ev.target.id !== "admForm") return;
+  const f = ev.target, e = admEnt(), id = Number(f.dataset.id) || 0, body = {};
+  for (const fd of e.fields) {
+    const el = f.elements[fd.k]; if (!el || el.disabled) continue;
+    body[fd.k] = fd.type === "bool" ? el.checked : el.value;
+  }
+  const btn = f.querySelector('[type="submit"]'); btn.disabled = true;
+  try {
+    const r = await api(id ? "PUT" : "POST", id ? `/api/admin/${e.k}/${id}` : `/api/admin/${e.k}`, body);
+    await admRefresh();
+    if (r.tempPassword) showTempPassword(body.name || "a pessoa", r.tempPassword);
+    else { $("#layer").innerHTML = ""; toast(id ? "Salvo" : "Criado"); }
+  } catch (err) { const b = $("#admErr"); b.textContent = err.message; b.hidden = false; }
+  finally { btn.disabled = false; }
+});
 
 // SELO DE VERIFICADO: explica como funciona, pede a confirmação ("o laudo é meu") e envia o PDF
 // para o servidor conferir. Se já é verificado, mostra desde quando e o botão de remover.

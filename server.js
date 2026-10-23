@@ -1147,6 +1147,223 @@ route("GET", "/api/admin/overview", ({ user }) => {
   };
 }, { auth: false }); // auth:false para quem não entrou também receber "não encontrada" (e não "entre na sua conta")
 
+// GESTÃO PELO DONO (CRUD = criar, ler, editar e apagar): o dono (ADMIN_EMAILS) mexe direto nos registros da
+// plataforma. Cada "entidade" abaixo diz qual tabela usa, quais campos podem ser vistos e editados, como
+// listar e buscar, e o que precisa ser conferido antes de apagar. Tudo o que o dono faz vai para o admin_log.
+// As conversas (mensagens) ficam de fora de propósito: são privadas entre cliente e freela (LGPD).
+const needAdmin = user => { if (!isAdmin(user)) fail(404, "Rota não encontrada."); };
+const adminLog = (user, action, entity, id, detail) =>
+  run("INSERT INTO admin_log (admin_id, action, entity, entity_id, detail) VALUES (?,?,?,?,?)", user.id, action, entity, id, JSON.stringify(detail || {}).slice(0, 4000));
+const opt = (...pairs) => pairs.map(([v, l]) => ({ v, l }));
+const ST_JOB = opt(["aberta", "Aberta"], ["em_andamento", "Em andamento"], ["concluida", "Concluída"], ["fechada", "Fechada"]);
+const ST_PROP = opt(["enviada", "Aguardando resposta"], ["aceita", "Aceita"], ["recusada", "Recusada"], ["retirada", "Retirada"]);
+const ST_MS = opt(["pendente", "A seguir"], ["andamento", "Em andamento"], ["entregue", "Entregue"], ["ajustes", "Ajustes pedidos"], ["aprovada", "Aprovada"]);
+const ST_PAY = opt(["a_pagar", "A pagar"], ["aguardando", "Aguardando pagamento"], ["pago", "Pago (protegido)"], ["liberado", "Liberado"], ["estornado", "Estornado"]);
+// dinheiro de verdade envolvido? (com Asaas ligado, etapa cobrada, paga ou liberada não pode sumir do banco)
+const MONEY = "pay_status IN ('aguardando','pago','liberado')";
+const moneyGuard = (where, ...p) => {
+  if (asaas.ENABLED && one(`SELECT 1 FROM milestones WHERE ${MONEY} AND ${where}`, ...p))
+    fail(409, "Tem etapa com cobrança gerada, paga ou liberada no Asaas. Resolva o pagamento (estorno) antes de apagar.");
+};
+// campos: k = nome, label = rótulo, type = text | textarea | email | int | select | bool | list,
+// tbl = "profiles" quando o campo mora no perfil, json = guardado como lista em JSON, create = só ao criar
+const ADMIN_ENT = {
+  users: {
+    label: "Pessoas", table: "users", canCreate: true,
+    fields: [
+      { k: "name", label: "Nome", type: "text", max: 80, req: true }, { k: "email", label: "E-mail", type: "email", req: true },
+      { k: "role", label: "Perfil", type: "select", options: opt(["freela", "Freelancer"], ["cliente", "Cliente"]), req: true },
+      { k: "energy", label: "Energia", type: "select", options: opt(["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]) },
+      { k: "title", label: "O que faz", type: "text", max: 100, tbl: "profiles" }, { k: "company", label: "Empresa", type: "text", max: 100, tbl: "profiles" },
+      { k: "location", label: "Cidade", type: "text", max: 80, tbl: "profiles" },
+      { k: "rate", label: "Valor por hora (R$)", type: "int", min: 0, max: 100000, tbl: "profiles" }, { k: "hours", label: "Horas por semana", type: "int", min: 1, max: 60, tbl: "profiles" },
+      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 12, len: 40, tbl: "profiles", json: true },
+      { k: "tag", label: "Identificação", type: "text", max: 80, tbl: "profiles" }, { k: "bio", label: "Sobre", type: "textarea", max: 1200, tbl: "profiles" },
+    ],
+    list: (q, off) => all(`SELECT u.id, u.name, u.email, u.role, u.created_at, p.title, p.company FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+      WHERE ? = '' OR u.name LIKE ? OR u.email LIKE ? OR p.title LIKE ? ORDER BY u.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
+    cols: [["name", "Nome"], ["email", "E-mail"], ["role", "Perfil"], ["title", "O que faz"], ["created_at", "Desde"]],
+    get: id => one("SELECT u.*, p.* , u.id id FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?", id),
+    create: (v, user) => {
+      if (one("SELECT 1 FROM users WHERE email = ?", v.email)) fail(409, "Já existe uma conta com esse e-mail.");
+      const pass = crypto.randomBytes(9).toString("base64url");
+      const id = tx(() => { const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", v.name, v.email, hashPassword(pass), v.role).lastInsertRowid);
+        run("INSERT INTO profiles (user_id) VALUES (?)", uid); return uid; });
+      return { id, tempPassword: pass };
+    },
+    check: (v, id) => { if (v.email !== undefined && one("SELECT 1 FROM users WHERE email = ? AND id != ?", v.email, id || 0)) fail(409, "Esse e-mail já é de outra conta."); },
+    beforeDelete: (id, user) => {
+      if (id === user.id) fail(409, "Você não pode apagar a sua própria conta por aqui.");
+      if (one("SELECT 1 FROM contracts WHERE client_id = ? OR freela_id = ?", id, id)) fail(409, "Essa pessoa tem contratos. Apague os contratos antes (ou mantenha a conta).");
+    },
+  },
+  jobs: {
+    label: "Vagas", table: "jobs", canCreate: true,
+    fields: [
+      { k: "client_id", label: "Id do cliente dono da vaga", type: "int", min: 1, req: true, create: true },
+      { k: "title", label: "Título", type: "text", max: 120, req: true }, { k: "cat", label: "Área", type: "select", options: () => CATS.map(c => ({ v: c, l: c })), req: true },
+      { k: "status", label: "Situação", type: "select", options: ST_JOB }, { k: "obj", label: "Objetivo", type: "textarea", max: 1200 },
+      { k: "ent", label: "Entregas (uma por linha)", type: "list", max: 15, len: 200, json: true }, { k: "fora", label: "Fora do escopo (uma por linha)", type: "list", max: 10, len: 200, json: true },
+      { k: "com", label: "Comunicação", type: "text", max: 200 }, { k: "fb", label: "Feedback", type: "text", max: 300 }, { k: "ref", label: "Referências", type: "text", max: 500 },
+      { k: "budget_type", label: "Tipo de valor", type: "select", options: opt(["fixo", "Valor fixo"], ["hora", "Por hora"]) },
+      { k: "budget", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 }, { k: "duration", label: "Prazo", type: "text", max: 60 },
+      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 8, len: 40, json: true },
+      { k: "is_async", label: "Sem reuniões obrigatórias", type: "bool" }, { k: "is_flex", label: "Prazo flexível", type: "bool" },
+    ],
+    list: (q, off) => all(`SELECT j.id, j.title, j.status, j.clarity, j.cat, j.created_at, u.name client FROM jobs j JOIN users u ON u.id = j.client_id
+      WHERE ? = '' OR j.title LIKE ? OR u.name LIKE ? ORDER BY j.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
+    cols: [["title", "Vaga"], ["client", "Cliente"], ["status", "Situação"], ["clarity", "Clareza %"], ["created_at", "Publicada"]],
+    get: id => one("SELECT * FROM jobs WHERE id = ?", id),
+    create: v => {
+      if (!one("SELECT 1 FROM users WHERE id = ? AND role = 'cliente'", v.client_id)) fail(400, "Esse id não é de uma conta de cliente.");
+      const j = { title: v.title, cat: v.cat, obj: v.obj || "", ent: v.ent || [], fora: v.fora || [], com: v.com || "", fb: v.fb || "", budget: v.budget || 0, duration: v.duration || "" };
+      const id = Number(run(`INSERT INTO jobs (client_id, title, cat, obj, ent, fora, com, fb, ref, budget_type, budget, duration, skills, is_async, is_flex, clarity, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.client_id, j.title, j.cat, j.obj, JSON.stringify(j.ent), JSON.stringify(j.fora), j.com, j.fb, v.ref || "",
+        v.budget_type || "fixo", j.budget, j.duration, JSON.stringify(v.skills || []), v.is_async ?? 1, v.is_flex ?? 0, clarity(j), v.status || "aberta").lastInsertRowid);
+      return { id };
+    },
+    // depois de editar, a nota de clareza é recalculada com os campos novos
+    after: id => { const j = one("SELECT * FROM jobs WHERE id = ?", id);
+      run("UPDATE jobs SET clarity = ? WHERE id = ?", clarity({ ...j, ent: parse(j.ent), fora: parse(j.fora) }), id); },
+    beforeDelete: id => moneyGuard("contract_id IN (SELECT id FROM contracts WHERE job_id = ?)", id),
+  },
+  proposals: {
+    label: "Propostas", table: "proposals",
+    fields: [{ k: "status", label: "Situação", type: "select", options: ST_PROP }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
+      { k: "days", label: "Prazo (dias úteis)", type: "int", min: 0, max: 365 }, { k: "text", label: "Texto da proposta", type: "textarea", max: 4000 },
+      { k: "questions", label: "Perguntas", type: "textarea", max: 2000 }],
+    list: (q, off) => all(`SELECT pr.id, j.title job, u.name freela, pr.value, pr.status, pr.created_at FROM proposals pr JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = pr.freela_id
+      WHERE ? = '' OR j.title LIKE ? OR u.name LIKE ? ORDER BY pr.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
+    cols: [["job", "Vaga"], ["freela", "Freela"], ["value", "Valor R$"], ["status", "Situação"], ["created_at", "Enviada"]],
+    get: id => one("SELECT * FROM proposals WHERE id = ?", id),
+    beforeDelete: id => { if (one("SELECT 1 FROM contracts WHERE proposal_id = ?", id)) fail(409, "Essa proposta virou contrato. Apague o contrato antes."); },
+  },
+  contracts: {
+    label: "Contratos", table: "contracts",
+    fields: [{ k: "status", label: "Situação", type: "select", options: opt(["ativo", "Ativo"], ["concluido", "Concluído"]) },
+      { k: "value", label: "Valor total (R$)", type: "int", min: 0, max: 10_000_000 }],
+    list: (q, off) => all(`SELECT c.id, j.title job, uc.name client, uf.name freela, c.value, c.status, c.created_at FROM contracts c JOIN jobs j ON j.id = c.job_id
+      JOIN users uc ON uc.id = c.client_id JOIN users uf ON uf.id = c.freela_id WHERE ? = '' OR j.title LIKE ? OR uc.name LIKE ? OR uf.name LIKE ?
+      ORDER BY c.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
+    cols: [["job", "Vaga"], ["client", "Cliente"], ["freela", "Freela"], ["value", "Valor R$"], ["status", "Situação"], ["created_at", "Início"]],
+    get: id => one("SELECT * FROM contracts WHERE id = ?", id),
+    beforeDelete: id => moneyGuard("contract_id = ?", id),
+  },
+  milestones: {
+    label: "Etapas", table: "milestones",
+    fields: [{ k: "title", label: "Etapa", type: "text", max: 120, req: true }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
+      { k: "status", label: "Situação", type: "select", options: ST_MS },
+      // com o Asaas ligado, a situação do pagamento só muda pelo próprio Asaas (o banco não pode mentir sobre dinheiro)
+      { k: "pay_status", label: "Pagamento", type: "select", options: ST_PAY, locked: () => asaas.ENABLED }],
+    list: (q, off) => all(`SELECT ms.id, j.title job, ms.title, ms.value, ms.status, ms.pay_status FROM milestones ms JOIN contracts c ON c.id = ms.contract_id
+      JOIN jobs j ON j.id = c.job_id WHERE ? = '' OR j.title LIKE ? OR ms.title LIKE ? ORDER BY ms.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
+    cols: [["job", "Vaga"], ["title", "Etapa"], ["value", "Valor R$"], ["status", "Situação"], ["pay_status", "Pagamento"]],
+    get: id => one("SELECT * FROM milestones WHERE id = ?", id),
+    beforeDelete: id => moneyGuard("id = ?", id),
+  },
+  reviews: {
+    label: "Avaliações", table: "reviews",
+    fields: [{ k: "rating", label: "Nota (1 a 5)", type: "int", min: 1, max: 5, req: true }, { k: "comment", label: "Comentário", type: "textarea", max: 600 }],
+    list: (q, off) => all(`SELECT r.id, a.name author, t.name target, r.rating, r.comment, r.created_at FROM reviews r JOIN users a ON a.id = r.author_id JOIN users t ON t.id = r.target_id
+      WHERE ? = '' OR a.name LIKE ? OR t.name LIKE ? OR r.comment LIKE ? ORDER BY r.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
+    cols: [["author", "Quem avaliou"], ["target", "Avaliado"], ["rating", "Nota"], ["comment", "Comentário"], ["created_at", "Quando"]],
+    get: id => one("SELECT * FROM reviews WHERE id = ?", id),
+  },
+};
+// limpa e confere um valor vindo do formulário, de acordo com o tipo do campo
+function adminValue(f, raw) {
+  if (f.type === "int") { const n = int(raw, f.min ?? 0, f.max ?? 10_000_000); return n; }
+  if (f.type === "bool") return raw === true || raw === 1 || raw === "1" ? 1 : 0;
+  if (f.type === "list") return list(raw, f.max, f.len);
+  const s = str(raw, f.max || 2000);
+  if (f.req && !s) fail(400, `Preencha "${f.label}".`);
+  if (f.type === "email") { const e = s.toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) fail(400, "Esse e-mail não parece válido."); return e; }
+  if (f.type === "select") { const ok = (typeof f.options === "function" ? f.options() : f.options).map(o => o.v); if (!ok.includes(s)) fail(400, `Escolha uma opção válida em "${f.label}".`); }
+  return s;
+}
+const adminFields = (ent, mode) => ent.fields.filter(f => mode === "create" ? true : !f.create).filter(f => !(f.locked && f.locked()));
+// o que a tela precisa para desenhar cada aba: rótulos, colunas e campos (com as opções já resolvidas)
+route("GET", "/api/admin/schema", ({ user }) => {
+  needAdmin(user);
+  return { entities: Object.entries(ADMIN_ENT).map(([k, e]) => ({ k, label: e.label, canCreate: !!e.canCreate, cols: e.cols,
+    fields: e.fields.map(f => ({ k: f.k, label: f.label, type: f.type, req: !!f.req, create: !!f.create, locked: !!(f.locked && f.locked()),
+      options: f.options ? (typeof f.options === "function" ? f.options() : f.options) : undefined })) })) };
+}, { auth: false });
+route("GET", "/api/admin/log", ({ user }) => {
+  needAdmin(user);
+  return { log: all(`SELECT l.*, u.name admin FROM admin_log l LEFT JOIN users u ON u.id = l.admin_id ORDER BY l.id DESC LIMIT 200`) };
+}, { auth: false });
+for (const [key, ent] of Object.entries(ADMIN_ENT)) {
+  // LER: lista com busca e páginas de 50
+  route("GET", `/api/admin/${key}`, ({ user, query }) => {
+    needAdmin(user);
+    const page = int(query.get("page"), 0, 10_000);
+    return { rows: ent.list(str(query.get("q") || "", 80), page * 50), page };
+  }, { auth: false });
+  // LER UM: todos os campos editáveis de um registro
+  route("GET", `/api/admin/${key}/:id`, ({ user, params }) => {
+    needAdmin(user);
+    const r = ent.get(params.id); if (!r) fail(404, "Registro não encontrado.");
+    const values = {}; for (const f of ent.fields) values[f.k] = f.json ? parse(r[f.k] || "[]") : r[f.k];
+    return { id: params.id, values };
+  }, { auth: false });
+  // EDITAR: só os campos que vieram, cada um limpo e conferido, gravados na tabela certa
+  route("PUT", `/api/admin/${key}/:id`, ({ user, body, params }) => {
+    needAdmin(user);
+    if (!ent.get(params.id)) fail(404, "Registro não encontrado.");
+    const v = {}, before = {};
+    for (const f of adminFields(ent, "edit")) if (body[f.k] !== undefined) v[f.k] = adminValue(f, body[f.k]);
+    if (ent.check) ent.check(v, params.id);
+    const old = ent.get(params.id);
+    tx(() => {
+      for (const f of adminFields(ent, "edit")) {
+        if (v[f.k] === undefined) continue;
+        before[f.k] = old[f.k];
+        const val = f.json ? JSON.stringify(v[f.k]) : v[f.k];
+        if (f.tbl === "profiles") run(`UPDATE profiles SET ${f.k} = ? WHERE user_id = ?`, val, params.id);
+        else run(`UPDATE ${ent.table} SET ${f.k} = ? WHERE id = ?`, val, params.id);
+      }
+      if (ent.after) ent.after(params.id);
+      adminLog(user, "editar", key, params.id, { antes: before, depois: v });
+    });
+    return { ok: true };
+  }, { auth: false });
+  // CRIAR: só onde faz sentido (pessoas e vagas); propostas, contratos e etapas nascem pelo fluxo normal
+  if (ent.canCreate) route("POST", `/api/admin/${key}`, ({ user, body }) => {
+    needAdmin(user);
+    const v = {}; for (const f of adminFields(ent, "create")) if (body[f.k] !== undefined && body[f.k] !== "") v[f.k] = adminValue(f, body[f.k]);
+    for (const f of ent.fields) if (f.req && (v[f.k] === undefined || v[f.k] === "")) fail(400, `Preencha "${f.label}".`);
+    if (ent.check) ent.check(v, 0);
+    const out = ent.create(v, user);
+    const rest = adminFields(ent, "edit").filter(f => f.tbl === "profiles" && v[f.k] !== undefined);
+    for (const f of rest) run(`UPDATE profiles SET ${f.k} = ? WHERE user_id = ?`, f.json ? JSON.stringify(v[f.k]) : v[f.k], out.id);
+    adminLog(user, "criar", key, out.id, v);
+    return out;
+  }, { auth: false });
+  // APAGAR: confere as travas (dinheiro, contratos ligados, a própria conta) e registra o que havia antes
+  route("DELETE", `/api/admin/${key}/:id`, ({ user, params }) => {
+    needAdmin(user);
+    const r = ent.get(params.id); if (!r) fail(404, "Registro não encontrado.");
+    if (ent.beforeDelete) ent.beforeDelete(params.id, user);
+    tx(() => {
+      // contrato apagado: a proposta deixa de valer e a vaga volta a aceitar propostas
+      if (key === "contracts") { run("UPDATE proposals SET status = 'recusada' WHERE id = ?", r.proposal_id); run("UPDATE jobs SET status = 'aberta' WHERE id = ? AND status = 'em_andamento'", r.job_id); }
+      run(`DELETE FROM ${ent.table} WHERE id = ?`, params.id);
+      adminLog(user, "apagar", key, params.id, Object.fromEntries(Object.entries(r).filter(([k, x]) => !["pass_hash", "data", "image"].includes(k) && typeof x !== "object")));
+    });
+    return { ok: true };
+  }, { auth: false });
+}
+// TROCAR SENHA de alguém (ex.: pessoa sem acesso ao e-mail): gera uma senha temporária, mostrada uma vez, e desconecta os aparelhos
+route("POST", "/api/admin/users/:id/password", ({ user, params }) => {
+  needAdmin(user);
+  if (!one("SELECT 1 FROM users WHERE id = ?", params.id)) fail(404, "Registro não encontrado.");
+  const pass = crypto.randomBytes(9).toString("base64url");
+  tx(() => { run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(pass), params.id); run("DELETE FROM sessions WHERE user_id = ?", params.id);
+    adminLog(user, "trocar senha", "users", params.id, {}); });
+  return { tempPassword: pass };
+}, { auth: false });
+
 // CARTEIRO PACIENTE: em vez de mandar um e-mail a cada mensagem (seria chato!), uma vez por
 // minuto ele olha as conversas e só manda se:
 // - tem coisa não lida há pelo menos 2 minutos sem nada novo (junta tudo num e-mail só);
