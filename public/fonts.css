@@ -1,3 +1,8 @@
+/* EXPLICANDO COMO PARA UMA CRIANÇA: este arquivo é a "gaveta das letras".
+   A fonte oficial da Osmo é a DIN Pro, mas ela é paga e os arquivos dela não estão no
+   projeto. Por isso, por enquanto, o site usa a Barlow (gratuita, do Google, bem parecida).
+   Quando alguém colocar os arquivos da DIN Pro na pasta public/fonts, é só tirar o
+   "comentário" em volta da regra abaixo para o site passar a usar a fonte original. */
 /* Para usar a DIN Pro original, copie os arquivos .woff2 da fonte para public/fonts/ e descomente:
 @font-face{font-family:'DIN Pro';src:url('/fonts/DINPro-Medium.woff2') format('woff2');font-weight:500;font-display:swap}
 */

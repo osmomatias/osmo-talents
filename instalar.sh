@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# EXPLICANDO COMO PARA UMA CRIANÇA: este é o "montador" que arruma tudo no servidor.
+# Ele faz 7 passos, e pode rodar quantas vezes quiser (se algo já está pronto, ele pula):
+#   1. instala as ferramentas (nginx, curl...);
+#   2. instala o Node.js 22 (o programa que roda o server.js);
+#   3. copia o app para /var/www/osmo-talents, sem mexer no banco e no .env;
+#   4. cria um "serviço" que liga o app sozinho e o religa se ele cair;
+#   5. configura o nginx, o "porteiro da frente" que recebe as visitas e repassa ao app;
+#   6. confere o DNS e, se o domínio já aponta para cá, ativa o HTTPS (o cadeadinho);
+#   7. mostra como testar.
 # Instalador do Osmo Talents para VPS Ubuntu/Debian limpa.
 # Uso (como root, dentro da pasta descompactada):
 #   bash instalar.sh osmo.com.br [seu@email.com]
@@ -6,6 +15,9 @@
 set -euo pipefail
 export LC_ALL=C.UTF-8 LANG=C.UTF-8 LANGUAGE= LC_CTYPE=C.UTF-8
 
+# As configurações: o domínio e o e-mail vêm dos parâmetros do comando; o app mora em
+# APP_DIR e roda com um usuário próprio e sem poderes ("osmo"), por segurança.
+# say/ok/warn só escrevem mensagens coloridas na tela.
 DOMAIN="${1:-}"
 EMAIL="${2:-}"
 APP_DIR="/var/www/osmo-talents"
@@ -17,6 +29,8 @@ say()  { printf "\n\033[1;35m==> %s\033[0m\n" "$*"; }
 ok()   { printf "\033[1;32m    ok:\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m    atenção:\033[0m %s\n" "$*"; }
 
+# Conferências antes de começar: rodando como administrador (root)? informou o domínio?
+# está dentro da pasta certa? Depois limpa o domínio (tira http://, https://, barras e www).
 if [ "$(id -u)" -ne 0 ]; then echo "Rode como root (no terminal do navegador da Hostinger você já é root)."; exit 1; fi
 if [ -z "$DOMAIN" ]; then echo "Informe o domínio. Exemplo: bash instalar.sh osmo.com.br"; exit 1; fi
 if [ ! -f "$SRC_DIR/server.js" ]; then echo "Rode este script de dentro da pasta do Osmo Talents (onde está o server.js)."; exit 1; fi
@@ -41,6 +55,9 @@ if [ "$NEED_NODE" -eq 1 ]; then
 fi
 NODE_BIN="$(command -v node)"
 
+# Copia os arquivos com rsync (só o que mudou) e acerta as permissões: o código fica só
+# para leitura do app, e só a pasta data (o banco) pode ser escrita por ele. O .env, com
+# os segredos, só pode ser lido pelo administrador e pelo app.
 say "3/7 Copiando o app para $APP_DIR"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$APP_USER"
 mkdir -p "$APP_DIR/data"
@@ -58,6 +75,9 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR/data"
 chmod 640 "$APP_DIR/.env"; chgrp "$APP_USER" "$APP_DIR/.env"
 ok "arquivos no lugar (banco e configuração preservados)"
 
+# O "serviço" (systemd) é como um despertador que liga o app quando o servidor liga e o
+# religa em 3 segundos se ele cair. As linhas Protect... prendem o app numa caixinha: ele
+# não consegue mexer no resto do sistema, só na pasta data.
 say "4/7 Configurando o serviço que mantém o app ligado"
 cat > /etc/systemd/system/osmo-talents.service <<EOF
 [Unit]
@@ -88,6 +108,9 @@ sleep 2
 if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondendo na porta $PORT"; else
   warn "o app não respondeu. Veja o erro com: journalctl -u osmo-talents -n 50"; exit 1; fi
 
+# NGINX, o porteiro da frente: recebe as visitas na porta 80 e repassa para o app na porta
+# 3000, contando o IP de verdade de quem visitou (X-Forwarded-For). Se outro programa (como
+# o Apache) estiver ocupando a porta 80, desliga ou avisa.
 say "5/7 Configurando o nginx para $DOMAIN"
 LISTEN6="    listen [::]:80;"
 [ -f /proc/net/if_inet6 ] || LISTEN6="    # IPv6 desativado neste servidor"
@@ -134,6 +157,11 @@ if ! systemctl restart nginx; then
 fi
 ok "nginx pronto"
 
+# HTTPS: só dá para tirar o certificado (o cadeadinho) se o domínio apontar para este
+# servidor. O certbot pede o certificado grátis ao Let's Encrypt e, se der certo, os
+# crachás de login passam a só viajar por conexão segura (COOKIE_SECURE=true).
+# Obs.: quando o site passa pela Cloudflare, o DNS mostra o endereço dela e não o daqui;
+# por isso este passo avisa que "não aponta", mesmo com o site funcionando.
 say "6/7 Conferindo o DNS e ativando o HTTPS"
 SERVER_IP="$(curl -fsS -4 https://api.ipify.org || true)"
 DNS_IP="$(dig +short A "$DOMAIN" | tail -n1 || true)"

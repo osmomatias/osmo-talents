@@ -1,5 +1,26 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// Este é o "cérebro" da plataforma, que mora num computador lá longe (o servidor).
+// Pense num restaurante:
+// - o SITE que a pessoa vê no celular (public/app.js) é o garçom;
+// - este arquivo é a COZINHA;
+// - o banco de dados (src/db.js) é a despensa onde tudo fica guardado.
+// O garçom anota o pedido ("quero ver as vagas", "quero mandar uma proposta") e leva
+// para a cozinha por um endereço chamado ROTA (ex.: GET /api/jobs). A cozinha confere
+// se o pedido faz sentido e se a pessoa pode pedir aquilo, pega as coisas na despensa,
+// prepara e devolve a resposta em JSON (um formato de texto organizado em "chave: valor").
+// O arquivo está dividido assim:
+//   1. ferramentas pequenas (limpar textos, embaralhar senhas, nota de clareza);
+//   2. sessão: como o servidor sabe quem você é;
+//   3. ROTAS: cada pedido possível (cadastro, vagas, propostas, contratos, pagamentos...);
+//   4. arquivos e fotos;
+//   5. o "porteiro" (createServer), que recebe cada pedido e manda para a rota certa.
 // Osmo Talents: servidor HTTP nativo (node:http) + API REST + SQLite
 // Requer Node.js 22.13 ou mais novo.
+// "require" é pegar uma ferramenta emprestada. As que começam com "node:" já vêm com o Node
+// (o programa que roda JavaScript no servidor); as que começam com "./src/" foram feitas
+// para este projeto (banco, pagamentos, login social, e-mail e o detetive de laudos).
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -10,6 +31,12 @@ const oauth = require("./src/oauth");
 const mail = require("./src/mail");
 const icp = require("./src/icp");
 
+// Configurações gerais:
+// - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
+// - COOKIE_SECURE: no site de verdade (https), o crachá de login só viaja por conexão segura;
+// - PUBLIC_DIR: a pasta com os arquivos que vão para o navegador (HTML, CSS, JS);
+// - FEE: a taxa da Osmo como número (10% vira 0.1);
+// - SESSION_DAYS: quantos dias você fica logado sem precisar entrar de novo.
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
@@ -21,6 +48,14 @@ const SESSION_DAYS = 30;
 const CATS = JSON.parse(fs.readFileSync(path.join(__dirname, "public", "taxonomia.json"), "utf8")).categorias.map(c => c.id);
 const ENERGY = ["baixa", "media", "alta"];
 
+// Ferramentas de limpeza: NUNCA confiamos no que chega do navegador (alguém pode mandar
+// qualquer coisa). Então:
+// - str: garante que é texto, tira espaços das pontas e corta no tamanho máximo;
+// - int: garante que é número inteiro dentro de um mínimo e um máximo;
+// - list: transforma em lista de textos limpos (no máximo tantos itens);
+// - parse: lê um texto JSON guardado no banco; se estiver estragado, devolve lista vazia.
+// fail(status, msg) é o jeito de dizer "não dá" com o código certo
+// (400 = pedido errado, 401 = não está logado, 404 = não existe, 409 = conflito...).
 /* ---------------- utilidades ---------------- */
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 const fail = (status, msg) => { throw new HttpError(status, msg); };
@@ -33,6 +68,12 @@ function list(v, maxItems = 20, maxLen = 120) {
 }
 const parse = s => { try { return JSON.parse(s); } catch { return []; } };
 
+// SENHAS: nunca guardamos a senha. Misturamos a senha com um "sal" aleatório e passamos
+// por uma máquina de embaralhar bem lenta (scrypt). Lenta de propósito: para quem tenta
+// adivinhar milhões de senhas, cada tentativa custa caro.
+// Para conferir no login, embaralhamos a senha digitada do mesmo jeito e comparamos
+// os dois embaralhados (sempre no mesmo tempo, com timingSafeEqual).
+// sha() faz um "resumo" curto e único de um texto (usado para guardar crachás e códigos).
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
@@ -46,6 +87,9 @@ function checkPassword(pw, stored) {
 }
 const sha = s => crypto.createHash("sha256").update(s).digest("hex");
 
+// NOTA DE CLAREZA da vaga: uma lista de 9 perguntas de sim ou não (tem título bom? tem
+// objetivo? tem pelo menos 2 entregas? diz o que está fora? diz o valor?...).
+// A nota é a porcentagem de "sim". Vaga com menos de 50% não pode ser publicada.
 function clarity(j) {
   const checks = [
     j.title.length > 8, CATS.includes(j.cat), j.obj.length > 20, j.ent.length >= 2,
@@ -54,6 +98,9 @@ function clarity(j) {
   return Math.round(checks.filter(Boolean).length / checks.length * 100);
 }
 
+// LIMITE DE PROPOSTAS: para ninguém se enrolar com trabalho demais, quem trabalha pode ter
+// 1 proposta esperando resposta para cada 5 horas livres por semana (mínimo 2).
+// Se a pessoa disse que está com energia baixa, o limite diminui; com energia alta, aumenta 1.
 // limite de propostas abertas pela capacidade declarada
 function proposalCap(user, hours) {
   let cap = Math.max(2, Math.floor((hours || 20) / 5));
@@ -62,6 +109,9 @@ function proposalCap(user, hours) {
   return cap;
 }
 
+// FREIO CONTRA ROBÔS: anotamos quantas vezes cada endereço tentou algo (ex.: login).
+// Se passar do limite numa janela de tempo, respondemos "muitas tentativas, espere".
+// De 10 em 10 minutos, apagamos anotações velhas para a memória não encher.
 /* ---------------- rate limit simples ---------------- */
 const hits = new Map();
 function limit(key, max, windowMs) {
@@ -72,6 +122,12 @@ function limit(key, max, windowMs) {
 }
 setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (!v.some(t => now - t < 3600_000)) hits.delete(k); }, 600_000).unref();
 
+// O CRACHÁ (sessão): quando você entra, o servidor inventa um código secreto enorme e
+// manda para o navegador guardar num "cookie" (osmo_sid). No banco guardamos só o resumo
+// desse código. A cada pedido, o navegador mostra o crachá; o servidor confere o resumo
+// no banco e descobre quem é você (currentUser).
+// HttpOnly: o JavaScript da página não consegue ler o crachá (protege contra roubo).
+// SameSite=Lax: outros sites não conseguem usar seu crachá escondido.
 /* ---------------- sessão ---------------- */
 function readCookie(req, name) {
   const m = (req.headers.cookie || "").split(/;\s*/).find(c => c.startsWith(name + "="));
@@ -99,9 +155,14 @@ function createSession(res, userId) {
   appendCookie(res, sessionCookie(token, SESSION_DAYS * 86400));
 }
 
+// Funções que "montam" as respostas: pegam os dados crus do banco e entregam arrumadinhos
+// para o site (perfil completo, vaga com briefing, nota média de avaliações...).
 /* ---------------- formatação ---------------- */
 const avatarUrl = (id, v) => v ? `/avatar/${id}?v=${v}` : "";
 
+// AVALIAÇÕES JUSTAS: uma avaliação só aparece quando os DOIS lados já avaliaram (ou depois
+// de 14 dias). Assim ninguém vê a nota que recebeu antes de dar a sua, e ninguém avalia
+// "por vingança".
 // avaliações: ficam públicas quando os dois lados avaliaram o contrato, ou 14 dias depois (ninguém avalia "em resposta")
 const REVIEW_TAGS = {
   freela: ["Comunicação clara", "Cumpriu os prazos", "Entrega caprichada", "Respeitou o combinado"],
@@ -121,6 +182,10 @@ function reviewsOf(userId) {
     JOIN users u ON u.id = r.author_id JOIN contracts c ON c.id = r.contract_id JOIN jobs j ON j.id = c.job_id
     WHERE r.target_id = ? AND ${REVIEW_VISIBLE} ORDER BY r.created_at DESC LIMIT 30`, userId).map(r => ({ ...r, tags: parse(r.tags) }));
 }
+// profileOf junta tudo o que aparece num perfil: dados da pessoa, foto, selo, habilidades,
+// portfólio, "como eu trabalho melhor", quantos trabalhos já concluiu e a nota média.
+// jobOut faz o mesmo para uma vaga. JOB_SELECT é a "pergunta padrão" ao banco para buscar
+// vagas já com o nome de quem contratou e quantas propostas a vaga tem.
 const portfolioOf = userId => all("SELECT id, title, link, v FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", userId)
   .map(p => ({ id: p.id, title: p.title, link: p.link, image: p.v ? `/portfolio/${p.id}?v=${p.v}` : "" }));
 function profileOf(userId) {
@@ -148,6 +213,10 @@ const JOB_SELECT = `SELECT j.*, u.name client_name, p.company,
   (SELECT COUNT(*) FROM proposals x WHERE x.job_id = j.id) n_props
   FROM jobs j JOIN users u ON u.id = j.client_id LEFT JOIN profiles p ON p.user_id = j.client_id`;
 
+// CONVERSAS: threadFor acha a conversa entre um cliente e um freela sobre uma vaga; se não
+// existir, cria. postMessage escreve uma mensagem nela. Quando "senderId" é vazio, a mensagem
+// é do SISTEMA (ex.: "Proposta aceita."), que aparece no meio da conversa.
+// Quem fez a ação já fica marcado como "leu", para não receber aviso da própria ação.
 function threadFor(jobId, clientId, freelaId) {
   let t = one("SELECT id FROM threads WHERE job_id IS ? AND client_id = ? AND freela_id = ?", jobId, clientId, freelaId);
   if (!t) t = { id: Number(run("INSERT INTO threads (job_id, client_id, freela_id) VALUES (?,?,?)", jobId, clientId, freelaId).lastInsertRowid) };
@@ -162,6 +231,10 @@ function postMessage(threadId, senderId, body, actorId) {
 }
 const brl = n => "R$ " + Number(n).toLocaleString("pt-BR");
 
+// Confere se um CPF (11 números) ou CNPJ (14 números) é válido de verdade, usando a conta dos
+// "dígitos verificadores" (os dois últimos números são calculados a partir dos outros).
+// Números todos iguais (111.111.111-11) são recusados.
+// dateBR dá a data de hoje (ou daqui a X dias) no horário de Brasília.
 function validDoc(d) {
   if (/^(\d)\1+$/.test(d)) return false;
   if (d.length === 11) {
@@ -176,6 +249,11 @@ function validDoc(d) {
 }
 function dateBR(addDays = 0) { const d = new Date(Date.now() - 3 * 3600e3 + addDays * 864e5); return d.toISOString().slice(0, 10); }
 
+// O CARDÁPIO DE PEDIDOS: route() cadastra cada pedido possível com
+//   - o método (GET = ler, POST = criar/fazer, PUT = trocar, DELETE = apagar);
+//   - o endereço (ex.: /api/jobs/:id, onde :id é o número da vaga);
+//   - a função que resolve o pedido;
+//   - opções: auth:false (não precisa estar logado), role (só freela ou só cliente).
 /* ---------------- rotas ---------------- */
 const routes = [];
 const route = (method, pattern, handler, opts = {}) => {
@@ -184,6 +262,9 @@ const route = (method, pattern, handler, opts = {}) => {
 };
 
 // --- autenticação
+// CADASTRO: confere nome, e-mail e senha (mínimo 8 letras), vê se o e-mail já existe,
+// cria a pessoa e o perfil vazio JUNTOS (tx = tudo ou nada) e já entrega o crachá.
+// O "limit" impede alguém de criar mil contas seguidas do mesmo endereço.
 route("POST", "/api/auth/register", ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
   const name = str(body.name, 80), email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
@@ -201,6 +282,8 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
   return { ok: true };
 }, { auth: false });
 
+// ENTRAR: procura o e-mail e confere a senha. A mensagem de erro é a mesma para "e-mail não
+// existe" e "senha errada", para um espertinho não descobrir quais e-mails têm conta.
 route("POST", "/api/auth/login", ({ body, res, ip }) => {
   limit("login:" + ip, 10, 600_000);
   const email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
@@ -210,6 +293,7 @@ route("POST", "/api/auth/login", ({ body, res, ip }) => {
   return { ok: true };
 }, { auth: false });
 
+// SAIR: apaga o crachá do banco e manda o navegador jogar o cookie fora.
 route("POST", "/api/auth/logout", ({ req, res }) => {
   const tok = readCookie(req, "osmo_sid");
   if (tok) run("DELETE FROM sessions WHERE token_hash = ?", sha(tok));
@@ -217,6 +301,13 @@ route("POST", "/api/auth/logout", ({ req, res }) => {
   return { ok: true };
 }, { auth: false });
 
+// ESQUECI MINHA SENHA:
+// 1. a pessoa digita o e-mail (forgot). Se a conta existe, mandamos um link com um código
+//    secreto que vale 1 hora e funciona uma vez só. A resposta é sempre "ok", exista a conta
+//    ou não, para não entregar quem tem cadastro;
+// 2. ao abrir o link, o site pergunta se o código ainda vale (GET reset);
+// 3. a pessoa escolhe a senha nova (POST reset): trocamos a senha, apagamos o código e
+//    desconectamos todos os outros aparelhos (por segurança).
 // --- recuperar senha: link por e-mail, válido por 1 hora e de uso único
 const RESET_MIN = 60;
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
@@ -272,6 +363,8 @@ route("POST", "/api/auth/reset", ({ body, res, ip }) => {
   return { ok: true };
 }, { auth: false });
 
+// Quem entra pela primeira vez com o Google ainda precisa dizer se quer TRABALHAR ou
+// CONTRATAR. O cadastro fica "pendente" por até 20 minutos até a pessoa escolher.
 // --- login social: conta nova escolhe o perfil (freelancer ou cliente)
 function pendingRow(token) {
   const t = String(token || "");
@@ -295,6 +388,9 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
   return { ok: true, role };
 }, { auth: false });
 
+// "QUEM SOU EU?": o site pergunta isso ao abrir. Devolvemos a pessoa logada (ou ninguém) e
+// também como a plataforma está configurada: pagamentos ligados? quais botões de login?
+// e-mail ligado? e a versão dos arquivos (para o site perceber quando saiu versão nova).
 route("GET", "/api/me", ({ user }) => {
   const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, v: appVersion() };
   if (!user) return { user: null, ...pub };
@@ -307,6 +403,8 @@ route("GET", "/api/me", ({ user }) => {
     ...pub };
 }, { auth: false });
 
+// SALVAR PERFIL: limpa e corta cada campo no tamanho certo (título até 100 letras, bio até
+// 1200, no máximo 12 habilidades...) e grava. Se veio CPF/CNPJ, confere se é válido antes.
 route("PUT", "/api/me/profile", ({ user, body }) => {
   const how = body.how || {};
   run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
@@ -325,6 +423,10 @@ route("PUT", "/api/me/profile", ({ user, body }) => {
   return { profile: profileOf(user.id) };
 });
 
+// FOTO DE PERFIL: o navegador já manda a foto recortada e pequena, escrita como texto (base64).
+// Aqui conferimos os primeiros bytes ("a assinatura do arquivo"): todo JPG começa com FF D8 FF
+// e todo PNG com 89 50 4E 47. Assim ninguém manda um vírus fingindo ser foto.
+// "v" é um número de versão: quando a foto muda, o endereço muda e o navegador baixa a nova.
 // --- foto de perfil: o navegador já envia recortada e reduzida (JPEG ou PNG, quadrada)
 const IMG_SIG = { "image/jpeg": [0xff, 0xd8, 0xff], "image/png": [0x89, 0x50, 0x4e, 0x47] };
 function decodeImage(dataUrl, maxBytes) {
@@ -347,6 +449,11 @@ route("DELETE", "/api/me/avatar", ({ user }) => {
   return { avatar: "" };
 });
 
+// SELO DE VERIFICADO: recebe o PDF, chama o detetive (src/icp.js) e, se passar:
+// - recusa se o laudo foi assinado pela própria pessoa da conta;
+// - recusa se o mesmo laudo já verificou outra conta;
+// - anota só o CRM, a data e o resumo do arquivo. O PDF em si é jogado fora.
+// "x-consent" é a caixinha "o laudo é meu e eu concordo" que a pessoa marcou no site.
 // --- selo de verificado: laudo em PDF assinado por médico com certificado ICP-Brasil (ver src/icp.js)
 // O PDF é conferido na memória e descartado. A pessoa declara que o laudo é dela.
 const plain = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z ]/g, "").replace(/\s+/g, " ").trim();
@@ -370,6 +477,9 @@ route("DELETE", "/api/me/verify", ({ user }) => {
   return { verified: false };
 }, { role: "freela" });
 
+// PORTFÓLIO: criar, editar, apagar e mudar a ordem dos projetos (até 12). ownItem garante
+// que você só mexe nos SEUS projetos. Mudar a ordem = trocar o projeto de lugar com o vizinho
+// de cima ou de baixo e regravar as posições.
 // --- portfólio: até 12 projetos, cada um com título, link e imagem opcionais (reduzida no navegador)
 const PORT_MAX = 12;
 function portfolioFields(body) {
@@ -413,12 +523,16 @@ route("POST", "/api/me/portfolio/:id/move", ({ user, params, body }) => {
   return { portfolio: portfolioOf(user.id) };
 }, { role: "freela" });
 
+// ENERGIA: a pessoa diz como está hoje (baixa, média, alta). Isso muda quantas propostas ela
+// pode ter abertas ao mesmo tempo (veja proposalCap lá em cima).
 route("PUT", "/api/me/energy", ({ user, body }) => {
   if (!ENERGY.includes(body.energy)) fail(400, "Escolha baixa, média ou alta.");
   run("UPDATE users SET energy = ? WHERE id = ?", body.energy, user.id);
   return { ok: true };
 });
 
+// TALENTOS: lista de freelas (quem tem título aparece primeiro) e busca por palavra em nome,
+// título, bio, habilidades e jeito de se comunicar. A outra rota mostra um perfil com avaliações.
 // --- talentos
 route("GET", "/api/talents", ({ query }) => {
   const q = str(query.get("q") || "", 80).toLowerCase();
@@ -434,6 +548,9 @@ route("GET", "/api/talents/:id", ({ params }) => {
   return { talent: { ...t, reviews: reviewsOf(t.id) } };
 }, { auth: false });
 
+// VAGAS: a lista pública só mostra vagas ABERTAS. Os filtros vêm do endereço:
+// q (palavra), cat (área), clear (só briefing claro, 80%+), async (sem reuniões), flex (prazo
+// flexível) e sort (ordenar por clareza ou por valor; valor por hora conta como 15 horas).
 // --- vagas
 route("GET", "/api/jobs", ({ query }) => {
   const rows = all(JOB_SELECT + " WHERE j.status = 'aberta' ORDER BY j.created_at DESC, j.id DESC LIMIT 300").map(jobOut);
@@ -449,6 +566,8 @@ route("GET", "/api/jobs", ({ query }) => {
 
 route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.client_id = ? ORDER BY j.created_at DESC", user.id).map(jobOut) }), { role: "cliente" });
 
+// UMA VAGA: todo mundo vê o briefing. Só quem está logado vê os arquivos. O DONO da vaga vê
+// também todas as propostas recebidas; um freela vê a proposta que ele mesmo mandou.
 route("GET", "/api/jobs/:id", ({ params, user }) => {
   const j = one(JOB_SELECT + " WHERE j.id = ?", params.id);
   if (!j) fail(404, "Vaga não encontrada.");
@@ -466,6 +585,8 @@ route("GET", "/api/jobs/:id", ({ params, user }) => {
   return out;
 }, { auth: false });
 
+// PUBLICAR VAGA: limpa cada campo, exige título e área, calcula a nota de clareza e só
+// publica com 50% ou mais.
 route("POST", "/api/jobs", ({ user, body }) => {
   const j = {
     title: str(body.title, 120), cat: CATS.includes(body.cat) ? body.cat : "", obj: str(body.obj, 1200),
@@ -483,6 +604,7 @@ route("POST", "/api/jobs", ({ user, body }) => {
   return { id, clarity: c };
 }, { role: "cliente" });
 
+// FECHAR VAGA: o dono decide que não quer mais propostas.
 route("POST", "/api/jobs/:id/close", ({ user, params }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ?", params.id, user.id);
   if (!j) fail(404, "Vaga não encontrada.");
@@ -490,6 +612,9 @@ route("POST", "/api/jobs/:id/close", ({ user, params }) => {
   return { ok: true };
 }, { role: "cliente" });
 
+// ARQUIVOS DA VAGA: até 6 por vaga, 10 MB cada. FILE_TYPES é uma lista fechada de tipos
+// aceitos e, para cada um, um teste dos primeiros bytes: um "foto.png" que por dentro não é
+// PNG é recusado. Arquivos do Word/Excel novos são ZIPs por dentro (começam com "PK").
 // --- arquivos do briefing: até 6 por vaga, 10 MB cada; só quem tem conta baixa
 // O tipo é conferido pelo conteúdo do arquivo (não só pelo nome) e a lista de tipos é fechada.
 const FILE_MAX = 10 * 1024 * 1024, FILES_PER_JOB = 6;
@@ -532,6 +657,9 @@ route("DELETE", "/api/jobs/:id/files/:fid", ({ user, params }) => {
   run("DELETE FROM job_files WHERE id = ?", f.id);
   return { files: filesOf(params.id) };
 }, { role: "cliente" });
+// BAIXAR ARQUIVO DA VAGA: só quem está logado. Imagens e PDF abrem no navegador; o resto
+// sempre é baixado. O "Content-Security-Policy ... sandbox" prende o arquivo numa caixinha,
+// para ele nunca conseguir rodar como se fosse parte do site.
 function serveFile(req, res, id) {
   if (!currentUser(req)) return send(res, 401, "Entre na sua conta para baixar os arquivos da vaga.", { "Content-Type": "text/plain; charset=utf-8" });
   const f = one("SELECT name, ext, data FROM job_files WHERE id = ?", id);
@@ -546,6 +674,8 @@ function serveFile(req, res, id) {
   });
 }
 
+// CONVIDAR: o cliente chama um talento para a vaga. Isso abre (ou reaproveita) a conversa
+// entre os dois com uma mensagem de convite.
 route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ? AND status = 'aberta'", params.id, user.id);
   if (!j) fail(404, "Vaga aberta não encontrada.");
@@ -556,6 +686,13 @@ route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
   return { thread: th };
 }, { role: "cliente" });
 
+// MANDAR PROPOSTA (o freela responde a uma vaga). Conferências, uma por uma:
+// - a vaga ainda está aberta? a pessoa ainda não mandou proposta para ela?
+// - a pessoa não passou do limite de propostas abertas (proposalCap)?
+// - o texto tem pelo menos 10 palavras, o valor é pelo menos R$ 50 e tem prazo?
+// ETAPAS: o freela pode dividir o valor em até 8 etapas. Se a soma das etapas não for igual
+// ao valor total, ignoramos e criamos uma etapa só ("Entrega completa").
+// Tudo é gravado junto (tx) e uma mensagem do sistema avisa o cliente na conversa.
 // --- propostas
 route("POST", "/api/jobs/:id/proposals", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND status = 'aberta'", params.id);
@@ -582,6 +719,7 @@ route("POST", "/api/jobs/:id/proposals", ({ user, params, body }) => {
   return { id };
 }, { role: "freela" });
 
+// MINHAS PROPOSTAS: a lista de propostas do freela, mais o limite atual e quantas estão abertas.
 route("GET", "/api/me/proposals", ({ user }) => {
   const prof = one("SELECT hours FROM profiles WHERE user_id = ?", user.id);
   const rows = all(`SELECT pr.*, j.title job_title, u.name client_name FROM proposals pr JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = j.client_id
@@ -589,11 +727,19 @@ route("GET", "/api/me/proposals", ({ user }) => {
   return { proposals: rows, cap: proposalCap(user, prof && prof.hours), open: rows.filter(r => r.status === "enviada").length };
 }, { role: "freela" });
 
+// Garante que a proposta é de uma vaga DO cliente que está pedindo (ninguém aceita proposta
+// de vaga dos outros).
 function ownProposalAsClient(user, id) {
   const p = one("SELECT pr.*, j.client_id, j.title job_title, j.status job_status FROM proposals pr JOIN jobs j ON j.id = pr.job_id WHERE pr.id = ?", id);
   if (!p || p.client_id !== user.id) fail(404, "Proposta não encontrada.");
   return p;
 }
+// ACEITAR PROPOSTA = nasce o CONTRATO. Numa tacada só (tx):
+// 1. a proposta vira "aceita";
+// 2. cria o contrato e uma linha para cada etapa;
+// 3. a vaga vira "em andamento" (sai da lista de vagas abertas);
+// 4. avisa na conversa. Se os pagamentos estão ligados, explica o próximo passo:
+//    o cliente paga a primeira etapa antes do trabalho começar.
 route("POST", "/api/proposals/:id/accept", ({ user, params }) => {
   const p = ownProposalAsClient(user, params.id);
   if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
@@ -614,6 +760,7 @@ route("POST", "/api/proposals/:id/accept", ({ user, params }) => {
   return { contract: cid };
 }, { role: "cliente" });
 
+// RECUSAR (cliente) ou RETIRAR (freela) uma proposta que ainda espera resposta.
 route("POST", "/api/proposals/:id/decline", ({ user, params }) => {
   const p = ownProposalAsClient(user, params.id);
   if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
@@ -630,6 +777,11 @@ route("POST", "/api/proposals/:id/withdraw", ({ user, params }) => {
   return { ok: true };
 }, { role: "freela" });
 
+// PAINEL DE CONTRATOS: lista os contratos da pessoa com as etapas, a conversa e a avaliação.
+// Também soma o dinheiro em três potes:
+// - paid (já liberado), held (pago e guardado no cofre, esperando aprovação),
+// - toPay (ainda falta pagar).
+// Sem pagamentos ligados, é uma simulação: etapa aprovada conta como paga.
 // --- contratos e etapas
 route("GET", "/api/contracts", ({ user }) => {
   const cs = all(`SELECT c.*, j.title job_title, uc.name client_name, uf.name freela_name FROM contracts c
@@ -656,6 +808,12 @@ route("GET", "/api/contracts", ({ user }) => {
   return { contracts: cs, stats: { paid, held, toPay, net: Math.round(paid * (1 - FEE)), fee: FEE, payments: asaas.ENABLED } };
 });
 
+// AS REGRAS DO JOGO DAS ETAPAS. Cada etapa anda por casinhas, como num tabuleiro:
+//   pendente --(freela: começar)--> andamento --(freela: entregar)--> entregue
+//   entregue --(cliente: aprovar)--> aprovada            (fim da etapa, dinheiro liberado)
+//   entregue --(cliente: pedir ajustes)--> ajustes --(freela: começar)--> andamento ...
+// "who" diz quem pode mexer, "from" de quais casinhas pode sair e "to" para qual vai.
+// "msg" é a frase que aparece na conversa.
 const MS_FLOW = {
   start: { who: "freela", from: ["pendente", "ajustes"], to: "andamento", msg: m => `Etapa "${m.title}" em andamento.` },
   deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` + (asaas.ENABLED ? ` Se não houver resposta em ${asaas.AUTO_RELEASE_DAYS} dias, o valor é liberado automaticamente.` : "") },
@@ -664,6 +822,8 @@ const MS_FLOW = {
 };
 const MS_SELECT = "SELECT ms.*, c.client_id, c.freela_id, c.job_id, c.id cid FROM milestones ms JOIN contracts c ON c.id = ms.contract_id WHERE ms.id = ?";
 
+// ABRIR O COFRE: quando a etapa é aprovada, pedimos ao Asaas para liberar o dinheiro guardado
+// (escrow) para o freela. Tentamos com a chave da Osmo e, se precisar, com a do freela.
 // libera a garantia (Conta Escrow) no Asaas; sem garantia ativa, não há o que liberar
 async function releaseEscrow(m) {
   if (!asaas.ENABLED || m.pay_status !== "pago" || !m.pay_id) return;
@@ -682,6 +842,9 @@ async function releaseEscrow(m) {
   if (lastErr) throw new HttpError(502, "Não foi possível liberar o valor no Asaas: " + lastErr.message);
 }
 
+// MOVER A ETAPA DE CASINHA: grava a casinha nova, marca a data de entrega, marca o dinheiro
+// como liberado, escreve na conversa e, se TODAS as etapas estiverem aprovadas, conclui o
+// contrato e a vaga.
 function applyMilestone(m, f, actorId, note, extraMsg) {
   tx(() => {
     run("UPDATE milestones SET status = ?, updated_at = datetime('now') WHERE id = ?", f.to, m.id);
@@ -695,6 +858,10 @@ function applyMilestone(m, f, actorId, note, extraMsg) {
   });
 }
 
+// Cria uma rota para cada jogada (start, deliver, approve, changes) a partir das regras acima.
+// Antes de mexer, confere: é a pessoa certa? a etapa está numa casinha de onde pode sair?
+// REGRA DE OURO: com pagamentos ligados, o freela só pode COMEÇAR depois que o cliente pagou
+// aquela etapa (o dinheiro já está guardado no cofre).
 for (const [action, f] of Object.entries(MS_FLOW)) {
   route("POST", `/api/milestones/:id/${action}`, async ({ user, params, body }) => {
     const m = one(MS_SELECT, params.id);
@@ -707,6 +874,9 @@ for (const [action, f] of Object.entries(MS_FLOW)) {
   });
 }
 
+// LIBERAÇÃO AUTOMÁTICA: de hora em hora, procuramos etapas entregues há mais de 7 dias sem
+// resposta do cliente e aprovamos sozinhos, liberando o dinheiro. Assim o freela nunca fica
+// sem receber porque o cliente sumiu.
 // liberação automática: etapa entregue sem resposta do cliente
 async function autoRelease() {
   const due = all(`SELECT id FROM milestones WHERE status = 'entregue' AND delivered_at != '' AND delivered_at < datetime('now', ?)`, `-${asaas.AUTO_RELEASE_DAYS} days`);
@@ -718,6 +888,9 @@ async function autoRelease() {
 }
 setInterval(() => autoRelease().catch(e => console.error("auto-release", e)), 3600_000).unref();
 
+// ATIVAR CONTA DE RECEBIMENTO (freela): confere CPF/CNPJ, CEP, celular, data de nascimento e
+// endereço, cria a subconta no Asaas e liga o cofre (escrow). A chave da subconta é guardada
+// trancada (asaas.seal).
 // --- pagamentos (Asaas)
 route("POST", "/api/me/payout", async ({ user, body }) => {
   if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
@@ -745,6 +918,12 @@ route("POST", "/api/me/payout", async ({ user, body }) => {
   return { ok: true, escrow: !!escrow };
 }, { role: "freela" });
 
+// PAGAR UMA ETAPA (cliente):
+// 1. confere se a etapa é dele e ainda não foi paga (se já tem cobrança aberta, devolve o link);
+// 2. o freela precisa ter conta de recebimento e o cliente precisa ter CPF/CNPJ;
+// 3. cadastra o cliente no Asaas (só na primeira vez);
+// 4. cria a cobrança com vencimento em 3 dias e o SPLIT: 90% para o freela, 10% para a Osmo;
+// 5. devolve o link da fatura, onde o cliente escolhe Pix, boleto ou cartão.
 route("POST", "/api/milestones/:id/pay", async ({ user, params }) => {
   if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
   const m = one(MS_SELECT, params.id);
@@ -776,6 +955,12 @@ route("POST", "/api/milestones/:id/pay", async ({ user, params }) => {
   return { invoiceUrl: pay.invoiceUrl };
 }, { role: "cliente" });
 
+// AVISOS DO ASAAS (webhook): quando algo acontece com uma cobrança, o Asaas "toca a campainha"
+// neste endereço. Por segurança:
+// - conferimos a senha do aviso;
+// - ignoramos avisos repetidos (cada aviso tem um id que anotamos);
+// - NÃO acreditamos só no aviso: perguntamos ao Asaas como a cobrança está de verdade.
+// Pago => etapa "paga" e o freela pode começar. Estornado => avisa. Cobrança apagada => volta a "a pagar".
 const PAID = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 route("POST", "/api/webhooks/asaas", async ({ req, body }) => {
   if (!asaas.checkWebhookToken(req.headers["asaas-access-token"])) fail(401, "Token inválido.");
@@ -802,6 +987,9 @@ route("POST", "/api/webhooks/asaas", async ({ req, body }) => {
   return { received: true };
 }, { auth: false });
 
+// AVALIAR (no fim do contrato): só depois que todas as etapas foram aprovadas, uma vez por
+// pessoa, nota de 1 a 5 e só as "etiquetas" permitidas para aquele lado. Se os dois já
+// avaliaram, as duas notas aparecem nos perfis; senão, a primeira espera (até 14 dias).
 // --- avaliações
 route("POST", "/api/contracts/:id/review", ({ user, params, body }) => {
   const c = one("SELECT * FROM contracts WHERE id = ? AND (client_id = ? OR freela_id = ?)", params.id, user.id, user.id);
@@ -824,6 +1012,13 @@ route("POST", "/api/contracts/:id/review", ({ user, params, body }) => {
   return { ok: true };
 });
 
+// CONVERSAS:
+// - GET /api/threads: a caixa de entrada (com quem, sobre qual vaga, última mensagem e
+//   quantas não lidas);
+// - threadAccess garante que só os dois participantes enxergam a conversa;
+// - abrir a conversa marca como lida; mandar mensagem tem freio (60 por minuto);
+// - "pin" é o "Combinado até agora": um resumo fixado no topo da conversa;
+// - POST /api/threads abre uma conversa direta (sem vaga) entre um cliente e um freela.
 // --- mensagens
 route("GET", "/api/threads", ({ user }) => {
   const rows = all(`SELECT t.*, j.title job_title, uc.name client_name, uf.name freela_name,
@@ -875,6 +1070,12 @@ route("POST", "/api/threads", ({ user, body }) => {
   return { thread: th };
 });
 
+// CARTEIRO PACIENTE: em vez de mandar um e-mail a cada mensagem (seria chato!), uma vez por
+// minuto ele olha as conversas e só manda se:
+// - tem coisa não lida há pelo menos 2 minutos sem nada novo (junta tudo num e-mail só);
+// - não mandou e-mail daquela conversa nos últimos 15 minutos;
+// - a pessoa quer avisos ("importante" = só avisos do sistema, sem conversa das pessoas).
+// O link do rodapé usa um código pessoal (notifyToken) para mudar os avisos sem precisar entrar.
 /* ---------------- avisos por e-mail ---------------- */
 // Uma varredura por minuto: quem tem mensagens não lidas numa conversa recebe um e-mail só, com o resumo.
 // Espera 2 minutos sem mensagens novas (junta tudo que chegou junto), pula quem já leu
@@ -924,6 +1125,7 @@ ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px
 }
 if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
 
+// Rotas desse link do rodapé: ver e trocar a preferência de avisos.
 // preferências pelo link do e-mail (sem precisar entrar na conta)
 const byNotifyToken = t => /^[a-f0-9]{48}$/.test(String(t || "")) ? one("SELECT id, name, notify_level FROM users WHERE notify_token = ?", String(t)) : null;
 route("GET", "/api/notify", ({ query }) => {
@@ -939,6 +1141,14 @@ route("POST", "/api/notify", ({ body }) => {
   return { level: body.level };
 }, { auth: false });
 
+// O CAMINHO DO "ENTRAR COM GOOGLE" (a parte do servidor):
+// - /auth/google: guarda o bilhete secreto (state) no banco e num cookie e manda a pessoa ao Google;
+// - /auth/google/callback: a volta. Confere se o bilhete é o mesmo, troca o código pelos dados
+//   da pessoa e decide:
+//   * já conhecemos essa conta do Google? entra direto;
+//   * o e-mail (confirmado pelo Google) já tem conta aqui? liga as duas e entra;
+//   * é gente nova? cria a conta (se já escolheu freela/cliente) ou manda escolher.
+// Qualquer problema volta para a tela de entrar com um código de erro.
 /* ---------------- login social (/auth/...) ---------------- */
 function createOAuthUser(r, role) {
   if (one("SELECT 1 FROM users WHERE email = ?", r.email)) fail(409, "Já existe uma conta com esse e-mail. Entre com e-mail e senha.");
@@ -997,10 +1207,18 @@ async function handleAuth(req, res, url, ip) {
   return redirect(res, "/#painel");
 }
 
+// MIME: a "etiqueta" que diz ao navegador que tipo de arquivo está chegando (página, estilo,
+// script, imagem...). Sem a etiqueta certa, o navegador pode não saber o que fazer.
 /* ---------------- servidor ---------------- */
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" };
 
+// CAPACETES DE SEGURANÇA que vão em toda resposta:
+// - nosniff: o navegador não "adivinha" tipo de arquivo;
+// - X-Frame-Options DENY: ninguém coloca nosso site escondido dentro do site deles;
+// - Permissions-Policy: o site não pede câmera, microfone nem localização;
+// - Content-Security-Policy: a lista de lugares de onde a página pode carregar coisas.
+//   Se alguém conseguir enfiar um script malvado, o navegador se recusa a rodar.
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -1009,12 +1227,15 @@ const SECURITY_HEADERS = {
   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
+// Responde ao navegador: se for objeto, vira JSON; sempre com os capacetes de segurança.
 function send(res, status, data, headers = {}) {
   const body = typeof data === "string" || Buffer.isBuffer(data) ? data : JSON.stringify(data);
   res.writeHead(status, { ...SECURITY_HEADERS, ...(typeof data === "object" && !Buffer.isBuffer(data) ? { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } : {}), ...headers });
   res.end(body);
 }
 
+// LER O QUE O NAVEGADOR MANDOU: readRaw lê arquivos (PDF, anexos) até um tamanho máximo;
+// readBody lê o JSON dos formulários (até 200 KB) e avisa se vier quebrado ou grande demais.
 function readRaw(req, max) {
   return new Promise((resolve, reject) => {
     // passou do limite: descarta o resto mas lê até o fim, para conseguir responder com a mensagem certa
@@ -1033,6 +1254,13 @@ function readBody(req, max = 200_000) {
   });
 }
 
+// ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
+// - Endereços sem extensão (#vagas, /perfil...) recebem o index.html: o resto o app.js resolve;
+// - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
+// - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
+//   "304, nada mudou" e economizamos internet;
+// - no HTML, colocamos "?v=..." no endereço do CSS e do JS. Quando o arquivo muda, o número
+//   muda, e o navegador baixa a versão nova em vez de usar a velha guardada.
 // carimbo de versão de cada arquivo (data de modificação): vai no endereço do arquivo e em /api/me,
 // para a página aberta perceber que saiu versão nova
 const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
@@ -1062,6 +1290,17 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+// O PORTEIRO: TODO pedido que chega passa por aqui e é encaminhado:
+// 1. /auth/... -> login social;
+// 2. /arquivo/N -> anexo da vaga; /avatar/N e /portfolio/N -> imagens;
+// 3. qualquer outro endereço fora de /api/ -> arquivos do site;
+// 4. /api/... -> procura a rota certa no cardápio e, antes de chamar:
+//    - CSRF: pedidos que mudam algo precisam do cabeçalho "x-osmo: 1", que só o nosso
+//      próprio site manda (um site malvado não consegue fingir isso);
+//    - descobre quem é a pessoa pelo crachá; barra quem não está logado ou não tem o papel certo;
+//    - lê o corpo do pedido, chama a rota e responde.
+//    Erros esperados viram mensagens amigáveis; erros inesperados viram "algo deu errado"
+//    (e o detalhe vai só para o registro do servidor, nunca para a pessoa).
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
@@ -1102,6 +1341,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Liga o servidor (só quando este arquivo é rodado direto; scripts como o seed só pegam
+// as ferramentas emprestadas sem ligar o servidor).
 if (require.main === module) {
   server.listen(PORT, HOST, () => console.log(`Osmo Talents rodando em http://${HOST}:${PORT}`));
 }

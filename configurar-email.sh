@@ -1,4 +1,8 @@
 #!/bin/bash
+# EXPLICANDO COMO PARA UMA CRIANÇA: este script "dá o endereço do correio" ao servidor.
+# Ele pergunta os dados do servidor de e-mail (endereço, porta, usuário e senha) aqui no
+# seu computador e grava direto no .env do servidor, sem a senha passar por mais ninguém.
+# Depois reinicia o app, que passa a conseguir mandar e-mails (recuperar senha, avisos).
 # Liga o envio de e-mails (recuperar senha) no servidor.
 # Uso, no terminal do editor:  bash configurar-email.sh
 # A senha do e-mail é digitada aqui no seu Mac e vai direto para o servidor.
@@ -27,6 +31,8 @@ SMTP_USER=$USER
 SMTP_PASS='$PASS'
 MAIL_FROM='$FROM'"
 echo "Gravando no servidor..."
+# Lá no servidor: tira do .env as linhas antigas com os mesmos nomes, acrescenta as novas,
+# protege o arquivo e reinicia o app.
 ssh "root@$IP" "bash -s" <<REMOTE
 set -e
 ENV=/var/www/osmo-talents/.env

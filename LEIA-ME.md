@@ -194,6 +194,42 @@ O PDF é conferido na memória e descartado. O banco guarda só a data, o CRM de
 - Atualizar as ACs da ICP-Brasil (quando o ITI publicar novas): `bash scripts/atualizar-icp.sh` e depois publicar.
 - Antes de divulgar o selo, vale passar o texto de consentimento por um advogado de proteção de dados (laudo é dado sensível na LGPD).
 
+## Mapa do projeto (explicado de um jeito simples)
+
+Cada arquivo de código tem comentários no começo e em cada parte explicando o que acontece, como se fosse para uma criança de 10 anos. Este mapa mostra onde fica cada coisa. Pense num restaurante: o site no navegador é o garçom, o servidor é a cozinha e o banco de dados é a despensa.
+
+**O servidor (a cozinha)**
+- `server.js`: recebe todos os pedidos do site (cadastro, vagas, propostas, contratos, pagamentos, mensagens) e decide o que fazer com cada um.
+- `src/db.js`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
+- `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
+- `src/mail.js`: o carteiro que manda e-mails.
+- `src/oauth.js`: o "Entrar com Google/GitHub/LinkedIn/Adobe".
+- `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
+
+**O site (o garçom, roda no navegador)**
+- `public/index.html`: o esqueleto da página (cabeçalho, espaço do meio, rodapé).
+- `public/app.js`: desenha cada tela, escuta cliques e digitação e leva os pedidos ao servidor.
+- `public/theme.js`: liga o tema escuro e as preferências de Conforto antes de a página aparecer, para não piscar.
+- `public/styles.css`: as roupas do site (cores, letras, tamanhos, celular, tablet e telas grandes).
+- `public/fonts.css`: onde entra a fonte oficial DIN Pro, quando os arquivos dela forem colocados no projeto.
+- `public/termos.html` e `public/privacidade.html`: as páginas de regras, já prontas com o texto.
+- `public/taxonomia.json`: a lista de áreas, especialidades e habilidades (baseada no Upwork). Arquivos JSON não aceitam comentários, então a explicação fica aqui: cada área tem um `id`, um `nome`, um `resumo` e as `especialidades`, cada uma com as `habilidades` mais comuns e o link de onde veio.
+- `public/favicon.svg`: o ícone que aparece na aba do navegador.
+
+**Scripts e configuração**
+- `package.json`: a "ficha" do projeto. Diz o nome, a versão mínima do Node.js (22.13) e os atalhos: `npm run dev` (liga no computador e religa a cada mudança), `npm start`, `npm run seed` (dados de exemplo), `npm run publicar` e `npm run asaas:setup`. Também é JSON, então não leva comentários.
+- `publicar.sh`: empacota a pasta e leva para o servidor.
+- `instalar.sh`: monta tudo no servidor em 7 passos (Node.js, serviço, nginx, HTTPS).
+- `configurar-email.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
+- `scripts/seed.js`: cria pessoas e vagas de exemplo.
+- `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
+- `scripts/conferir-laudo.js`: testa um laudo no computador, sem enviar ao site.
+- `scripts/atualizar-icp.sh`: baixa a lista oficial de autoridades da ICP-Brasil.
+- `certs/icp-brasil/`: os certificados oficiais das autoridades (raízes e intermediárias). São arquivos de "carimbo" em texto codificado, que não devem ser editados à mão.
+- `.env.example`: o molde do arquivo de segredos `.env` (que nunca vai para o GitHub).
+- `ecosystem.config.cjs`: configuração do PM2, para quem preferir usá-lo no lugar do systemd.
+- `data/`: onde fica o banco de dados de verdade. Não vai para o GitHub nem é trocado na publicação.
+
 ## O que esta versão faz
 
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)

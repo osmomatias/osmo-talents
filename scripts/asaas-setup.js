@@ -1,3 +1,8 @@
+// EXPLICANDO COMO PARA UMA CRIANÇA: este script "instala a campainha".
+// Ele pede ao Asaas: "toda vez que um pagamento for criado, pago, vencido, apagado ou
+// devolvido, toque a campainha neste endereço do nosso site (/api/webhooks/asaas)".
+// Antes, confere se as configurações necessárias estão no .env: a chave do Asaas, o
+// endereço público do site (precisa ser https) e uma senha comprida para a campainha.
 // Registra o webhook do Osmo Talents no Asaas. Uso: npm run asaas:setup
 const { api, ENABLED, BASE } = require("../src/asaas");
 (async () => {

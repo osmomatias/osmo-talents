@@ -1,9 +1,27 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// É o botão "Entrar com Google" (ou GitHub, LinkedIn, Adobe). Em vez de criar uma senha
+// nova, a pessoa pede ao Google: "diz para a Osmo que eu sou eu".
+// Funciona como pegar um bilhete na portaria:
+//   1. A Osmo manda a pessoa até a "portaria do Google", com um bilhete secreto (state);
+//   2. a pessoa faz login lá no Google (a Osmo nunca vê a senha do Google);
+//   3. o Google devolve a pessoa para a Osmo com um "código" de uso único;
+//   4. a Osmo troca esse código, direto com o Google, pelos dados da pessoa (nome, e-mail).
+// Os segredos extras (state, nonce, PKCE) servem para ninguém conseguir "pegar carona"
+// no meio do caminho e entrar na conta de outra pessoa.
 // Login com Google, LinkedIn, Adobe e GitHub (OAuth 2.0 / OpenID Connect, sem dependências)
 const crypto = require("node:crypto");
 
+// PUBLIC_URL é o endereço do site (ex.: https://osmo.com.br). O Google precisa saber para
+// onde devolver a pessoa depois do login. TEST_BASE só é usado em testes no computador.
 const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 const TEST_BASE = process.env.OAUTH_TEST_BASE || ""; // só para testes locais: troca o endereço dos provedores
 
+// A "agenda de endereços" de cada portaria: onde mandar a pessoa (auth), onde trocar o código
+// (token), onde pedir os dados (userinfo), o que pedimos (scope) e a identificação da Osmo
+// naquele serviço (id e secret, que vêm do .env). Cada serviço tem umas manias diferentes,
+// anotadas nos campos pkce, nonce, basicAuth e github.
 const P = {
   google: {
     name: "Google", issuer: ["https://accounts.google.com", "accounts.google.com"],
@@ -32,12 +50,21 @@ const P = {
 };
 if (TEST_BASE) for (const [k, p] of Object.entries(P)) for (const f of ["auth", "token", "userinfo", "emails"]) if (p[f]) p[f] = `${TEST_BASE}/${k}/${f}`;
 
+// - enabled: um botão só aparece se o serviço estiver configurado no .env;
+// - list: a lista de botões que vão aparecer, nesta ordem;
+// - redirectUri: o endereço de volta (ex.: /auth/google/callback);
+// - b64u: um jeito de escrever bytes como texto que pode ir num endereço da internet.
 const ORDER = ["google", "linkedin", "adobe", "github"];
 const enabled = k => { const p = P[k]; return !!(p && p.id && p.secret && PUBLIC_URL); };
 const list = () => ORDER.filter(enabled);
 const redirectUri = k => `${PUBLIC_URL}/auth/${k}/callback`;
 const b64u = buf => Buffer.from(buf).toString("base64url");
 
+// Passo 1 (ida): prepara o endereço da portaria. Inventa números aleatórios:
+// - state: "senha da ida e volta". Quando a pessoa voltar, conferimos se é a mesma;
+// - verifier (PKCE): guardamos um segredo e mandamos só o "embaralhado" dele. Na hora de
+//   trocar o código, mostramos o segredo original: só quem começou o login consegue terminar;
+// - nonce: um número que tem de voltar igualzinho dentro da resposta do Google.
 function start(k) {
   const p = P[k];
   const state = crypto.randomBytes(24).toString("hex");
@@ -49,10 +76,14 @@ function start(k) {
   return { url: `${p.auth}?${q}`, state, verifier, nonce };
 }
 
+// O Google responde com um "id_token", um bilhete em 3 partes separadas por ponto.
+// A parte do meio tem os dados da pessoa; aqui só abrimos e lemos essa parte.
 function decodeJwt(t) {
   try { return JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString("utf8")); } catch { return null; }
 }
 
+// Manda um formulário para o serviço (como apertar "enviar" num site) e lê a resposta.
+// Se demorar mais de 15 segundos ou vier erro, avisa.
 async function postForm(url, form, headers = {}) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", ...headers }, body: new URLSearchParams(form), signal: AbortSignal.timeout(15000) });
   const d = await r.json().catch(() => ({}));
@@ -60,6 +91,9 @@ async function postForm(url, form, headers = {}) {
   return d;
 }
 
+// Passo 4 (volta): troca o código de uso único pela "chave de acesso" (access_token) e,
+// com ela, pega nome e e-mail da pessoa. "sub" é o número que identifica a pessoa naquele
+// serviço para sempre, mesmo se ela trocar de e-mail.
 // troca o código pelo perfil verificado da pessoa
 async function finish(k, code, saved) {
   const p = P[k];
@@ -82,6 +116,12 @@ async function finish(k, code, saved) {
     return { sub: String(user.id), email: primary ? String(primary.email).toLowerCase() : "", emailVerified: !!primary, name: String(user.name || user.login || "").trim() };
   }
 
+  // Conferências de segurança no bilhete:
+  // - aud: o bilhete foi feito para a Osmo (e não para outro site)?
+  // - exp: o bilhete ainda está na validade?
+  // - iss: foi o Google mesmo que fez o bilhete?
+  // - nonce: é o mesmo número que mandamos na ida?
+  // Se qualquer coisa não bater, o login é recusado.
   // id_token recebido direto do provedor por TLS: conferimos destinatário, validade e nonce
   const claims = tok.id_token ? decodeJwt(tok.id_token) : null;
   if (claims) {

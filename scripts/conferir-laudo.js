@@ -1,3 +1,6 @@
+// EXPLICANDO COMO PARA UMA CRIANÇA: é o mesmo "detetive de carimbos" do selo de verificado,
+// mas usado no próprio computador, sem mandar nada para o site. Serve para testar um laudo
+// e ver se ele seria aprovado, e por quê (ou por que não).
 // Confere um PDF no seu computador, sem enviar para o site (mesma conferência do selo de verificado).
 // Uso:  node scripts/conferir-laudo.js caminho/do/laudo.pdf
 const fs = require("node:fs");

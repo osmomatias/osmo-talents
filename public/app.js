@@ -1,6 +1,25 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// Este é o "garçom" da plataforma: o programa que roda DENTRO do navegador de quem
+// usa o site (no celular ou no computador). Ele:
+//   1. desenha cada tela (início, vagas, perfil, mensagens...) escrevendo HTML;
+//   2. escuta o que a pessoa faz (cliques, digitação, envio de formulários);
+//   3. leva os pedidos até a "cozinha" (o servidor, server.js) e traz as respostas.
+// É um site de "uma página só": em vez de carregar uma página nova a cada clique,
+// o garçom troca só o miolo da tela (a <div id="view">). O que vem depois do "#"
+// no endereço (ex.: osmo.com.br/#vagas) diz qual tela mostrar.
+// "use strict" liga o "modo rigoroso" do JavaScript, que avisa mais cedo sobre erros bobos.
 "use strict";
 /* Osmo Talents: aplicação do navegador (sem dependências) */
 
+// FERRAMENTAS PEQUENAS usadas o tempo todo:
+// - $ e $$: acham um (ou todos os) pedaço(s) da página, tipo "me dá o botão tal";
+// - esc: troca < > & " ' por códigos seguros antes de escrever um texto na tela. Isso impede
+//   que alguém escreva um "código malvado" no nome ou numa mensagem e ele rode na tela de outra
+//   pessoa. TODO texto que vem de gente passa pelo esc;
+// - brl: escreve dinheiro do jeito brasileiro (R$ 1.500);
+// - words: conta palavras; isMobile: a tela é de celular (até 700 px)?
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -8,6 +27,10 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR");
 const words = s => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 const isMobile = () => matchMedia("(max-width:700px)").matches;
+// CATEGORIAS E HABILIDADES: a lista vem do arquivo taxonomia.json (baseada no Upwork).
+// Enquanto ele não chega, usamos 4 categorias de reserva para a tela não ficar vazia.
+// loadTaxonomy baixa o arquivo e monta duas listas: habilidades por área e todas juntas
+// (sem repetidas, em ordem alfabética).
 // categorias e habilidades vêm de /taxonomia.json (importadas do Upwork); estas quatro valem até o arquivo carregar
 let CATS = [
   { id: "design", n: "Design e criação", c: "Marca, interfaces, vídeo, 3D" },
@@ -27,6 +50,15 @@ async function loadTaxonomy() {
 }
 const catName = id => (CATS.find(c => c.id === id) || {}).n || "";
 
+// O CAMPO DE HABILIDADES COM AUTOCOMPLETAR (perfil e vaga):
+// - as habilidades escolhidas viram "etiquetas" com um × para tirar;
+// - enquanto você digita, aparece uma lista de sugestões (matchSkills procura ignorando
+//   acentos e coloca primeiro as que COMEÇAM com o que você digitou);
+// - setas sobem e descem na lista, Enter escolhe, Esc fecha, Backspace no campo vazio tira a
+//   última etiqueta;
+// - se a habilidade não está na lista, aparece "Adicionar ..." com o que você escreveu.
+// Por baixo dos panos, tudo fica guardado num campo escondido como "A, B, C", do mesmo jeito
+// que antes, então o servidor não precisou mudar nada.
 /* ---------- campo de habilidades: etiquetas + autocompletar com a lista do Upwork (taxonomia.json) ----------
    O valor fica num campo escondido #p_skills ("A, B, C"), então salvar o perfil e a vaga continua igual. */
 const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -100,10 +132,14 @@ document.addEventListener("focusin", e => { if (e.target.id === "p_skills_in") s
 document.addEventListener("focusout", e => { if (e.target.id === "p_skills_in") setTimeout(() => { if (document.activeElement !== e.target) skillList(false); }, 150); });
 // na lista, o toque escolhe sem tirar o foco do campo (assim o teclado do celular não fecha)
 document.addEventListener("pointerdown", e => { const o = e.target.closest("[data-skill-opt]"); if (o) { e.preventDefault(); skillAdd(SKB.opts[Number(o.dataset.skillOpt)]); } });
+// STORE: uma "gaveta" no próprio navegador (localStorage) para guardar coisas pequenas, como
+// rascunhos e preferências. Fica só neste aparelho. O try/catch evita erro em janelas anônimas,
+// onde a gaveta pode estar trancada.
 const store = {
   get(k, d) { try { const v = localStorage.getItem("osmo." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { v == null ? localStorage.removeItem("osmo." + k) : localStorage.setItem("osmo." + k, JSON.stringify(v)); } catch {} },
 };
+// Datas fáceis de ler: "agora", "há 5 min", "há 2 h", "ontem" ou "12 de out.".
 function when(iso) {
   if (!iso) return "";
   const d = new Date(iso.replace(" ", "T") + "Z"), s = (Date.now() - d) / 1000;
@@ -115,6 +151,10 @@ function when(iso) {
 }
 function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
 function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
+// O DESENHO DO SELO VERDE: uma "roseta" feita de 1 círculo grande + 12 bolinhas em volta
+// (calculadas com seno e cosseno, como os números num relógio) e um "✓" branco no meio.
+// av() desenha a foto da pessoa ou, sem foto, um círculo colorido com as iniciais.
+// clarBar desenha a barrinha de clareza; toast mostra um aviso rápido que some sozinho.
 // selo verde de verificado (laudo médico assinado com ICP-Brasil), no formato "roseta" dos selos de redes sociais
 const VB_SVG = (() => {
   const bumps = Array.from({ length: 12 }, (_, i) => { const a = i * Math.PI / 6; return `<circle cx="${(12 + 8.2 * Math.cos(a)).toFixed(2)}" cy="${(12 + 8.2 * Math.sin(a)).toFixed(2)}" r="3"/>`; }).join("");
@@ -126,6 +166,10 @@ const av = (name, id, size = "", src = "") => src ? `<img class="av ${size}" src
 function clarBar(v) { const cls = v >= 80 ? "" : v >= 65 ? "mid" : "low"; return `<span class="clarity" title="Clareza do briefing"><span class="bar ${cls}"><i style="width:${v}%"></i></span>${v}% claro</span>`; }
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
+// O GARÇOM INDO À COZINHA: api() manda um pedido ao servidor e traz a resposta.
+// - o cabeçalho "X-Osmo: 1" prova que o pedido saiu do nosso próprio site (proteção CSRF);
+// - sem internet, devolve uma mensagem amigável;
+// - se o servidor disser que deu erro, transforma a explicação dele num erro que a tela mostra.
 async function api(method, path, body) {
   const opt = { method, headers: { "X-Osmo": "1" }, credentials: "same-origin" };
   if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
@@ -136,10 +180,18 @@ async function api(method, path, body) {
   return data;
 }
 
+// Os desenhos do "olhinho" que mostra ou esconde a senha.
 const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2"/><path d="M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pass" aria-label="Mostrar senha" aria-pressed="false" aria-controls="a_pass">${EYE}</button>`;
 
+// A MEMÓRIA DA PÁGINA (o que o garçom precisa lembrar enquanto a página está aberta):
+// - ME: quem está logado (ou null se ninguém);
+// - PAY, OAUTH, MAIL: como a plataforma está configurada (pagamentos, botões de login, e-mail);
+// - S: os filtros de busca escolhidos (palavra, área, só briefing claro...);
+// - PREFS: as preferências de Conforto (texto maior, sem animações, vidro líquido...);
+// - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
+//   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
 let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false;
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
@@ -147,6 +199,9 @@ const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "rece
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
 let pollTimer = null, renderSeq = 0;
 
+// ATUALIZAÇÃO SOZINHA: quando publicamos uma versão nova do site, o número de versão muda.
+// De vez em quando o garçom pergunta "qual a versão atual?". Se mudou, ele recarrega a página
+// na PRÓXIMA troca de tela (nunca no meio de um formulário, para ninguém perder o que digitou).
 // versão nova publicada: a página recarrega na próxima troca de tela (nunca no meio de um formulário)
 const MY_V = ["app.js", "styles.css"].map(n => {
   const el = document.querySelector(`script[src^="/${n}"], link[href^="/${n}"]`);
@@ -164,11 +219,15 @@ async function checkVersion() {
   try { noteVersion((await api("GET", "/api/me")).v); } catch {}
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
+// Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
   try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; } catch { ME = null; }
   renderChrome();
 }
 
+// CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
+// botões do topo (mudam se você é freela, cliente ou visitante), o menu hambúrguer e a barra
+// de navegação do celular. markNav destaca a tela em que você está.
 /* ---------- cabeçalho e menu ---------- */
 const ICONS = {
   inicio: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -216,6 +275,13 @@ function markNav() {
   });
 }
 
+// O ROTEADOR (o mapa das telas): olha o que vem depois do "#" no endereço e chama a função
+// que desenha aquela tela. Exemplo: "#vaga-12" chama V.vaga(12).
+// - go("vagas") muda o endereço para #vagas (e a tela muda junto);
+// - needLogin: se a tela pede login e ninguém entrou, manda para "Entrar" e lembra para onde
+//   a pessoa queria ir, para voltar lá depois;
+// - se a tela demora mais de 150 ms, mostra "blocos de carregamento" no formato do conteúdo;
+// - se o servidor disser "você não está logado" (401), manda para Entrar.
 /* ---------- roteador ---------- */
 function go(h) { if (location.hash === "#" + h) route(); else location.hash = h; }
 function needLogin(role) {
@@ -253,6 +319,10 @@ async function route() {
   }
 }
 window.addEventListener("hashchange", route);
+// SKELETON: os "blocos cinza" que aparecem enquanto a tela carrega, com o formato aproximado
+// de cada tela. Ficam parados de propósito (sem piscar), para não incomodar.
+// V é a caixa onde moram as funções de cada tela; "after" guarda o que fazer DEPOIS que uma
+// tela aparece (ex.: começar a atualizar as mensagens sozinho).
 let SHOWN = "";
 function skeleton(name) {
   const b = (h, w = "100%", extra = "") => `<div class="sk" style="height:${h}px; width:${w}${extra}"></div>`;
@@ -271,6 +341,9 @@ function skeleton(name) {
 const after = {};
 const V = {};
 
+// TELA INICIAL: a faixa colorida de boas-vindas com a busca (que muda entre "quero trabalhar"
+// e "quero contratar"), um exemplo de perfil, as áreas, o "como funciona" e os princípios.
+// Cada V.alguma-coisa é uma função que DEVOLVE o HTML da tela; o roteador coloca na página.
 /* ---------- início ---------- */
 V.inicio = async () => {
   let featured = null;
@@ -325,6 +398,8 @@ V.inicio = async () => {
 </section>`;
 };
 
+// ENTRAR E CRIAR CONTA: a mesma tela com duas abas. Mostra os botões de login social que
+// estiverem ligados (SOCIAL) e traduz os códigos de erro da volta do Google em frases (OAUTH_ERR).
 /* ---------- entrar / criar conta ---------- */
 let authMode = "entrar";
 V.entrar = async () => {
@@ -368,6 +443,8 @@ const OAUTH_ERR = {
   falhou: "Não deu para entrar com o provedor agora. Tente de novo ou use e-mail e senha.",
 };
 
+// ESQUECI A SENHA: pede o e-mail; depois, pelo link do e-mail (#recuperar-código), deixa
+// escolher uma senha nova.
 /* ---------- recuperar senha ---------- */
 V.esqueci = async () => `<div class="auth stack">
   <div><span class="label">Recuperar senha</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Esqueci minha senha</h1>
@@ -395,6 +472,7 @@ V.recuperar = async () => {
   </form></div>`;
 };
 
+// Quem entrou pela primeira vez com o Google escolhe aqui: quero trabalhar ou quero contratar.
 /* ---------- escolher perfil (conta nova pelo login social) ---------- */
 V.escolher = async () => {
   const token = (location.hash.split("-")[1] || "");
@@ -409,6 +487,10 @@ V.escolher = async () => {
     <div id="roleErr" class="err" role="alert" hidden></div></div>`;
 };
 
+// LISTA DE VAGAS: jobQuery transforma os filtros escolhidos num endereço de busca
+// (ex.: /api/jobs?cat=design&clear=1). jobCard desenha cada vaga. No celular, os filtros
+// mais usados viram "chips" que você liga e desliga com um toque. Ao digitar na busca,
+// refreshJobs espera um tiquinho (para não buscar a cada letra) e atualiza só a lista.
 /* ---------- vagas ---------- */
 function jobQuery() {
   const p = new URLSearchParams();
@@ -462,6 +544,10 @@ async function refreshJobs() {
   }, 250);
 }
 
+// PÁGINA DE UMA VAGA: mostra o briefing completo, valor, prazo e quem contrata.
+// - quem é DONO da vaga vê as propostas recebidas, com botões de aceitar e recusar;
+// - quem trabalha vê o botão de mandar proposta (ou a proposta que já mandou);
+// - PSTATUS e JSTATUS traduzem as situações ("enviada" vira "Aguardando resposta").
 /* ---------- detalhe da vaga ---------- */
 const PSTATUS = { enviada: ["Aguardando resposta", "wait"], aceita: ["Aceita", "ok"], recusada: ["Não escolhida", "off"], retirada: ["Retirada", "off"] };
 const JSTATUS = { aberta: ["Aberta", "ok"], em_andamento: ["Em andamento", "hi"], concluida: ["Concluída", "off"], fechada: ["Fechada", "off"] };
@@ -524,6 +610,11 @@ V.vaga = async id => {
 ${barAction ? `<div class="mcta"><div class="mcta-info"><b class="mono">${price}</b><span class="hint">${esc(j.duration) || ""}</span></div>${barAction}</div>` : ""}`;
 };
 
+// PROPOSTA EM 4 PASSOS (o "wizard"): 1) como você faria o trabalho, 2) valor e etapas,
+// 3) perguntas para o cliente, 4) revisar e enviar.
+// O rascunho é salvo sozinho no navegador enquanto você digita (saveDraft), então dá para
+// fechar e voltar depois. calcHTML mostra quanto fica para você depois da taxa.
+// msRows desenha as linhas das etapas e avisa se a soma não bate com o total.
 /* ---------- proposta guiada ---------- */
 const WSTEPS = ["Abordagem", "Valor e etapas", "Perguntas", "Revisar"];
 let W = null, WJOB = null;
@@ -583,6 +674,7 @@ function msRows() {
     + `<div class="row" style="justify-content:space-between"><button class="btn sm" type="button" data-act="ms-add" ${W.ms.length >= 8 ? "disabled" : ""}>+ Adicionar etapa</button><span class="hint" id="msDiff">${diff === 0 ? "As etapas somam o valor total." : diff > 0 ? `Faltam ${brl(diff)} para fechar o total.` : `As etapas passam ${brl(-diff)} do total.`}</span></div>`;
 }
 
+// AVALIAÇÕES: estrelas, as etiquetas mais citadas e o formulário de avaliar no fim do contrato.
 /* ---------- avaliações ---------- */
 const RATE_WORDS = ["", "Ruim", "Fraco", "Ok", "Bom", "Excelente"];
 const stars = (avg, n) => n ? `<span class="stars" title="Nota média ${String(avg).replace(".", ",")} de 5, ${n} ${n === 1 ? "avaliação" : "avaliações"}"><span aria-hidden="true">★</span> <b class="mono">${String(avg).replace(".", ",")}</b> <span class="muted">(${n})</span></span>` : "";
@@ -604,6 +696,8 @@ function reviewBox(c) {
     <div><button class="btn hl" type="submit">Enviar avaliação</button></div></form>`;
 }
 
+// TALENTOS: a lista de freelas com busca e a página de perfil público de cada um (foto, selo,
+// habilidades, "como eu trabalho melhor", portfólio, avaliações e botão de conversar/convidar).
 /* ---------- talentos ---------- */
 function talentCard(t) {
   return `<button class="talent" data-go="talento-${t.id}">
@@ -659,6 +753,11 @@ V.talento = async id => {
 </div>`;
 };
 
+// MENSAGENS: à esquerda a lista de conversas, à direita a conversa aberta. Enquanto a conversa
+// está aberta, o garçom pergunta ao servidor de tempos em tempos se chegou mensagem nova.
+// No celular a conversa ocupa a tela inteira e acompanha o teclado (syncViewport), para a caixa
+// de digitar nunca ficar escondida atrás dele. Se chega mensagem enquanto você lê lá em cima,
+// aparece o botão "mensagens novas" em vez de pular a tela sozinha.
 /* ---------- mensagens ---------- */
 let TH = null;
 V.mensagens = async id => {
@@ -727,6 +826,13 @@ after.mensagens = () => {
   }, 8000);
 };
 
+// PAINEL: o "quadro de tarefas" de cada contrato. MSTATUS e PAYST traduzem as situações das
+// etapas e dos pagamentos. msActions decide QUAL botão aparecer para cada pessoa em cada
+// etapa, seguindo as mesmas regras do servidor:
+// - cliente com etapa a pagar -> "Pagar etapa";
+// - freela com etapa paga (ou sem pagamentos ligados) -> "Começar" -> "Marcar como entregue";
+// - cliente com etapa entregue -> "Aprovar e liberar" ou "Pedir ajustes".
+// Ao lado: para o freela, a energia da semana e as propostas; para o cliente, as vagas dele.
 /* ---------- painel ---------- */
 const MSTATUS = { pendente: ["A seguir", "off", ""], andamento: ["Em andamento", "hi", "now"], entregue: ["Entregue, aguardando aprovação", "wait", "now"], ajustes: ["Ajustes pedidos", "wait", "now"], aprovada: ["Aprovada e paga", "ok", "done"] };
 const PAYST = { a_pagar: ["A pagar", "off"], aguardando: ["Aguardando pagamento", "wait"], pago: ["Pago · protegido", "ok"], liberado: ["Liberado", "ok"], estornado: ["Estornado", "off"] };
@@ -774,6 +880,8 @@ V.painel = async () => {
 <div class="stack">${side}<section class="stack" style="gap:12px"><h2>Contratos</h2>${contracts}</section></div>`;
 };
 
+// SELO DE VERIFICADO: explica como funciona, pede a confirmação ("o laudo é meu") e envia o PDF
+// para o servidor conferir. Se já é verificado, mostra desde quando e o botão de remover.
 /* ---------- selo de verificado ---------- */
 function verifyHTML(p) {
   if (p.verified) return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:10px">
@@ -806,6 +914,8 @@ async function sendVerify(file) {
   await refreshMe(); toast("Perfil verificado"); route();
 }
 
+// AVISOS POR E-MAIL: as três opções (tudo, só o importante, nada) e a telinha que abre pelo
+// link do rodapé do e-mail, sem precisar entrar na conta.
 /* ---------- avisos por e-mail ---------- */
 const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos e mensagens das pessoas"],
   ["importante", "Só o importante", "Propostas, contratos, etapas e pagamentos. Sem mensagens de conversa"], ["nada", "Nenhum", "Não mandar e-mails de aviso"]];
@@ -821,6 +931,8 @@ V.avisos = async () => {
     <button class="btn hl" type="submit">Salvar</button></form></div>`;
 };
 
+// MEU PERFIL: shrinkImage diminui a foto NO PRÓPRIO CELULAR antes de enviar (mais rápido e
+// gasta menos internet), recortando um quadrado do meio para a foto de perfil.
 /* ---------- perfil ---------- */
 // abre a imagem escolhida e reduz no navegador antes de enviar (square: recorta o centro em quadrado)
 async function shrinkImage(file, max, square) {
@@ -845,6 +957,8 @@ async function uploadAvatar(file) {
   } catch (e) { err.textContent = e.message; err.hidden = false; }
 }
 
+// PORTFÓLIO NO PERFIL: cada projeto é salvo na hora, separado do resto do formulário.
+// PE guarda o projeto que está sendo editado (título, link, imagem nova ou "tirar imagem").
 /* portfólio: cada projeto salva na hora, fora do formulário do perfil */
 let PE = null; // projeto sendo editado: { id, title, link, image (endereço ou data:), newImage, removeImage }
 function portBoxHTML() {
@@ -874,6 +988,9 @@ function portBoxHTML() {
 }
 function renderPort(focusId) { const b = $("#portBox"); if (!b) return; b.innerHTML = portBoxHTML(); updateProfMeta(); if (focusId) { const el = $("#" + focusId); if (el) el.focus(); } }
 function syncPE() { if (!PE) return; const t = $("#pe_title"), l = $("#pe_link"); if (t) PE.title = t.value; if (l) PE.link = l.value; }
+// O perfil é dividido em seções que abrem e fecham. profMeta calcula o "% completo" e o
+// resumo de cada seção fechada; updateProfMeta atualiza isso depois de salvar, sem redesenhar
+// a tela inteira (você continua exatamente onde estava).
 // perfil em seções: no celular começam fechadas (cada uma com um resumo); no computador, abertas como antes
 const PSEC_OPEN = new Set();
 function profMeta(p) {
@@ -984,6 +1101,9 @@ function payoutHTML() {
     <button class="btn hl" type="button" data-act="payout">Ativar recebimentos</button></div>`;
 }
 
+// ANEXOS DA VAGA: confere o tipo e o tamanho ANTES de enviar (para avisar logo), manda cada
+// arquivo e desenha a lista. Na hora de publicar, os arquivos esperam na memória (PFILES) e
+// sobem logo depois que a vaga é criada.
 /* ---------- arquivos do briefing ---------- */
 const FILE_EXTS = ["pdf", "ai", "psd", "png", "jpg", "jpeg", "webp", "docx", "xlsx", "pptx", "odt", "ods", "odp", "txt", "csv", "md"];
 const FILE_ACCEPT = FILE_EXTS.map(e => "." + e).join(",");
@@ -1024,6 +1144,9 @@ function pfilesHTML() {
     <div id="pFilesErr" class="err" role="alert" hidden></div>`;
 }
 
+// PUBLICAR VAGA: o formulário do briefing. P guarda o rascunho (salvo no navegador a cada
+// letra). postScore calcula a clareza na hora, igualzinho ao servidor, e meterHTML desenha o
+// "medidor" ao lado mostrando o que falta preencher.
 /* ---------- publicar vaga ---------- */
 const POST0 = { title: "", cat: "", obj: "", ent: "", fora: "", com: "", fb: "", ref: "", budget_type: "fixo", budget: "", duration: "", skills: "", async: true, flex: false };
 let P = Object.assign({}, POST0, store.get("post-draft", {}));
@@ -1071,6 +1194,13 @@ V.publicar = async () => {
 </div>`;
 };
 
+// OS OUVIDOS DA PÁGINA: em vez de colocar um "ouvinte" em cada botão, colocamos UM ouvinte de
+// clique na página inteira e perguntamos "onde foi o clique?". Os botões têm etiquetas:
+// - data-go="vagas" -> ir para uma tela;
+// - data-act="..." -> fazer uma ação (aceitar proposta, pagar, aprovar etapa, apagar foto...);
+// - data-cat, data-fchip, data-theme-set... -> mudar filtros, tema etc.
+// Assim, botões que aparecem depois (porque a tela foi redesenhada) já funcionam sozinhos.
+// Ações perigosas (recusar, apagar, remover selo) pedem confirmação antes (confirmSheet).
 /* ---------- eventos ---------- */
 document.addEventListener("click", async e => {
   const t = e.target;
@@ -1177,6 +1307,8 @@ document.addEventListener("click", async e => {
     case "pin-save": return busy(async () => { const pinIn = $("#pinIn"); if (!pinIn) return; await api("PUT", `/api/threads/${TH.thread.id}/pin`, { pin: pinIn.value }); toast("Resumo atualizado"); route(); })();
   }
 });
+// wizValid confere cada passo da proposta antes de deixar avançar (ex.: texto com 40 palavras
+// ou mais, valor mínimo, etapas somando o total).
 function rerenderWiz() { $("#view").innerHTML = wizHTML(); window.scrollTo(0, 0); }
 function wizValid() {
   if (W.step === 0 && words(W.text) < 10) { toast("Escreva pelo menos 10 palavras sobre como faria o trabalho."); return false; }
@@ -1189,6 +1321,8 @@ function wizValid() {
   return true;
 }
 
+// OUVIDO DE DIGITAÇÃO: atualiza buscas, contadores de palavras, cálculos de valor e rascunhos
+// enquanto você digita. "change" cuida de caixinhas, seleções e arquivos escolhidos.
 document.addEventListener("input", e => {
   const t = e.target, id = t.id;
   if (id === "fq") { S.q = t.value; refreshJobs(); }
@@ -1221,6 +1355,10 @@ document.addEventListener("change", e => {
     .catch(e2 => { const b = $("#peErr"); b.textContent = e2.message; b.hidden = false; }); }
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
 });
+// OUVIDO DE FORMULÁRIOS: quando você aperta "Enviar/Salvar/Entrar", o navegador iria recarregar
+// a página; preventDefault impede isso e o garçom manda os dados pelo api(). Cada formulário
+// tem um id (authForm, profForm, postForm, compose...) e um pedaço de código próprio.
+// O botão fica desligado enquanto envia, para ninguém mandar duas vezes sem querer.
 document.addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target, btn = f.querySelector('[type="submit"]');
@@ -1290,6 +1428,10 @@ document.addEventListener("submit", async e => {
   } finally { if (btn) btn.disabled = false; }
 });
 
+// PAINEL DE CONFIRMAÇÃO ("Tem certeza?"): no celular sobe de baixo e dá para fechar arrastando
+// para baixo; no computador aparece no meio. trapFocus prende a tecla Tab dentro do painel,
+// para quem navega pelo teclado não "se perder" atrás dele. O foco começa no botão seguro
+// (cancelar), para um Enter sem querer não apagar nada.
 /* ---------- painel de confirmação (no celular sobe de baixo; no computador fica no centro) ---------- */
 // arrastar para baixo fecha o painel (só no toque)
 function sheetDrag(el, onClose) {
@@ -1323,6 +1465,8 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
+// TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
+// (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
 /* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
 const THEMES = [["light", "Claro"], ["dark", "Escuro"], ["system", "Sistema"]];
 // escuro é o padrão; "sistema" fica salvo explicitamente para não cair de volta no escuro
@@ -1335,6 +1479,9 @@ const themeHTML = () => { const cur = getTheme(); return `<div class="field"><sp
   <div class="seg theme-seg" role="group" aria-labelledby="themeLbl">${THEMES.map(([k, n]) => `<button type="button" data-theme-set="${k}" aria-pressed="${cur === k}">${n}</button>`).join("")}</div>
   <span class="hint">"Sistema" segue o modo claro ou escuro do seu celular ou computador.</span></div>`; };
 
+// CONFORTO: as preferências de acessibilidade (texto maior, mais espaço entre linhas, sem
+// animações, modo foco, vidro líquido). Cada uma liga uma "classe" no <html>, e o styles.css
+// muda o visual quando a classe está ligada.
 /* ---------- conforto ---------- */
 function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus", "glass"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
 function openA11y() {
@@ -1350,6 +1497,9 @@ function openA11y() {
 }
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }
 
+// MENU HAMBÚRGUER (celular e tablet): abre deslizando da direita. Esc fecha e o Tab fica preso
+// dentro do menu enquanto ele está aberto. Se a janela crescer até virar tela de computador,
+// o menu fecha sozinho.
 /* ---------- menu hambúrguer ---------- */
 let menuOpen = false, menuT;
 function openMenu() {
@@ -1378,6 +1528,12 @@ document.addEventListener("keydown", e => {
   if ($("#layer .drawer")) trapFocus(e, $("#layer .drawer"));
 });
 
+// HORA DE COMEÇAR! Quando a página abre:
+// - a cada 30 s (se a aba estiver à vista), pergunta "quem sou eu?" para atualizar avisos;
+// - aplica as preferências de Conforto;
+// - liga o cabeçalho que diminui ao rolar a página;
+// - se voltou do Google com erro, guarda a mensagem e limpa o endereço;
+// - carrega quem está logado E as categorias ao mesmo tempo e então desenha a primeira tela.
 /* ---------- início ---------- */
 setInterval(() => { if (ME && !document.hidden) refreshMe(); }, 30000);
 applyPrefs();

@@ -1,9 +1,24 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// Este é o "carteiro de e-mails" da plataforma. Ele manda avisos como
+// "você recebeu uma mensagem" ou "aqui está o link para trocar sua senha".
+// Para mandar um e-mail, o programa conversa com um "servidor de correio" (SMTP)
+// usando frases combinadas, quase como um jogo de perguntas e respostas:
+//   nós: "Olá, sou a Osmo"          (EHLO)
+//   ele: "Oi! Pode falar."          (250)
+//   nós: "Vou mandar de fulano..."  (MAIL FROM)
+//   nós: "...para ciclano"          (RCPT TO)
+//   nós: "Lá vai o texto"           (DATA) ... e um ponto final sozinho para terminar.
+// Cada resposta começa com um número de 3 dígitos: 2xx quer dizer "tudo certo".
 // Envio de e-mail por SMTP (node:net/node:tls, sem dependências externas)
 // Porta 465 usa TLS direto; 587 (ou 25) começa sem TLS e sobe com STARTTLS.
 const net = require("node:net");
 const tls = require("node:tls");
 const crypto = require("node:crypto");
 
+// Os dados do servidor de correio vêm do .env: endereço (HOST), porta, usuário, senha e
+// quem aparece como remetente (FROM).
 const HOST = process.env.SMTP_HOST || "";
 const PORT = Number(process.env.SMTP_PORT || 465);
 const USER = process.env.SMTP_USER || "";
@@ -13,6 +28,12 @@ const FROM = process.env.MAIL_FROM || USER;
 const DEV = process.env.MAIL_DEV === "true" && !HOST;
 const ENABLED = !!(HOST && FROM) || DEV;
 
+// Ferramentinhas para montar o e-mail:
+// - b64: transforma o texto em "base64", um jeito de escrever qualquer letra (acentos, emojis)
+//   só com letras e números simples, que todo servidor de e-mail entende;
+// - wrap: quebra o texto em linhas de 76 letras (regra antiga dos e-mails);
+// - header: se o assunto tiver acento, embrulha ele num formato especial para não virar "Ã§";
+// - addr / fromHeader: tiram só o endereço de "Osmo <oi@osmo.com.br>".
 const b64 = s => Buffer.from(s, "utf8").toString("base64");
 const wrap = s => s.replace(/.{1,76}/g, "$&\r\n");
 const header = s => /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`;
@@ -22,6 +43,9 @@ function fromHeader(s) {
   return m && m[1] ? `${header(m[1])} <${m[2]}>` : addr(s);
 }
 
+// O "ouvido" da conversa: junta o que o servidor vai falando, espera ele terminar a frase
+// (uma linha que começa com 3 números e um espaço) e confere se o número é o esperado.
+// Se a conexão cair ou passar de 20 segundos calado, dá erro em vez de ficar esperando para sempre.
 // lê respostas do servidor (inclui as de várias linhas, "250-...", até "250 ...")
 function reader(sock) {
   let buf = "", waiting = null, error = null;
@@ -48,6 +72,8 @@ function reader(sock) {
   };
 }
 
+// Liga para o servidor de correio. Na porta 465 a ligação já começa "com cadeado" (TLS);
+// nas outras, começa aberta e depois pede o cadeado (STARTTLS).
 function connect() {
   return new Promise((resolve, reject) => {
     const sock = PORT === 465 ? tls.connect({ host: HOST, port: PORT, servername: HOST }) : net.connect({ host: HOST, port: PORT });
@@ -56,6 +82,9 @@ function connect() {
   });
 }
 
+// Manda um e-mail de verdade. O e-mail vai em duas versões juntas (texto simples e HTML
+// bonitinho); o programa de e-mail de quem recebe escolhe qual mostrar.
+// No modo DEV (testes no computador), não manda nada: só imprime o e-mail na tela.
 async function send({ to, subject, text, html, headers = {} }) {
   if (DEV) { console.log(`\n--- e-mail (MAIL_DEV) para ${to}\nAssunto: ${subject}\n\n${text}\n---\n`); return; }
   if (!ENABLED) throw new Error("E-mail não configurado (SMTP_HOST e MAIL_FROM).");
@@ -71,6 +100,10 @@ async function send({ to, subject, text, html, headers = {} }) {
     `--${boundary}--`, "",
   ].join("\r\n");
 
+  // O "jogo de perguntas e respostas" com o servidor, passo a passo (veja o topo do arquivo).
+  // Se a porta não for 465, pedimos o cadeado (STARTTLS) e recomeçamos a conversa já protegida.
+  // AUTH PLAIN = entregar usuário e senha; o "finally" garante que a ligação é desligada
+  // mesmo se algo der errado no meio.
   let sock = await connect();
   try {
     let cmd = reader(sock);

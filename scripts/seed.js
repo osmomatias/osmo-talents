@@ -1,3 +1,7 @@
+// EXPLICANDO COMO PARA UMA CRIANÇA: este arquivo é a "caixa de brinquedos de exemplo".
+// Um site novinho é vazio: sem pessoas, sem vagas. Para testar e mostrar como fica,
+// este script coloca pessoas e vagas de mentirinha (todas com e-mail @exemplo.osmo).
+// Ele roda uma vez só: se os exemplos já existem, não mexe em nada.
 // Cria dados de demonstração. Uso: npm run seed
 // Gera uma senha aleatória para as contas de exemplo e mostra no terminal.
 const crypto = require("node:crypto");
@@ -8,9 +12,13 @@ if (one("SELECT 1 FROM users WHERE email LIKE '%@exemplo.osmo'")) {
   console.log("Os dados de demonstração já existem. Nada foi alterado.");
   process.exit(0);
 }
+// Todas as contas de exemplo ganham a MESMA senha, sorteada agora e mostrada só uma vez
+// no terminal (no banco ela fica embaralhada, como qualquer senha).
 const password = crypto.randomBytes(6).toString("base64url");
 const hash = hashPassword(password);
 
+// Os personagens: 4 freelas, 3 clientes e 5 vagas, cada um com perfil, jeito de trabalhar,
+// portfólio e briefing parecidos com os de verdade.
 const FREELAS = [
   { name: "Lia Moreira", email: "lia@exemplo.osmo", title: "Designer de marca e embalagem", rate: 120, location: "Vitória, ES", hours: 20,
     skills: ["Branding", "Embalagem", "Tipografia"], tag: "Autista · prefere assíncrono",
@@ -56,6 +64,10 @@ const JOBS = [
     ["Painel com 4 gráficos", "Aba de dados limpa"], [], "Chamada semanal de 30 min.", "", "Planilhas atuais.", "hora", 85, "cerca de 15 h", ["Google Sheets", "Fórmulas"], 0, 0],
 ];
 
+// Grava tudo de uma vez (tudo ou nada) e ainda monta duas situações para mostrar o fluxo:
+// - um contrato em andamento (Lia e a cafeteria), com 2 etapas aprovadas, 1 em andamento,
+//   1 a seguir e uma conversa;
+// - uma proposta esperando resposta (Caio na landing page).
 tx(() => {
   const fIds = FREELAS.map(f => {
     const id = Number(run("INSERT INTO users (name,email,pass_hash,role) VALUES (?,?,?,'freela')", f.name, f.email, hash).lastInsertRowid);

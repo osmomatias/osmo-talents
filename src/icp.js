@@ -1,3 +1,17 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// É o "detetive de carimbos". Quem quiser o selo verde de verificado manda um laudo
+// médico em PDF. Mas qualquer um consegue fazer um PDF falso no computador, né?
+// Por isso só aceitamos laudos com ASSINATURA DIGITAL de médico, que é como um
+// carimbo mágico impossível de falsificar:
+// - o médico tem um "cartão de identidade digital" (certificado) dado por uma
+//   autoridade oficial do Brasil (a ICP-Brasil);
+// - quando ele assina o PDF, uma conta matemática "cola" a assinatura no conteúdo;
+// - se alguém mudar uma vírgula do PDF depois, a conta não fecha mais.
+// O detetive confere tudo isso sozinho, passo a passo (a lista logo abaixo).
+// Detalhe importante: o detetive NÃO lê o laudo (diagnóstico, nome). Ele só confere
+// que é um laudo de verdade assinado por um médico de verdade.
 // Confere laudos em PDF assinados digitalmente por médicos (ICP-Brasil), só com node:crypto.
 //
 // O que é conferido, nesta ordem:
@@ -15,11 +29,20 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
+// STAGE marca "em que passo o detetive estava" quando achou um problema. Se o PDF tiver
+// várias assinaturas, mostramos o erro da que chegou mais longe (a explicação mais útil).
+// "no(...)" é o jeito curto de dizer "pare tudo, achei um problema: ...".
 // stage: até onde a conferência chegou (quanto maior, mais útil é a mensagem para a pessoa)
 class IcpError extends Error { constructor(msg, stage = 0) { super(msg); this.stage = stage; } }
 let STAGE = 0;
 const no = msg => { throw new IcpError(msg, STAGE); };
 
+// LEITOR DE "CAIXINHAS DENTRO DE CAIXINHAS": assinaturas e certificados são guardados num
+// formato chamado DER. Ele é como bonecas russas: cada pedaço diz
+//   [que tipo eu sou] [quanto eu meço] [o que tenho dentro]
+// e o que tem dentro pode ser mais caixinhas. tlv() abre UMA caixinha; kids() lista as caixinhas
+// de dentro; oid() lê "nomes em números" (ex.: 2.16.76.1.4.2.2.1 = "número do CRM");
+// time() lê datas; text() lê textos (nomes, CRM).
 /* ---------- DER/BER mínimo ---------- */
 function tlv(buf, pos, limit = buf.length) {
   const start = pos;
@@ -74,6 +97,9 @@ function text(n) {
   try { return new TextDecoder("utf-8", { fatal: true }).decode(b).trim(); } catch { return b.toString("latin1").trim(); }
 }
 
+// Tradutores de "nomes em números" para nomes de contas matemáticas (sha256 etc.) e a função
+// que confere se uma assinatura bate com a chave pública de quem assinou.
+// SHA-1 é recusado porque é uma conta antiga que já foi "quebrada".
 /* ---------- algoritmos ---------- */
 const HASH = { "1.3.14.3.2.26": "sha1", "2.16.840.1.101.3.4.2.1": "sha256", "2.16.840.1.101.3.4.2.2": "sha384", "2.16.840.1.101.3.4.2.3": "sha512" };
 const SIG = { "1.2.840.113549.1.1.11": "sha256", "1.2.840.113549.1.1.12": "sha384", "1.2.840.113549.1.1.13": "sha512", "1.2.840.113549.1.1.5": "sha1",
@@ -94,6 +120,9 @@ function verifySig(algNode, digestName, data, key, signature) {
   return crypto.verify(hash, data, id.startsWith("1.2.840.10045") ? { key, dsaEncoding: "der" } : key, signature);
 }
 
+// certInfo lê o "cartão de identidade digital" e separa o que interessa: número de série,
+// quem emitiu, para que serve, onde fica a lista de cartões cancelados e, principalmente,
+// o CRM do médico (ou se foi emitido pela "AR CFM", o balcão do Conselho de Medicina).
 /* ---------- certificados ---------- */
 function certInfo(derBuf) {
   const x = new crypto.X509Certificate(derBuf);
@@ -120,6 +149,9 @@ function certInfo(derBuf) {
   info.medicalAr = (x.subject.match(/(?:^|\n)OU=([^\n]+)/g) || []).map(o => o.replace(/^\n?OU=/, "").trim()).find(o => /^AR\s+(CFM|CRM[A-Z]{0,3})\b/i.test(o)) || "";
   return info;
 }
+// As "raízes" e "intermediárias" são os cartões das autoridades oficiais, guardados na pasta
+// certs/icp-brasil. Funcionam como uma árvore genealógica: o cartão do médico foi assinado por
+// uma autoridade, que foi assinada por outra, até chegar na RAIZ oficial do Brasil.
 function loadPem(file) {
   const pem = fs.readFileSync(file, "latin1");
   return (pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || []).map(p => new crypto.X509Certificate(p));
@@ -131,6 +163,9 @@ function trust() {
   return TRUST;
 }
 const validAt = (x, t) => new Date(x.validFrom) <= t && t <= new Date(x.validTo);
+// Sobe a árvore genealógica: do cartão do médico até a raiz oficial, conferindo em cada degrau
+// quem assinou quem e se cada cartão estava dentro da validade NA DATA DA ASSINATURA.
+// Se não chegar numa raiz oficial em até 8 degraus, não é ICP-Brasil e o laudo é recusado.
 function buildChain(leaf, pool, roots, at) {
   const chain = [leaf]; let cur = leaf;
   for (let depth = 0; depth < 8; depth++) {
@@ -144,6 +179,10 @@ function buildChain(leaf, pool, roots, at) {
   no("Cadeia de certificados longa demais.");
 }
 
+// LISTA DE CARTÕES CANCELADOS: se um médico perder o cartão digital, a autoridade o cancela e
+// publica numa lista. Baixamos essa lista (guardando uma cópia por até 6 horas para não baixar
+// toda hora) e vemos se o número do cartão está nela. Se a lista não puder ser baixada,
+// anotamos "indisponível" em vez de travar tudo.
 /* ---------- LCR (lista de certificados revogados) ---------- */
 const crlCache = new Map(); // url -> { at, serials:Set, next }
 async function revoked(info, issuer) {
@@ -171,6 +210,10 @@ async function revoked(info, issuer) {
   return "indisponivel";
 }
 
+// Procura as assinaturas dentro do PDF. Cada assinatura diz quais pedaços do arquivo ela
+// protege (/ByteRange: "do byte 0 até tal, e de tal até o fim"); o buraco no meio é onde
+// fica a própria assinatura. Também pega a data de assinatura escrita no PDF (/M).
+// "whole" = a assinatura cobre o arquivo até o último byte (ninguém colou nada depois).
 /* ---------- PDF ---------- */
 function signaturesOf(pdf) {
   const s = pdf.toString("latin1"), out = [];
@@ -196,6 +239,14 @@ function signaturesOf(pdf) {
   return out;
 }
 
+// A investigação completa de UMA assinatura, em passos (os STAGEs):
+// 1. abre a assinatura e acha o cartão de quem assinou;
+// 2. recalcula o "resumo" (hash) do PDF e confere com o resumo que foi assinado, e confere
+//    a assinatura com a chave do cartão. Se o PDF mudou, os resumos não batem;
+// 3. confere se a assinatura cobre o arquivo inteiro;
+// 4. sobe a árvore até a raiz oficial;
+// 5. confere se é cartão de PESSOA, de ASSINATURA e de MÉDICO, e se não foi cancelado.
+// Se tudo passar, devolve o CRM, o nome do médico e a data.
 async function checkSignature(pdf, sig, opts) {
   const { roots, inter } = opts.trust || trust();
   STAGE = 1;
@@ -254,6 +305,9 @@ async function checkSignature(pdf, sig, opts) {
   return { crm: signer.crm, uf: signer.crmUf, ar: signer.medicalAr, doctor: signer.name, signedAt: at, revocation: rev };
 }
 
+// A porta de entrada do detetive: confere se é PDF, acha as assinaturas e testa cada uma,
+// começando pela última. Se alguma passar, devolve o resultado mais o "resumo" (sha256) do
+// arquivo, que o banco guarda para o mesmo laudo não ser usado em duas contas.
 // Confere o PDF. Devolve { crm, uf, doctor, signedAt, revocation, sha256 } ou lança IcpError com o motivo.
 async function verifyMedicalPdf(pdf, opts = {}) {
   if (!Buffer.isBuffer(pdf) || pdf.subarray(0, 5).toString("latin1") !== "%PDF-") no("Envie o laudo em PDF.");

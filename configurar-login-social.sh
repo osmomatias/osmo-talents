@@ -1,4 +1,8 @@
 #!/bin/bash
+# EXPLICANDO COMO PARA UMA CRIANÇA: este script liga um botão de "Entrar com ...".
+# Você escolhe o serviço, ele mostra o endereço de volta que precisa ser cadastrado no
+# painel desse serviço e pede o "Client ID" e o "Client Secret" (a identificação da Osmo lá).
+# Esses dados vão direto para o .env do servidor, e o app é reiniciado.
 # Liga o login com Google, LinkedIn, Adobe ou GitHub no servidor.
 # Uso, no terminal do editor:  bash configurar-login-social.sh
 # As chaves são digitadas aqui no seu Mac e vão direto para o servidor.

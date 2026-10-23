@@ -1,4 +1,9 @@
 #!/bin/bash
+# EXPLICANDO COMO PARA UMA CRIANÇA: este script atualiza a "lista de autoridades oficiais"
+# que o detetive de laudos usa. Ele baixa do site oficial do governo (ITI) todos os
+# certificados das autoridades, joga fora os vencidos, separa as RAÍZES (as que assinam a
+# si mesmas) das INTERMEDIÁRIAS e confere se cada intermediária chega numa raiz.
+# Se algo não bater, não troca nada. Depois é só publicar.
 # Atualiza os certificados da ICP-Brasil (raízes e ACs intermediárias) a partir do repositório oficial do ITI.
 # Uso, no terminal do editor:  bash scripts/atualizar-icp.sh   (depois publique com bash publicar.sh)
 set -e

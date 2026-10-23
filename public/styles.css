@@ -1,6 +1,27 @@
 
+/* ============================================================================
+   EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+   ============================================================================
+   Se o index.html é o esqueleto e o app.js é o cérebro, o styles.css é a ROUPA:
+   cores, letras, tamanhos, cantos arredondados, espaços e como tudo se arruma
+   em telas de tamanhos diferentes.
+   Como se lê uma regra de CSS:
+       .btn { background: vinho; }
+       "para todo elemento com a etiqueta (classe) btn, pinte o fundo de vinho".
+   Três ideias que aparecem o tempo todo aqui:
+   1. VARIÁVEIS (--alguma-coisa): como potes de tinta com nome. Em vez de escrever
+      a cor #7A0B3C em 50 lugares, escrevemos var(--accent). Para criar o tema
+      escuro, basta trocar a tinta dos potes; o resto do site muda sozinho.
+   2. @media: "só vale se...". Ex.: @media (max-width:700px) = só em telas de até
+      700 pixels de largura (celular). É assim que o site se adapta a cada aparelho.
+   3. A ORDEM IMPORTA: se duas regras falam da mesma coisa, a que vem depois (ou a
+      mais específica) ganha. Por isso o arquivo foi crescendo em camadas: a base no
+      começo e os ajustes (identidade, cantos, vidro, telas grandes) mais para o fim. */
 /* Identidade Osmo (osmo.com.br): vinho #7A0B3C, vinho profundo #610930, rosa #FFB6C1, DIN Pro, cantos retos.
    Layout: topo vinho fixo + coluna de até 1180px; hero em faixa vinho com vinheta radial, como no site. */
+/* OS POTES DE TINTA (tema claro): cores da marca (vinho, rosa, laranja), cores do
+   fundo, do texto, das linhas, cores de aviso, as fontes e alguns tamanhos
+   (--fs = tamanho da letra, --lh = altura da linha, --r = arredondado dos cantos). */
 :root{
   --brand:#7A0B3C; --brand-deep:#610930; --pink:#FFB6C1; --on-brand:#FFFFFF;
   --orange:#E8650F; --orange-ink:#2B0714; --orange-soft:#FDE6D6; --hi:#B44708;
@@ -14,6 +35,9 @@
   --fs:16.5px; --lh:1.6; --r:16px; --gap:20px;
   color-scheme:light;
 }
+/* TEMA ESCURO: troca a tinta dos potes. Vale em dois casos:
+   - o sistema do aparelho está no escuro e a pessoa não forçou o claro;
+   - a pessoa escolheu "escuro" (data-theme="dark", logo abaixo). */
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#170810; --surface:#22101A; --sunken:#12060C; --line:#3A1E2B;
   --orange-soft:#3F1E0C; --hi:#FF9A55; --fg:#F6E9EE; --muted:#B99AA7; --accent:#FFB6C1; --accent-ink:#3A0A1F; --accent-soft:#43142A;
@@ -25,11 +49,17 @@
   --sun:#E5B456; --sun-soft:#3A2F17; --plum:#F2A7BE; --plum-soft:#3D1426; --coral:#E58C77; --coral-soft:#3D2420;
   --ok:#6FCB8E; --warn:#E5B456; color-scheme:dark}
 
+/* PREFERÊNCIAS DE CONFORTO (ligadas pelo theme.js/app.js como classes no <html>):
+   - big: letra maior; airy: mais espaço entre linhas;
+   - calm: desliga TODAS as animações (também desligamos se o sistema pede "reduzir movimento"). */
 html.big{--fs:18.5px}
 html.airy{--lh:1.85; --gap:28px}
 html.calm *{animation:none!important; transition:none!important}
 @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
 
+/* BASE: box-sizing faz a largura de uma caixa já incluir a borda e o recheio (fica mais fácil
+   fazer as contas). Depois vêm o corpo da página, os títulos, os links e a moldura de foco:
+   o contorno que aparece quando você navega pelo TECLADO, para saber onde está. */
 *{box-sizing:border-box}
 body{margin:0; background:var(--bg); color:var(--fg); font-family:var(--f-body); font-size:var(--fs); line-height:var(--lh)}
 body::before{content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); z-index:30; background:var(--surface)}
@@ -48,6 +78,8 @@ button,input,select,textarea{font:inherit; color:inherit}
 .stack{display:flex; flex-direction:column; gap:var(--gap)}
 .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
 
+/* DAQUI ATÉ A IDENTIDADE OSMO: o desenho básico de cada parte do site (topo, botões, chips,
+   painéis, início, listas, vaga, talentos, proposta, mensagens, contratos, publicar). */
 /* topo */
 .top{position:sticky; top:env(safe-area-inset-top,0px); z-index:20; background:var(--surface); border-bottom:1px solid var(--line)}
 .top .wrap{display:flex; align-items:center; gap:18px; min-height:64px; flex-wrap:wrap; padding-block:8px}
@@ -233,6 +265,8 @@ img.av{object-fit:cover; background:var(--sunken)}
 .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(24px + env(safe-area-inset-bottom,0px)); background:var(--fg); color:var(--bg); padding:10px 18px; border-radius:999px; font-weight:700; z-index:50}
 .proto{background:var(--sun-soft); color:var(--warn); font-size:.82rem; text-align:center; padding-block:6px; font-weight:700}
 
+/* "minmax(0, ...)" impede que um texto comprido estique a coluna e faça a página ganhar
+   rolagem para o lado (um defeito comum no celular). */
 /* grades nunca empurram a página para os lados */
 .hero{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
 .layout{grid-template-columns:260px minmax(0,1fr)}
@@ -243,6 +277,9 @@ img.av{object-fit:cover; background:var(--sunken)}
 .fbox>summary{display:none}
 .fbox>summary::-webkit-details-marker{display:none}
 
+/* TELAS MENORES: até 900 px (tablet pequeno), até 700 px (celular), até 600 px e até 360 px
+   (celulares bem estreitos). Em cada degrau, as colunas viram uma só, as letras e espaços
+   diminuem um pouco e algumas coisas mudam de lugar. */
 @media (max-width:900px){
   .hero,.detail,.layout{grid-template-columns:minmax(0,1fr)}
   .filters,.meter{position:static}
@@ -313,6 +350,11 @@ img.av{object-fit:cover; background:var(--sunken)}
   .top-actions .btn{padding:6px 10px}
 }
 
+/* CAMADAS DE ACABAMENTO (cada uma por cima da anterior):
+   - identidade Osmo: topo vinho, faixa de boas-vindas com degradê, botões em maiúsculas;
+   - laranja Osmo: o laranja aparece só nos destaques, para chamar atenção sem cansar;
+   - menu hambúrguer: o menu lateral do celular e tablet;
+   - cantos arredondados: arredonda botões, campos, cartões e painéis. */
 /* ---------- identidade Osmo ---------- */
 body::before{background:var(--brand)}
 .top{background:var(--brand); border-bottom:0; color:var(--on-brand); background-image:radial-gradient(ellipse at 50% 0%, transparent 0%, rgb(0 0 0 / .18) 100%)}
@@ -432,6 +474,8 @@ body.menu-open{overflow:hidden}
 .ms .st{border-radius:50%}
 :focus-visible{border-radius:10px}
 
+/* PEÇAS DO APP: contador de não lidas (badge), etiquetas de situação (status), tela de entrar,
+   mensagens de erro, caixas vazias, linhas de etapas e o rodapé. */
 /* ---------- app real ---------- */
 .badge{display:inline-grid; place-items:center; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:var(--orange); color:var(--orange-ink); font-size:.75rem; font-weight:700; margin-left:6px; font-family:var(--f-body)}
 .status{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:.8rem; font-weight:700; background:var(--sunken); color:var(--muted)}
@@ -525,6 +569,11 @@ body.menu-open{overflow:hidden}
 .vbadge.off{color:var(--line)}
 .verify-box details summary{cursor:pointer}
 
+/* CELULAR E TABLET (até 980 px): o menu de cima some e aparece a barra de navegação embaixo,
+   perto do polegar. Na página da vaga, o valor e o botão principal ficam presos logo acima
+   dela, sempre à vista.
+   pointer:coarse = aparelho de TOQUE. Aí, botões pequenos ganham uma "área invisível" de
+   44 px em volta (o tamanho de uma ponta de dedo), sem mudar a aparência. */
 /* ---------- celular: navegação embaixo, ação fixa e área de toque ---------- */
 .tabbar,.mcta{display:none}
 @media (max-width:980px){
@@ -635,6 +684,13 @@ html.glass .psec-b>.panel{border:0; background:none; box-shadow:none; -webkit-ba
 .theme-seg{display:flex}
 .theme-seg button{flex:1; min-height:44px}
 
+/* VIDRO LÍQUIDO (só vale com a classe "glass" no <html>; desliga em Conforto):
+   - potes de tinta novos: brancos e vinhos meio transparentes, brilho na borda, sombra;
+   - o fundo ganha "manchas de luz" paradas nas cores da marca;
+   - painéis, botões e barras ficam translúcidos com backdrop-filter: blur, que DESFOCA o que
+     está atrás, como um vidro fosco de banheiro;
+   - no final, um plano B: se o navegador não sabe desfocar, o vidro fica mais opaco para o
+     texto continuar fácil de ler. */
 /* ---------- vidro líquido: superfícies translúcidas sobre um fundo com luz da marca (desliga em Conforto) ---------- */
 :root{
   --glass-bg:rgb(255 255 255 / .58); --glass-bg-strong:rgb(255 255 255 / .78); --glass-sunken:rgb(122 11 60 / .06);
@@ -712,6 +768,9 @@ html.glass .foot{border-top-color:var(--glass-line)}
   html.glass .top,html.glass body::before{background-color:var(--brand)}
 }
 
+/* CABEÇALHO QUE ENCOLHE: parado no topo da página, o cabeçalho e o logo ficam 30% maiores
+   (classe top-big). Quando você rola, o app.js tira a classe e eles voltam ao tamanho normal,
+   com uma transição suave. "Talents" tem tamanho fixo e não muda. */
 /* ---------- topo: 30% maior parado no início, volta ao tamanho normal ao rolar ---------- */
 .top{--top-h:64px; --logo-h:22px}
 .top .wrap{min-height:var(--top-h); transition:min-height .25s ease}
@@ -746,6 +805,14 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 /* o painel com a lista aberta passa por cima dos painéis seguintes (o vidro cria uma camada por painel) */
 :is(.panel,.psec):has(.sk-list:not([hidden])){position:relative; z-index:6}
 
+/* TELAS GRANDES, do menor para o maior:
+   - iPad em pé (768 a 900 px): filtros, detalhes e lista de conversas voltam para o lado;
+   - do iPad para cima: a conversa ocupa a altura da tela;
+   - iPad em geral (toque): alvos de toque maiores;
+   - iPad deitado (981 a 1180 px): menu de cima apertadinho para caber numa linha;
+   - MacBook (1400 px ou mais): coluna de conteúdo mais larga;
+   - iMac (1800 px e 2300 px ou mais): a letra e a coluna crescem juntas, para o site não virar
+     uma faixa estreita e miudinha no meio de uma tela enorme. */
 /* ---------- telas maiores: iPad (em pé e deitado), MacBook e iMac ---------- */
 /* áreas: 4 colunas com a primeira em destaque (2 + 1 + 1 / 1 + 1 + 1 + 1 fecha as 7 sem sobra); 2 colunas no celular */
 .cats{grid-template-columns:repeat(4,minmax(0,1fr))}

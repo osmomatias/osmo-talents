@@ -1,4 +1,10 @@
 #!/bin/bash
+# EXPLICANDO COMO PARA UMA CRIANÇA: este script liga o "caixa" da plataforma.
+# Ele pergunta se é ambiente de testes (sandbox, dinheiro de mentira) ou real, pede a
+# chave do Asaas e inventa duas senhas aleatórias: uma para a campainha do Asaas
+# (WEBHOOK_TOKEN) e outra para trancar as chaves dos freelas no banco (APP_SECRET,
+# que só é criada se ainda não existir, para não perder as chaves já trancadas).
+# Grava tudo no .env do servidor, reinicia o app e instala a campainha (asaas-setup.js).
 # Liga os pagamentos do Asaas no servidor. Uso, no terminal do editor:  bash configurar-pagamentos.sh
 # A chave do Asaas é digitada aqui no seu Mac e vai direto para o servidor, sem passar por mais ninguém.
 set -e
