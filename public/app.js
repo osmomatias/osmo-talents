@@ -27,25 +27,79 @@ async function loadTaxonomy() {
 }
 const catName = id => (CATS.find(c => c.id === id) || {}).n || "";
 
-/* sugestões de habilidades: enquanto digita, procura em todas; sem texto, mostra as da área escolhida */
-const fold = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-function skillSugHTML(value, cat) {
-  const parts = String(value || "").split(","), term = fold(parts[parts.length - 1].trim());
-  const have = new Set(parts.map(p => fold(p.trim())).filter(Boolean));
-  const pool = term ? [...(SKILLS.byCat[cat] || []), ...SKILLS.all] : (SKILLS.byCat[cat] || []);
-  // começo do nome primeiro, depois começo de palavra, depois qualquer trecho
-  const rank = k => { const f = fold(k); return f.startsWith(term) ? 0 : (" " + f).includes(" " + term) ? 1 : 2; };
-  const list = [...new Set(pool)].filter(k => !have.has(fold(k)) && (!term || fold(k).includes(term)))
-    .map((k, i) => [k, term ? rank(k) : 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, 8);
-  if (!list.length) return term || cat ? "" : `<span class="hint">Comece a digitar para ver sugestões.</span>`;
-  return `<span class="hint">Sugestões:</span>${list.map(k => `<button type="button" class="chip sug" data-skill-add="${esc(k)}">+ ${esc(k)}</button>`).join("")}`;
+/* ---------- campo de habilidades: etiquetas + autocompletar com a lista do Upwork (taxonomia.json) ----------
+   O valor fica num campo escondido #p_skills ("A, B, C"), então salvar o perfil e a vaga continua igual. */
+const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const skillsOf = v => String(v || "").split(",").map(s => s.trim()).filter(Boolean);
+// começo do nome primeiro, depois começo de palavra, depois qualquer trecho; sem texto, as da área escolhida
+function matchSkills(term, cat, have, n = 8) {
+  const t = fold(term.trim()), own = new Set(have.map(fold));
+  const pool = t ? [...(SKILLS.byCat[cat] || []), ...SKILLS.all] : (SKILLS.byCat[cat] || []);
+  const rank = k => { const f = fold(k); return f.startsWith(t) ? 0 : (" " + f).includes(" " + t) ? 1 : 2; };
+  return [...new Set(pool)].filter(k => !own.has(fold(k)) && (!t || fold(k).includes(t)))
+    .map((k, i) => [k, t ? rank(k) : 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, n);
 }
-function addSkill(k) {
-  const inp = $("#p_skills"); if (!inp) return;
-  const parts = inp.value.split(",").map(p => p.trim()); parts[parts.length - 1] = k;
-  inp.value = parts.filter(Boolean).join(", ") + ", ";
-  inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus();
+const markTerm = (k, term) => { const t = term.trim(), i = fold(k).indexOf(fold(t)); return !t || i < 0 ? esc(k) : esc(k.slice(0, i)) + "<mark>" + esc(k.slice(i, i + t.length)) + "</mark>" + esc(k.slice(i + t.length)); };
+const skillTagsHTML = list => list.map(k => `<li class="sk-tag">${esc(k)}<button type="button" data-skill-del="${esc(k)}" aria-label="Remover ${esc(k)}">×</button></li>`).join("");
+function skillBoxHTML({ value = "", cat = "", max = 12, dataP = "" }) {
+  const list = skillsOf(value).slice(0, max), full = list.length >= max;
+  return `<div class="skillbox" data-area="${esc(cat)}" data-max="${max}">
+    <ul class="sk-tags" id="p_skills_tags" aria-label="Habilidades escolhidas">${skillTagsHTML(list)}</ul>
+    <input class="sk-in" id="p_skills_in" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="p_skills_list" aria-labelledby="p_skills_lbl" aria-describedby="p_skills_hint" autocomplete="off" autocapitalize="off" enterkeyhint="done" ${full ? "disabled" : ""} placeholder="${full ? `Limite de ${max} habilidades` : list.length ? "Adicionar outra" : "Digite e escolha na lista"}">
+    <ul class="sk-list" id="p_skills_list" role="listbox" aria-label="Sugestões de habilidades" hidden></ul>
+    <input type="hidden" id="p_skills" ${dataP ? `data-p="${dataP}"` : ""} value="${esc(list.join(", "))}">
+  </div>
+  <span class="hint" id="p_skills_hint">Até ${max}. Escolha na lista com as setas e Enter, ou digite uma que não esteja lá e aperte Enter.</span>`;
 }
+const SKB = { active: -1, opts: [] }; // opções da lista aberta e a destacada
+function skillSet(list) {
+  const box = $(".skillbox"), hid = $("#p_skills"), inp = $("#p_skills_in"); if (!box) return;
+  const max = Number(box.dataset.max); list = list.slice(0, max);
+  hid.value = list.join(", "); hid.dispatchEvent(new Event("input", { bubbles: true }));
+  $("#p_skills_tags").innerHTML = skillTagsHTML(list);
+  inp.disabled = list.length >= max; inp.placeholder = inp.disabled ? `Limite de ${max} habilidades` : list.length ? "Adicionar outra" : "Digite e escolha na lista";
+}
+function skillAdd(k) {
+  k = String(k || "").replace(/,/g, " ").trim().slice(0, 40); if (!k) return;
+  const list = skillsOf($("#p_skills").value);
+  if (!list.some(x => fold(x) === fold(k))) list.push(k);
+  skillSet(list); const inp = $("#p_skills_in"); inp.value = ""; skillList(!inp.disabled); if (!inp.disabled) inp.focus();
+}
+function skillList(open = true) {
+  const box = $(".skillbox"), inp = $("#p_skills_in"), ul = $("#p_skills_list"); if (!box) return;
+  const term = inp.value, typed = term.trim(), have = skillsOf($("#p_skills").value);
+  SKB.opts = open && !inp.disabled ? matchSkills(term, box.dataset.area, have) : [];
+  const custom = open && typed && !SKB.opts.some(k => fold(k) === fold(typed)) && !have.some(k => fold(k) === fold(typed));
+  if (custom) SKB.opts.push(typed);
+  SKB.active = SKB.opts.length && typed ? 0 : -1;
+  ul.innerHTML = SKB.opts.map((k, i) => `<li role="option" id="sk-opt-${i}" data-skill-opt="${i}" aria-selected="${i === SKB.active}"><span>${custom && i === SKB.opts.length - 1 ? `Adicionar “${esc(k)}”` : markTerm(k, term)}</span></li>`).join("");
+  ul.hidden = !SKB.opts.length; inp.setAttribute("aria-expanded", String(!ul.hidden));
+  SKB.active >= 0 ? inp.setAttribute("aria-activedescendant", "sk-opt-" + SKB.active) : inp.removeAttribute("aria-activedescendant");
+}
+function skillMove(d) {
+  if ($("#p_skills_list").hidden) return skillList();
+  if (!SKB.opts.length) return;
+  SKB.active = (SKB.active + d + SKB.opts.length) % SKB.opts.length;
+  $$("#p_skills_list [role=option]").forEach((o, i) => o.setAttribute("aria-selected", String(i === SKB.active)));
+  const cur = $("#sk-opt-" + SKB.active); cur.scrollIntoView({ block: "nearest" }); $("#p_skills_in").setAttribute("aria-activedescendant", cur.id);
+}
+document.addEventListener("keydown", e => {
+  if (e.target.id !== "p_skills_in") return;
+  const inp = e.target, open = !$("#p_skills_list").hidden;
+  if (e.key === "ArrowDown") { e.preventDefault(); return skillMove(1); }
+  if (e.key === "ArrowUp") { e.preventDefault(); return skillMove(-1); }
+  if (e.key === "Escape" && open) { e.preventDefault(); return skillList(false); }
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault(); // Enter aqui só escolhe a habilidade; nunca envia o formulário
+    return skillAdd(SKB.active >= 0 && open ? SKB.opts[SKB.active] : inp.value);
+  }
+  if (e.key === "Backspace" && !inp.value) { const list = skillsOf($("#p_skills").value); if (list.length) { list.pop(); skillSet(list); } }
+});
+document.addEventListener("input", e => { if (e.target.id === "p_skills_in") skillList(); });
+document.addEventListener("focusin", e => { if (e.target.id === "p_skills_in") skillList(); });
+document.addEventListener("focusout", e => { if (e.target.id === "p_skills_in") setTimeout(() => { if (document.activeElement !== e.target) skillList(false); }, 150); });
+// na lista, o toque escolhe sem tirar o foco do campo (assim o teclado do celular não fecha)
+document.addEventListener("pointerdown", e => { const o = e.target.closest("[data-skill-opt]"); if (o) { e.preventDefault(); skillAdd(SKB.opts[Number(o.dataset.skillOpt)]); } });
 const store = {
   get(k, d) { try { const v = localStorage.getItem("osmo." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { v == null ? localStorage.removeItem("osmo." + k) : localStorage.setItem("osmo." + k, JSON.stringify(v)); } catch {} },
@@ -833,6 +887,7 @@ function profMeta(p) {
     sum: {
       sobre: isF ? (p.title || "Conte o que você faz") : (p.company || "Empresa ou projeto"),
       como: `${how} de 4 preenchidos`,
+      habil: p.skills.length ? p.skills.slice(0, 3).join(", ") + (p.skills.length > 3 ? ` e mais ${p.skills.length - 3}` : "") : "Nenhuma ainda",
       port: p.portfolio.length ? `${p.portfolio.length} ${p.portfolio.length === 1 ? "projeto" : "projetos"}` : "Nenhum projeto ainda",
       selo: p.verified ? "Verificado" : "Opcional",
       receb: ME.payout ? "Conta ativa" : "Ainda não ativado",
@@ -875,10 +930,12 @@ V.perfil = async () => {
     ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", "Nome", ME.name, 'autocomplete="name"')
       + (isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
         + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono"')}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric"', "Define quantas propostas você pode ter abertas.")}</div>`
-        + f("p_loc", "Cidade", p.location) + f("p_skills", "Habilidades", p.skills.join(", "), 'autocomplete="off"', "Separe por vírgula.") + `<div class="sugs" id="skillSug" aria-live="polite">${skillSugHTML(p.skills.join(", ") + (p.skills.length ? ", " : ""))}</div>` + ta("p_bio", "Sobre você", p.bio, 4)
+        + f("p_loc", "Cidade", p.location) + ta("p_bio", "Sobre você", p.bio, 4)
         : f("p_company", "Empresa ou projeto", p.company)
           + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas."))
       + save)}
+    ${isF ? sec("habil", "Habilidades", `<div class="field"><span class="flabel" id="p_skills_lbl">O que você sabe fazer</span>${skillBoxHTML({ value: p.skills.join(", "), max: 12 })}</div>` + save,
+      "Aparecem no seu perfil e ajudam quem contrata a te encontrar na busca. A lista vem das áreas mais procuradas em plataformas de freelance.") : ""}
     ${isF ? sec("como", "Como eu trabalho melhor",
       f("w_com", "Comunicação", p.how.com, 'placeholder="Ex.: Texto primeiro. Chamadas só com pauta."')
       + f("w_resp", "Tempo de resposta", p.how.resp, 'placeholder="Ex.: Até 1 dia útil"')
@@ -996,8 +1053,7 @@ V.publicar = async () => {
       <div class="field"><span class="flabel">Arquivos do briefing (opcional)</span>
         <span class="hint">PDF, imagens, PSD, AI, Word, Excel, PowerPoint ou texto. Até 6 arquivos de 10 MB. Só pessoas com conta na Osmo conseguem abrir.</span>
         <div class="stack" style="gap:10px; margin-top:6px" id="pFilesBox">${pfilesHTML()}</div></div>
-      ${fld("p_skills", "Habilidades desejadas", `<input class="input" id="p_skills" data-p="skills" value="${esc(P.skills)}" placeholder="Branding, Logotipo" autocomplete="off">`, "Separe por vírgula.")}
-      <div class="sugs" id="skillSug" aria-live="polite">${skillSugHTML(P.skills ? P.skills.replace(/,?\s*$/, ", ") : "", P.cat)}</div>
+      <div class="field"><span class="flabel" id="p_skills_lbl">Habilidades desejadas</span>${skillBoxHTML({ value: P.skills, cat: P.cat, max: 8, dataP: "skills" })}</div>
       <label class="check"><input type="checkbox" id="p_async" data-p="async" ${P.async ? "checked" : ""}><span>Sem reuniões obrigatórias</span></label>
       <label class="check"><input type="checkbox" id="p_flex" data-p="flex" ${P.flex ? "checked" : ""}><span>Prazo flexível</span></label>
     </div>
@@ -1034,7 +1090,8 @@ document.addEventListener("click", async e => {
     $$("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b === th)));
     return toast({ light: "Tema claro", dark: "Tema escuro", system: "Tema do sistema" }[th.dataset.themeSet]);
   }
-  const sk = t.closest("[data-skill-add]"); if (sk) return addSkill(sk.dataset.skillAdd);
+  if (t.classList.contains("skillbox") || t.classList.contains("sk-tags")) { const i = $("#p_skills_in"); if (i && !i.disabled) i.focus(); return; } // tocar no espaço vazio do campo foca a digitação
+  const sd = t.closest("[data-skill-del]"); if (sd) { skillSet(skillsOf($("#p_skills").value).filter(k => k !== sd.dataset.skillDel)); const i = $("#p_skills_in"); if (i) i.focus(); return; }
   const q = t.closest("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = q.dataset.quick; mi.focus(); } return; }
   if (t.closest("#newMsg")) { const b = $("#bubbles"); if (b) b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
   if (t.closest("#pinText")) { $("#pinBox")?.classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
@@ -1141,7 +1198,7 @@ document.addEventListener("input", e => {
   if (id === "wqs") { W.qs = t.value; saveDraft(); }
   if (t.dataset.ms !== undefined) { const i = Number(t.dataset.ms), k = t.dataset.k; let v = t.value; if (k === "value") { v = v.replace(/\D/g, ""); if (t.value !== v) t.value = v; } W.ms[i][k] = v; saveDraft(); const d = (Number(W.value) || 0) - msSum(); $("#msDiff").textContent = d === 0 ? "As etapas somam o valor total." : d > 0 ? `Faltam ${brl(d)} para fechar o total.` : `As etapas passam ${brl(-d)} do total.`; }
   if (t.dataset.p && t.type !== "checkbox") { P[t.dataset.p] = t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
-  if ((id === "p_skills" || id === "p_cat") && $("#skillSug")) $("#skillSug").innerHTML = skillSugHTML($("#p_skills").value, $("#postForm") ? P.cat : "");
+  if (id === "p_cat" && $(".skillbox")) $(".skillbox").dataset.area = t.value; // a lista de sugestões passa a priorizar a área escolhida
 });
 document.addEventListener("change", e => {
   const t = e.target, id = t.id;

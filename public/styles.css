@@ -723,11 +723,27 @@ html.top-big .top{--top-h:83px; --logo-h:28.6px}
   html.top-big .top{--top-h:73px; --logo-h:26px}
 }
 
-/* ---------- sugestões de habilidades (categorias do Upwork) ---------- */
-.sugs{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:-6px}
-.sugs:empty{display:none}
-.chip.sug{border:1px dashed var(--line); background:none; color:var(--fg); cursor:pointer; font:inherit; font-size:.82rem; font-weight:600; min-height:32px}
-.chip.sug:hover{border-color:var(--accent); color:var(--accent)}
+/* ---------- campo de habilidades: etiquetas + lista de autocompletar ---------- */
+.skillbox{position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 8px; min-height:48px;
+  border:1.5px solid var(--line); border-radius:12px; background:var(--surface); cursor:text}
+.skillbox:focus-within{border-color:var(--accent)}
+.sk-tags{display:contents; list-style:none; margin:0; padding:0}
+.sk-tag{display:inline-flex; align-items:center; gap:2px; padding:2px 2px 2px 12px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.88rem; font-weight:700; max-width:100%}
+.sk-tag button{position:relative; width:28px; height:28px; border:0; border-radius:50%; background:none; color:inherit; font-size:1.15rem; line-height:1; cursor:pointer; flex:none}
+.sk-tag button:hover{background:rgb(0 0 0 / .08)}
+.sk-tag button::after{content:""; position:absolute; inset:-8px} /* área de toque de 44 px */
+.sk-in{flex:1; min-width:150px; min-height:34px; border:0; background:none; outline:none; padding:4px; font-size:1rem}
+.sk-in:disabled{cursor:not-allowed}
+.sk-list{position:absolute; left:-1.5px; right:-1.5px; top:calc(100% + 6px); z-index:30; list-style:none; margin:0; padding:6px; max-height:300px; overflow-y:auto;
+  background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:0 14px 36px rgb(0 0 0 / .22)}
+.sk-list [role=option]{padding:10px 12px; min-height:44px; display:flex; align-items:center; border-radius:10px; cursor:pointer}
+.sk-list [role=option][aria-selected="true"],.sk-list [role=option]:hover{background:var(--accent-soft); color:var(--accent)}
+.sk-list mark{background:none; color:inherit; font-weight:800; text-decoration:underline; text-underline-offset:3px}
+html.glass .skillbox{background:var(--glass-bg); border-color:var(--glass-line); box-shadow:var(--glass-hi)}
+html.glass .skillbox:focus-within{border-color:var(--accent)}
+html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesmo no vidro: precisa ser lida sem o fundo vazando */
+/* o painel com a lista aberta passa por cima dos painéis seguintes (o vidro cria uma camada por painel) */
+:is(.panel,.psec):has(.sk-list:not([hidden])){position:relative; z-index:6}
 
 /* ---------- telas maiores: iPad (em pé e deitado), MacBook e iMac ---------- */
 /* áreas: 4 colunas com a primeira em destaque (2 + 1 + 1 / 1 + 1 + 1 + 1 fecha as 7 sem sobra); 2 colunas no celular */
