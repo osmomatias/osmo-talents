@@ -567,6 +567,7 @@ body.menu-open{overflow:hidden}
 .psec[open] .psec-h .hint{display:none}
 .psec-b{padding:0 22px 22px}
 .psec-b>.panel{border:0; padding:0; margin:0!important; background:none; box-shadow:none}
+html.glass .psec-b>.panel{border:0; background:none; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none} /* painel dentro de seção fica plano, sem o volume do vidro */
 .psec-b>.panel>h2:first-child{display:none}
 @media (max-width:700px){ .psec>summary{padding:16px 18px} .psec-b{padding:0 18px 18px} }
 
