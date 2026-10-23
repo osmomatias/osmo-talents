@@ -1582,6 +1582,9 @@ function serveStatic(req, res, pathname) {
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
         html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        // Google Analytics (Modo de Consentimento): com o código configurado, a tag entra logo no começo de toda página.
+        // O ga.js vem antes e já deixa os cookies negados até a pessoa aceitar o aviso de estatísticas.
+        if (GA_ID) html = html.replace("<head>", `<head>\n<script src="/ga.js?v=${stamp("ga.js")}" data-ga="${GA_ID}"></script>\n<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_ID}"></script>`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
