@@ -924,3 +924,32 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 .adm-detail{font-size:.8rem; color:var(--muted); word-break:break-word; max-width:420px}
 .adm-drawer{width:min(520px,100%)}
 @media (max-width:700px){ .adm-tabs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none} .adm-tabs::-webkit-scrollbar{display:none} }
+
+/* ---------- modo claro mais quente: topo quase sólido e nuances sutis de laranja ----------
+   Só mexe nos "potes de tinta" do tema claro (o escuro tem os seus próprios e não muda).
+   O claro vale quando a pessoa escolhe "Claro" ou "Sistema" com o aparelho no claro. */
+:root{--label:var(--muted); --hover-line:var(--accent); --top-line:0px; --warm-edge:transparent}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#FBF5F1; --sunken:#F7EAE2; --line:#EBD8CE; --muted:#6E5560; --accent-soft:#FBE4E3;
+  --label:#A3460E; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(232 101 15 / .16);
+  --glass-bg:rgb(255 251 247 / .72); --glass-bg-strong:rgb(255 250 246 / .9); --glass-sunken:rgb(232 101 15 / .07);
+  --glass-line:rgb(232 101 15 / .16); --glass-edge:rgb(232 101 15 / .14); --glass-brand:rgb(122 11 60 / .96);
+  --glass-shadow:0 8px 30px rgb(160 60 20 / .09), 0 1px 3px rgb(160 60 20 / .06);
+  --glass-glow-1:rgb(232 101 15 / .26); --glass-glow-2:rgb(122 11 60 / .1); --glass-glow-3:rgb(253 200 170 / .55)}}
+:root[data-theme="light"]{
+  --bg:#FBF5F1; --sunken:#F7EAE2; --line:#EBD8CE; --muted:#6E5560; --accent-soft:#FBE4E3;
+  --label:#A3460E; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(232 101 15 / .16);
+  --glass-bg:rgb(255 251 247 / .72); --glass-bg-strong:rgb(255 250 246 / .9); --glass-sunken:rgb(232 101 15 / .07);
+  --glass-line:rgb(232 101 15 / .16); --glass-edge:rgb(232 101 15 / .14); --glass-brand:rgb(122 11 60 / .96);
+  --glass-shadow:0 8px 30px rgb(160 60 20 / .09), 0 1px 3px rgb(160 60 20 / .06);
+  --glass-glow-1:rgb(232 101 15 / .26); --glass-glow-2:rgb(122 11 60 / .1); --glass-glow-3:rgb(253 200 170 / .55)}
+/* rótulos pequenos em laranja queimado (no escuro continuam como antes) */
+.label{color:var(--label)}
+/* fio laranja embaixo do topo, que se apaga para a direita (só aparece no claro) */
+.top::after{content:""; position:absolute; left:0; right:0; bottom:0; height:var(--top-line); pointer-events:none;
+  background:linear-gradient(90deg, var(--orange) 0%, #FFB37A 45%, rgb(255 179 122 / 0) 100%)}
+/* cartões ganham contorno laranja ao passar o mouse e um brilho quente no topo */
+:is(.job,.talent,.cat):hover,html.glass :is(.job,.talent,.cat):hover{border-color:var(--hover-line)}
+:is(.panel,.job,.talent,.cat,.wcard,.msgs){box-shadow:inset 0 2px 0 var(--warm-edge)}
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){box-shadow:inset 0 2px 0 var(--warm-edge), var(--glass-hi), var(--glass-shadow)}
+.psec-b>.panel,html.glass .psec-b>.panel{box-shadow:none}
