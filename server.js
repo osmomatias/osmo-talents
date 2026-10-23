@@ -43,6 +43,8 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const FEE = asaas.FEE_PCT / 100; // taxa da plataforma (FEE_PCT no .env)
 const SESSION_DAYS = 30;
+// Google Analytics: o código de medição (G-XXXXXXX) vem do .env; vazio = Analytics desligado
+const GA_ID = /^G-[A-Z0-9]{4,20}$/.test(process.env.GA_MEASUREMENT_ID || "") ? process.env.GA_MEASUREMENT_ID : "";
 
 // categorias importadas do Upwork (public/taxonomia.json); as vagas guardam só o id
 const CATS = JSON.parse(fs.readFileSync(path.join(__dirname, "public", "taxonomia.json"), "utf8")).categorias.map(c => c.id);
@@ -392,7 +394,7 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 // também como a plataforma está configurada: pagamentos ligados? quais botões de login?
 // e-mail ligado? e a versão dos arquivos (para o site perceber quando saiu versão nova).
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
@@ -1518,7 +1520,10 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google (e só eles)
+  "Content-Security-Policy": GA_ID
+    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 // Responde ao navegador: se for objeto, vira JSON; sempre com os capacetes de segurança.

@@ -953,3 +953,13 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 :is(.panel,.job,.talent,.cat,.wcard,.msgs){box-shadow:inset 0 2px 0 var(--warm-edge)}
 html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){box-shadow:inset 0 2px 0 var(--warm-edge), var(--glass-hi), var(--glass-shadow)}
 .psec-b>.panel,html.glass .psec-b>.panel{box-shadow:none}
+
+/* ---------- aviso de estatísticas (Google Analytics só com permissão) ----------
+   Uma faixa discreta embaixo da tela, acima da barra de navegação do celular; some depois da escolha. */
+.consent{position:fixed; left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom,0px)); z-index:45; max-width:640px; margin:0 auto;
+  display:flex; gap:14px; align-items:center; justify-content:space-between; padding:14px 16px; border-radius:16px;
+  background:var(--surface); color:var(--fg); border:1px solid var(--line); box-shadow:0 12px 32px rgb(0 0 0 / .22); font-size:.92rem}
+.consent p{margin:0}
+html.glass .consent{background:var(--glass-bg-strong); border-color:var(--glass-line); -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur)}
+@media (max-width:980px){ .consent{bottom:calc(70px + env(safe-area-inset-bottom,0px))} }
+@media (max-width:600px){ .consent{flex-direction:column; align-items:stretch} .consent .row{justify-content:flex-end} }

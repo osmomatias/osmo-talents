@@ -221,8 +221,8 @@ async function checkVersion() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; } catch { ME = null; }
-  renderChrome();
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; GA_ID = d.analytics || ""; } catch { ME = null; }
+  renderChrome(); gaLoad(); gaBanner();
 }
 
 // CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
@@ -311,6 +311,7 @@ async function route() {
     $("#view").innerHTML = html; SHOWN = h;
     window.scrollTo(0, 0);
     after[name] && after[name](id);
+    gaPage(name, id);
   } catch (e) {
     clearTimeout(skT);
     if (seq !== renderSeq) return;
@@ -1693,6 +1694,51 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
+// GOOGLE ANALYTICS COM PERMISSÃO (LGPD): o Analytics só é carregado depois que a pessoa aceita, no aviso
+// que aparece embaixo da tela. Quem recusa nunca baixa nada do Google. A escolha fica guardada neste
+// navegador e pode ser trocada a qualquer hora em Conforto.
+// Cada troca de tela vira uma "visualização de página", mas o endereço enviado é limpo: só o nome da tela
+// e, quando houver, o número (ex.: /vaga/12). Códigos secretos (links de senha, de avisos, de cadastro)
+// nunca saem daqui. As telas do dono (panorama e gestão) não são contadas.
+/* ---------- google analytics (só com consentimento) ---------- */
+let GA_ID = "", gaLoaded = false;
+const GA_SKIP = ["panorama", "gestao"];
+const gaChoice = () => store.get("analytics", "");
+function gaLoad() {
+  if (gaLoaded || !GA_ID || gaChoice() !== "sim") return;
+  gaLoaded = true;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  gtag("consent", "default", { analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
+  gtag("js", new Date());
+  gtag("config", GA_ID, { send_page_view: false }); // as páginas são enviadas à mão, a cada troca de tela
+  const s = document.createElement("script"); s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(GA_ID);
+  document.head.appendChild(s);
+}
+function gaPage(name, id) {
+  if (!gaLoaded || gaChoice() !== "sim" || GA_SKIP.includes(name)) return;
+  const path = "/" + name + (/^\d+$/.test(String(id || "")) ? "/" + id : "");
+  gtag("event", "page_view", { page_path: path, page_location: location.origin + path, page_title: document.title });
+}
+function gaSet(choice) {
+  store.set("analytics", choice);
+  if (choice === "sim") { gaLoad(); gaPage((location.hash.slice(1) || "inicio").split("-")[0], location.hash.split("-")[1]); }
+  else if (gaLoaded) gtag("consent", "update", { analytics_storage: "denied" }); // para de medir na hora; some de vez ao recarregar
+  const b = $("#consent"); if (b) b.remove();
+}
+// o aviso só aparece se o Analytics estiver configurado e a pessoa ainda não tiver escolhido
+function gaBanner() {
+  if (!GA_ID || gaChoice() || $("#consent")) return;
+  const b = document.createElement("div");
+  b.id = "consent"; b.className = "consent"; b.setAttribute("role", "region"); b.setAttribute("aria-label", "Estatísticas de uso");
+  b.innerHTML = `<p>Podemos usar o Google Analytics para entender quais telas ajudam e quais confundem? Só contamos visitas, sem seus dados de conta. <a href="/privacidade">Privacidade</a></p>
+    <div class="row" style="gap:8px; flex-wrap:nowrap"><button class="btn sm" data-consent="nao">Agora não</button><button class="btn sm hl" data-consent="sim">Pode usar</button></div>`;
+  document.body.appendChild(b);
+}
+document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado! Estatísticas ligadas" : "Tudo bem, nada será medido"); } });
+document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
+const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Estatísticas de uso</b><br><span class="hint">Deixa a Osmo contar visitas com o Google Analytics, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaChoice() === "sim" ? "checked" : ""}></label>` : "";
+
 // TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
 // (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
 /* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
@@ -1718,6 +1764,7 @@ function openA11y() {
     <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
     ${themeHTML()}
+    ${gaToggleHTML()}
     ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"], ["glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
   </div>`;
   $("#a11yClose").focus();
