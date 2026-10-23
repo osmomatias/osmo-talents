@@ -222,7 +222,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) chec
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
   try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; GA_ID = d.analytics || ""; } catch { ME = null; }
-  renderChrome(); gaBanner();
+  renderChrome(); gaLoad(); gaBanner();
 }
 
 // CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
@@ -1694,25 +1694,36 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
-// GOOGLE ANALYTICS NO MODO DE CONSENTIMENTO: a tag do Google entra em toda página pelo servidor (veja ga.js),
-// já com os cookies de estatística NEGADOS. Enquanto a pessoa não aceita, o Google recebe só sinais anônimos,
-// sem cookie. Quando ela aceita no aviso (ou em Conforto), avisamos o Google e a medição completa começa;
-// se depois desligar, os cookies voltam a ser negados na hora. Anúncios ficam sempre negados.
+// GOOGLE ANALYTICS COM PERMISSÃO (LGPD): o Analytics só é carregado depois que a pessoa aceita, no aviso
+// que aparece embaixo da tela. Quem recusa nunca baixa nada do Google. A escolha fica guardada neste
+// navegador e pode ser trocada a qualquer hora em Conforto.
 // Cada troca de tela vira uma "visualização de página", mas o endereço enviado é limpo: só o nome da tela
 // e, quando houver, o número (ex.: /vaga/12). Códigos secretos (links de senha, de avisos, de cadastro)
 // nunca saem daqui. As telas do dono (panorama e gestão) não são contadas.
-/* ---------- google analytics (modo de consentimento) ---------- */
-let GA_ID = "";
+/* ---------- google analytics (só com consentimento) ---------- */
+let GA_ID = "", gaLoaded = false;
 const GA_SKIP = ["panorama", "gestao"];
 const gaChoice = () => store.get("analytics", "");
+function gaLoad() {
+  if (gaLoaded || !GA_ID || gaChoice() !== "sim") return;
+  gaLoaded = true;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  gtag("consent", "default", { analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
+  gtag("js", new Date());
+  gtag("config", GA_ID, { send_page_view: false }); // as páginas são enviadas à mão, a cada troca de tela
+  const s = document.createElement("script"); s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(GA_ID);
+  document.head.appendChild(s);
+}
 function gaPage(name, id) {
-  if (!window.gtag || GA_SKIP.includes(name)) return;
+  if (!gaLoaded || gaChoice() !== "sim" || GA_SKIP.includes(name)) return;
   const path = "/" + name + (/^\d+$/.test(String(id || "")) ? "/" + id : "");
   gtag("event", "page_view", { page_path: path, page_location: location.origin + path, page_title: document.title });
 }
 function gaSet(choice) {
   store.set("analytics", choice);
-  if (window.gtag) gtag("consent", "update", { analytics_storage: choice === "sim" ? "granted" : "denied" });
+  if (choice === "sim") { gaLoad(); gaPage((location.hash.slice(1) || "inicio").split("-")[0], location.hash.split("-")[1]); }
+  else if (gaLoaded) gtag("consent", "update", { analytics_storage: "denied" }); // para de medir na hora; some de vez ao recarregar
   const b = $("#consent"); if (b) b.remove();
 }
 // o aviso só aparece se o Analytics estiver configurado e a pessoa ainda não tiver escolhido
@@ -1720,13 +1731,13 @@ function gaBanner() {
   if (!GA_ID || gaChoice() || $("#consent")) return;
   const b = document.createElement("div");
   b.id = "consent"; b.className = "consent"; b.setAttribute("role", "region"); b.setAttribute("aria-label", "Estatísticas de uso");
-  b.innerHTML = `<p>Usamos o Google Analytics para entender quais telas ajudam e quais confundem. Podemos usar cookies de estatística? Sem eles, o Google recebe só contagens anônimas, nunca seus dados de conta. <a href="/privacidade">Privacidade</a></p>
-    <div class="row" style="gap:8px; flex-wrap:nowrap"><button class="btn sm" data-consent="nao">Sem cookies</button><button class="btn sm hl" data-consent="sim">Pode usar</button></div>`;
+  b.innerHTML = `<p>Podemos usar o Google Analytics para entender quais telas ajudam e quais confundem? Só contamos visitas, sem seus dados de conta. <a href="/privacidade">Privacidade</a></p>
+    <div class="row" style="gap:8px; flex-wrap:nowrap"><button class="btn sm" data-consent="nao">Agora não</button><button class="btn sm hl" data-consent="sim">Pode usar</button></div>`;
   document.body.appendChild(b);
 }
-document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado! Cookies de estatística ligados" : "Tudo bem, sem cookies de estatística"); } });
+document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado! Estatísticas ligadas" : "Tudo bem, nada será medido"); } });
 document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
-const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Cookies de estatística</b><br><span class="hint">Deixa o Google Analytics medir visitas com cookies. Desligado, ele recebe só contagens anônimas, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaChoice() === "sim" ? "checked" : ""}></label>` : "";
+const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Estatísticas de uso</b><br><span class="hint">Deixa a Osmo contar visitas com o Google Analytics, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaChoice() === "sim" ? "checked" : ""}></label>` : "";
 
 // TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
 // (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
