@@ -1059,3 +1059,39 @@ html.glass .pomo-panel{background:var(--glass-bg-strong); border-color:var(--gla
 .adj-group>h3.label{margin:6px 0 2px}
 .adj-group .toggle:last-child{border-bottom:0}
 .adj-group+.adj-group{border-top:1px solid var(--line); padding-top:12px}
+
+/* ---------- cada tipo de tela (data-device no <html>, descoberto pelo theme.js) ----------
+   CELULAR: campos com letra de pelo menos 16 px (abaixo disso o iPhone dá zoom sozinho ao tocar no campo).
+   TABLET e CELULAR: sem os efeitos de "passar o mouse", que no toque ficam presos na tela.
+   TV (vista de longe, com controle remoto): letras e cartões bem maiores, margem de segurança nas bordas
+   (muitas TVs cortam as beiradas da imagem), sempre o menu de cima (nunca a barra de baixo do celular),
+   foco bem visível para saber onde o controle está, e sem desfoque de vidro, que pesa nos processadores de TV. */
+html[data-device="phone"] :is(input,select,textarea){font-size:max(16px,1rem)}
+@media (hover:none){
+  html:is([data-device="phone"],[data-device="tablet"]) :is(.job,.talent,.cat,.tk-pcard):hover{border-color:var(--line)}
+  html:is([data-device="phone"],[data-device="tablet"]).glass :is(.job,.talent,.cat):hover{border-color:var(--glass-line); box-shadow:var(--glass-hi), var(--glass-shadow)}
+}
+html[data-device="tv"]{font-size:clamp(20px, 1.4vw, 30px); --fs:clamp(21px, 1.5vw, 32px); --gap:clamp(24px, 2vw, 40px)}
+html[data-device="tv"] .wrap{max-width:none; padding-left:5vw; padding-right:5vw}
+html[data-device="tv"] main{padding-block:4vh 8vh}
+html[data-device="tv"] .top{--top-h:clamp(76px, 7vh, 110px); --logo-h:clamp(26px, 2.4vw, 40px)}
+html[data-device="tv"] .top .wrap{flex-wrap:nowrap}
+html[data-device="tv"] .nav{display:flex!important; flex-wrap:nowrap}
+html[data-device="tv"] :is(.tabbar,.menu-btn,.mcta,.pomo-bubble .pomo-paused){display:none!important}
+html[data-device="tv"] #a11yBtn,html[data-device="tv"] .whoami,html[data-device="tv"] .top-actions [data-go="entrar"]{display:inline-flex!important}
+html[data-device="tv"] body{padding-bottom:0!important}
+html[data-device="tv"] .nav-long{display:none!important}
+html[data-device="tv"] .nav-short{display:inline!important}
+html[data-device="tv"] .nav button{white-space:nowrap}
+html[data-device="tv"] .layout{grid-template-columns:minmax(0,22vw) minmax(0,1fr)!important}
+html[data-device="tv"] .detail{grid-template-columns:minmax(0,1fr) minmax(0,28vw)!important}
+html[data-device="tv"] .tgrid{grid-template-columns:repeat(auto-fill,minmax(22vw,1fr))}
+html[data-device="tv"] .cats{grid-template-columns:repeat(4,minmax(0,1fr))}
+html[data-device="tv"] *{-webkit-backdrop-filter:none!important; backdrop-filter:none!important}
+html[data-device="tv"].glass{--glass-bg:var(--glass-bg-strong)}
+html[data-device="tv"] :focus{outline:none}
+html[data-device="tv"] :focus-visible,html[data-device="tv"] :focus{outline:4px solid var(--orange)!important; outline-offset:4px; border-radius:14px;
+  box-shadow:0 0 0 10px rgb(232 101 15 / .22)!important}
+html[data-device="tv"] :is(.job,.talent,.cat,.tk-card,.tk-pcard,.btn,.nav button):focus{transform:scale(1.04); transition:transform .15s ease}
+html.calm[data-device="tv"] :is(.job,.talent,.cat,.tk-card,.tk-pcard,.btn,.nav button):focus{transform:none}
+html[data-device="tv"] .drawer{width:min(40vw,100%)}

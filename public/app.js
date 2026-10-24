@@ -313,6 +313,7 @@ async function route() {
     window.scrollTo(0, 0);
     after[name] && after[name](id);
     gaPage(name, id);
+    tvFocusFirst();
   } catch (e) {
     clearTimeout(skT);
     if (seq !== renderSeq) return;
@@ -2106,6 +2107,91 @@ addEventListener("resize", () => { if (POMO.on) pomoPlace(); });
 // se a página recarregar com o relógio ligado, ele volta como estava (e, se o tempo acabou enquanto isso, avisa)
 if (POMO.on) { if (POMO.running && POMO.endsAt <= Date.now()) { POMO.running = false; POMO.left = 0; pomoDone(); } else pomoRender(); }
 
+// CADA TELA DO SEU JEITO: o theme.js já descobriu se é celular, tablet, computador ou TV (data-device no <html>).
+// Aqui ficam os comportamentos que fazem sentido para cada uma:
+// - COMPUTADOR: atalho de teclado "/" para ir direto à busca da tela;
+// - TV: não tem mouse nem toque, só o controle remoto. As setas pulam de um botão/link para o mais próximo
+//   naquela direção (como num menu de TV), OK/Enter clica, e o botão "Voltar" do controle volta uma tela.
+//   Ao abrir cada tela, o foco já vai para o primeiro item, para a pessoa ver onde está;
+// - CELULAR e TABLET: o CSS cuida (campos com letra de 16 px para o iPhone não dar zoom, alvos de toque grandes).
+// Em Ajustes, a pessoa pode corrigir o tipo de tela se a detecção errar.
+/* ---------- tipo de tela: celular, tablet, computador ou tv ---------- */
+const DEVICE = document.documentElement.dataset.device || "desktop";
+const DEVICE_NAMES = { phone: "Celular", tablet: "Tablet", desktop: "Computador", tv: "TV" };
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const isTyping = el => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+// o que está visível de verdade (dentro de um painel aberto, só ele conta)
+function focusables() {
+  const scope = $("#layer .drawer") || $("#layer") && $("#layer").children.length && $("#layer") || document;
+  return [...scope.querySelectorAll(FOCUSABLE)].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden"; });
+}
+// navegação espacial: de onde o foco está, procura o item mais perto na direção da seta
+function spatialMove(dir) {
+  const cur = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+  const items = focusables(); if (!items.length) return false;
+  if (!cur) { items[0].focus(); return true; }
+  const c = cur.getBoundingClientRect(), cx = c.left + c.width / 2, cy = c.top + c.height / 2;
+  let best = null, bestScore = Infinity;
+  for (const el of items) {
+    if (el === cur) continue;
+    const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const dx = x - cx, dy = y - cy;
+    const main = dir === "ArrowRight" ? dx : dir === "ArrowLeft" ? -dx : dir === "ArrowDown" ? dy : -dy;
+    const side = dir === "ArrowRight" || dir === "ArrowLeft" ? Math.abs(dy) : Math.abs(dx);
+    if (main <= 4) continue; // só o que está de fato naquela direção
+    const score = main + side * 2.5;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (!best) return false;
+  best.focus({ preventScroll: true }); best.scrollIntoView({ block: "nearest", inline: "nearest", behavior: document.documentElement.classList.contains("calm") ? "auto" : "smooth" });
+  return true;
+}
+function tvFocusFirst() {
+  if (DEVICE !== "tv" || $("#layer").children.length) return;
+  // começa num botão ou link, nunca num campo de texto (na TV isso abriria o teclado da tela sem a pessoa pedir)
+  const first = [...$("#view").querySelectorAll(FOCUSABLE)].find(el => el.getBoundingClientRect().height > 0 && !isTyping(el));
+  if (first) first.focus({ preventScroll: true });
+}
+document.addEventListener("keydown", e => {
+  const el = document.activeElement;
+  // computador: "/" leva para a busca (a de vagas, talentos, gestão ou a do início)
+  if (DEVICE === "desktop" && e.key === "/" && !isTyping(el) && !e.metaKey && !e.ctrlKey) {
+    const s = $("#fq") || $("#tq") || $("#admQ") || $("#heroQ"); if (s) { e.preventDefault(); s.focus(); s.select && s.select(); }
+    return;
+  }
+  if (DEVICE !== "tv") return;
+  // controle remoto: botão Voltar (cada fabricante manda um código: Tizen 10009, webOS 461, Android TV "GoBack")
+  if (["GoBack", "BrowserBack", "Back"].includes(e.key) || e.keyCode === 10009 || e.keyCode === 461 || (e.key === "Backspace" && !isTyping(el))) {
+    e.preventDefault();
+    if ($("#layer").children.length) { const close = $("#layer [data-adm-close], #a11yClose, [data-sheet='no']"); if (close) close.click(); else $("#layer").innerHTML = ""; }
+    else history.back();
+    return;
+  }
+  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  // dentro de um campo de texto, as setas continuam andando pelo texto; numa lista de opções, escolhendo opções
+  if (isTyping(el) && !(el.tagName === "INPUT" && /^(checkbox|radio|button|submit)$/.test(el.type))) {
+    // seletor (lista de opções) fechado: as setas pulam para o vizinho; o OK abre a lista, e aí o próprio navegador cuida
+    if ((el.tagName === "TEXTAREA" || el.tagName === "INPUT") && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      const atStart = el.selectionStart === 0 && el.selectionEnd === 0, atEnd = el.selectionStart === (el.value || "").length;
+      if (!(e.key === "ArrowLeft" && atStart) && !(e.key === "ArrowRight" && atEnd)) return;
+    }
+    if (el.tagName === "TEXTAREA" && (e.key === "ArrowUp" || e.key === "ArrowDown")) return;
+  }
+  if (spatialMove(e.key)) e.preventDefault();
+});
+// Ajustes: o tipo de tela detectado, com opção de corrigir (a página recarrega para aplicar)
+const deviceHTML = () => {
+  let saved = ""; try { saved = localStorage.getItem("osmo-device") || ""; } catch {}
+  return `<div class="field"><label for="deviceSel">Tipo de tela</label><select class="input" id="deviceSel">
+    <option value="">Automático (${DEVICE_NAMES[document.documentElement.dataset.deviceAuto] || DEVICE_NAMES[DEVICE]})</option>${[["celular", "Celular"], ["tablet", "Tablet"], ["computador", "Computador"], ["tv", "TV (controle remoto)"]].map(([v, l]) => `<option value="${v}" ${saved === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <span class="hint">Muda o tamanho das letras e o jeito de navegar. Na TV, use as setas e o OK do controle.</span></div>`;
+};
+document.addEventListener("change", e => {
+  if (e.target.id !== "deviceSel") return;
+  try { e.target.value ? localStorage.setItem("osmo-device", e.target.value) : localStorage.removeItem("osmo-device"); sessionStorage.removeItem("osmo-tela"); } catch {}
+  location.reload();
+});
+
 // TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
 // (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
 /* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
@@ -2135,6 +2221,7 @@ function openA11y() {
     <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
+      ${deviceHTML()}
       ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
     <section class="adj-group" aria-labelledby="adjRead"><h3 class="label" id="adjRead">Leitura</h3>
       ${sw("big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma")}
