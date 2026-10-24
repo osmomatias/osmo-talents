@@ -288,6 +288,49 @@ CREATE TABLE IF NOT EXISTS admin_log (
 );
 `);
 
+// --- migrações (versão 12: projetos e tarefas no estilo Asana)
+// Um "projeto" é um quadro de tarefas. Ele pode ser de um contrato (cliente e freela trabalham juntos nele)
+// ou interno (só para a equipe da Osmo). Dentro dele há seções (as colunas do quadro: A fazer, Fazendo, Feito),
+// tarefas (com responsável, prazo e subtarefas: uma subtarefa é só uma tarefa com "parent_id") e comentários.
+db.exec(`
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('contrato','interno')),
+  contract_id INTEGER UNIQUE REFERENCES contracts(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS project_sections (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, pos INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  section_id INTEGER REFERENCES project_sections(id) ON DELETE SET NULL,
+  parent_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+  assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  due_date TEXT NOT NULL DEFAULT '',
+  done INTEGER NOT NULL DEFAULT 0, done_at TEXT NOT NULL DEFAULT '',
+  pos INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS task_comments (
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, section_id, pos);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id, done);
+CREATE INDEX IF NOT EXISTS idx_task_comments ON task_comments(task_id, id);
+`);
+
 // Antes, o portfólio era só uma lista de textos dentro do perfil. Este laço passa cada texto
 // antigo para a página nova de portfólio (no máximo 12) e depois esvazia a lista antiga,
 // para não copiar de novo da próxima vez que o programa ligar.

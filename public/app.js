@@ -237,6 +237,7 @@ const ICONS = {
   painel: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/>',
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   entrar: '<path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6"/>',
+  tarefas: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 12.5l3 3 6-7"/>',
 };
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
@@ -252,7 +253,7 @@ function renderChrome() {
     ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])} · ${ME.role === "cliente" ? "conta de cliente" : "conta de freelancer"}</p>` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
-      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("perfil", "Meu perfil") : item("entrar", "Entrar ou criar conta")}
+      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("perfil", "Meu perfil") : item("entrar", "Entrar ou criar conta")}
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
@@ -270,7 +271,7 @@ function markNav() {
   const name = (location.hash.slice(1) || "inicio").split("-")[0];
   $$("#nav button, #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
-    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento");
+    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name));
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
   });
 }
@@ -856,7 +857,7 @@ V.painel = async () => {
   const [cs, extra] = await Promise.all([api("GET", "/api/contracts"), isF ? api("GET", "/api/me/proposals") : api("GET", "/api/me/jobs")]);
   const st = cs.stats;
   const contracts = cs.contracts.length ? cs.contracts.map(c => `<div class="panel">
-    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</div>
+    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px"><a class="btn sm" href="#contrato-${c.id}">Tarefas</a>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
     <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="#mensagens-${c.thread}">Abrir conversa</a></p>
     ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
     ${c.status === "concluido" ? reviewBox(c) : ""}
@@ -919,7 +920,7 @@ V.panorama = async () => {
   <div class="row" style="justify-content:space-between; align-items:flex-end">
     <div><span class="label">Só para a Osmo</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Panorama da plataforma</h1>
       <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
-    <div class="row" style="gap:6px"><a class="btn sm hl" href="#gestao">Gerenciar dados</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+    <div class="row" style="gap:6px"><a class="btn sm hl" href="#gestao">Gerenciar dados</a><a class="btn sm" href="#projetos">Projetos</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
   </div>
 
   <div class="adm-kpis">
@@ -930,6 +931,7 @@ V.panorama = async () => {
     ${kpi("Contratos ativos", num(m.contracts.ativo || 0), `${num(m.contracts.concluido || 0)} concluídos`)}
     ${kpi("Valor contratado", brl(m.contracted), "soma de todos os contratos")}
     ${kpi(d.config.payments ? "Liberado aos freelas" : "Aprovado (simulado)", brl(m.released), `receita Osmo ${brl(m.feeEarned)}`)}
+    ${kpi("Tarefas em aberto", num(d.tasks.open), `${num(d.tasks.late)} atrasadas · ${num(d.tasks.done)} concluídas · ${num(d.tasks.projects)} projetos`)}
     ${kpi("Protegido / a pagar", `${brl(m.held)}`, d.config.payments ? `${brl(m.toPay)} ainda a pagar` : "etapas ainda não aprovadas")}
   </div>
 
@@ -1107,6 +1109,213 @@ document.addEventListener("submit", async ev => {
     else { $("#layer").innerHTML = ""; toast(id ? "Salvo" : "Criado"); }
   } catch (err) { const b = $("#admErr"); b.textContent = err.message; b.hidden = false; }
   finally { btn.disabled = false; }
+});
+
+// TAREFAS NO ESTILO ASANA: três telas.
+// - #tarefas: "Minhas tarefas", tudo o que está com você, separado por prazo (atrasadas, hoje, próximos dias...);
+// - #projetos: os projetos que você vê (um por contrato e, para o dono, os internos);
+// - #projeto-N: um projeto em três vistas: LISTA (seções com tarefas), QUADRO (colunas para arrastar os cartões)
+//   e CALENDÁRIO (cada tarefa no dia do prazo). Clicar numa tarefa abre o painel com todos os detalhes.
+// Quem decide quem vê cada projeto é o servidor; esta parte só desenha e manda as mudanças.
+/* ---------- tarefas (projetos no estilo Asana) ---------- */
+const PJ = { data: null, view: store.get("pj-view", "lista"), month: null, open: null };
+const today = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // dia de hoje em Brasília
+const fmtDue = d => { if (!d) return ""; const [y, m, dd] = d.split("-"); return `${dd}/${m}${y !== today().slice(0, 4) ? "/" + y.slice(2) : ""}`; };
+const dueCls = t => !t.due_date || t.done ? "" : t.due_date < today() ? "late" : t.due_date === today() ? "now" : "";
+const taskMeta = t => `${t.assignee ? `<span class="tk-who" title="${esc(t.assignee)}">${esc(initials(t.assignee))}</span>` : ""}${t.due_date ? `<span class="tk-due ${dueCls(t)}">${fmtDue(t.due_date)}</span>` : ""}${t.comments ? `<span class="hint" title="Comentários">💬 ${t.comments}</span>` : ""}`;
+const subCount = id => { const s = PJ.data.tasks.filter(x => x.parent_id === id); return s.length ? `<span class="hint">${s.filter(x => x.done).length}/${s.length}</span>` : ""; };
+function taskRow(t) {
+  return `<li class="tk-row ${t.done ? "done" : ""}"><input type="checkbox" class="tk-check" data-tk-done="${t.id}" ${t.done ? "checked" : ""} aria-label="Concluir ${esc(t.title)}">
+    <button class="tk-title" data-tk-open="${t.id}">${esc(t.title)}</button>${subCount(t.id)}<span class="tk-meta">${taskMeta(t)}</span></li>`;
+}
+const addForm = sid => `<form class="tk-add" data-section="${sid}"><input class="input" name="title" placeholder="+ Adicionar tarefa" aria-label="Nova tarefa" autocomplete="off"></form>`;
+const sectionMenu = s => `<span class="tk-sec-actions"><button class="icon-btn sm" data-sec-move="${s.id}" data-dir="-1" aria-label="Mover seção para antes">←</button><button class="icon-btn sm" data-sec-move="${s.id}" data-dir="1" aria-label="Mover seção para depois">→</button><button class="icon-btn sm" data-sec-ren="${s.id}" aria-label="Renomear seção">✎</button><button class="icon-btn sm" data-sec-del="${s.id}" aria-label="Apagar seção">×</button></span>`;
+const topTasks = sid => PJ.data.tasks.filter(t => !t.parent_id && t.section_id === sid).sort((a, b) => a.pos - b.pos || a.id - b.id);
+function listView() {
+  return PJ.data.sections.map(s => { const ts = topTasks(s.id);
+    return `<section class="panel tk-section"><div class="row" style="justify-content:space-between"><h3>${esc(s.name)} <span class="hint">${ts.filter(t => !t.done).length}</span></h3>${sectionMenu(s)}</div>
+      <ul class="tk-list">${ts.map(taskRow).join("")}</ul>${addForm(s.id)}</section>`; }).join("")
+    + `<form class="tk-newsec"><input class="input" name="name" placeholder="+ Nova seção" aria-label="Nova seção" autocomplete="off"></form>`;
+}
+// quadro: cada seção é uma coluna; os cartões podem ser arrastados ou mudados de coluna pelo seletor (para teclado e leitor de tela)
+function boardView() {
+  const opts = cur => PJ.data.sections.map(s => `<option value="${s.id}" ${s.id === cur ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+  return `<div class="tk-board">${PJ.data.sections.map(s => { const ts = topTasks(s.id);
+    return `<section class="tk-col" data-col="${s.id}"><div class="row" style="justify-content:space-between"><h3>${esc(s.name)} <span class="hint">${ts.length}</span></h3>${sectionMenu(s)}</div>
+      <ul class="tk-cards">${ts.map(t => `<li class="tk-card ${t.done ? "done" : ""}" draggable="true" data-card="${t.id}">
+        <div class="row" style="gap:8px; flex-wrap:nowrap; align-items:flex-start"><input type="checkbox" class="tk-check" data-tk-done="${t.id}" ${t.done ? "checked" : ""} aria-label="Concluir ${esc(t.title)}"><button class="tk-title" data-tk-open="${t.id}">${esc(t.title)}</button></div>
+        <div class="row" style="justify-content:space-between; gap:6px"><span class="tk-meta">${taskMeta(t)}${subCount(t.id)}</span>
+        <select class="tk-move" data-tk-move="${t.id}" aria-label="Mover para a seção">${opts(s.id)}</select></div></li>`).join("")}</ul>${addForm(s.id)}</section>`; }).join("")}
+    <form class="tk-newsec tk-col"><input class="input" name="name" placeholder="+ Nova seção" aria-label="Nova seção" autocomplete="off"></form></div>`;
+}
+// calendário do mês: segunda a domingo; cada tarefa aparece no dia do prazo; as sem prazo ficam embaixo
+function calendarView() {
+  const m = PJ.month || (PJ.month = today().slice(0, 7));
+  const [y, mo] = m.split("-").map(Number), first = new Date(Date.UTC(y, mo - 1, 1)), days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const lead = (first.getUTCDay() + 6) % 7, cells = [];
+  for (let i = 0; i < lead; i++) cells.push(`<div class="tk-day off"></div>`);
+  for (let d = 1; d <= days; d++) {
+    const iso = `${m}-${String(d).padStart(2, "0")}`, ts = PJ.data.tasks.filter(t => t.due_date === iso);
+    cells.push(`<div class="tk-day ${iso === today() ? "today" : ""}"><span class="tk-dnum">${d}</span>${ts.map(t => `<button class="tk-chip ${t.done ? "done" : dueCls(t)}" data-tk-open="${t.id}">${esc(t.title)}</button>`).join("")}</div>`);
+  }
+  const label = first.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  const noDate = PJ.data.tasks.filter(t => !t.parent_id && !t.due_date && !t.done);
+  return `<div class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h3>${label.charAt(0).toUpperCase() + label.slice(1)}</h3>
+      <div class="row" style="gap:6px"><button class="btn sm" data-cal="-1">Anterior</button><button class="btn sm" data-cal="0">Hoje</button><button class="btn sm" data-cal="1">Próximo</button></div></div>
+    <div class="tk-cal">${["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map(d => `<div class="tk-wd">${d}</div>`).join("")}${cells.join("")}</div></div>
+    <div class="panel stack" style="gap:8px"><h3>Sem prazo</h3>${noDate.length ? `<ul class="tk-list">${noDate.map(taskRow).join("")}</ul>` : ""}${PJ.data.sections.length ? addForm(PJ.data.sections[0].id) : ""}</div>`;
+}
+function projectBody() {
+  return PJ.view === "quadro" ? boardView() : PJ.view === "calendario" ? calendarView() : listView();
+}
+const openCount = () => { const n = PJ.data.tasks.filter(t => !t.parent_id && !t.done).length; return `${n} tarefa${n === 1 ? "" : "s"} em aberto`; };
+function projectHTML() {
+  const p = PJ.data.project;
+  return `<div class="stack tk-page">
+  <div><a href="#projetos" class="back">← Projetos</a>
+    <div class="row" style="justify-content:space-between; align-items:flex-end">
+      <div><span class="label">${p.kind === "contrato" ? "Projeto do contrato" : "Projeto interno da Osmo"}</span><h1 style="font-size:clamp(1.6rem,4vw,2.2rem); margin-top:4px">${esc(p.name)}</h1>
+        <p class="hint"><span id="pjCount">${openCount()}</span> · ${PJ.data.members.map(m => esc(m.name)).join(", ")}</p></div>
+      ${PJ.data.canManage ? `<div class="row" style="gap:6px"><button class="btn sm" data-pj-ren="1">Renomear</button><button class="btn sm ghost" data-pj-del="1">Apagar projeto</button></div>` : ""}
+    </div></div>
+  <div class="seg" role="group" aria-label="Como ver as tarefas">${[["lista", "Lista"], ["quadro", "Quadro"], ["calendario", "Calendário"]].map(([k, l]) => `<button type="button" data-pj-view="${k}" aria-pressed="${PJ.view === k}">${l}</button>`).join("")}</div>
+  <div id="pjBody" class="stack" style="gap:14px">${projectBody()}</div>
+</div>`;
+}
+async function pjReload() {
+  if (!PJ.data) return;
+  try { PJ.data = await api("GET", "/api/projects/" + PJ.data.project.id); const b = $("#pjBody"); if (b) b.innerHTML = projectBody(); const c = $("#pjCount"); if (c) c.textContent = openCount(); } catch (e) { toast(e.message); }
+}
+V.projeto = async id => {
+  if (needLogin()) return;
+  try { PJ.data = await api("GET", "/api/projects/" + id); }
+  catch (e) { if (e.status === 404) return emptyBox("Projeto não encontrado.", "Ele não existe ou você não participa dele.", "projetos", "Ver meus projetos"); throw e; }
+  return projectHTML();
+};
+after.projeto = () => { if (PJ.open) { const id = PJ.open; PJ.open = null; openTask(id); } };
+// "Tarefas" de um contrato no Painel: descobre (ou cria) o projeto do contrato e vai para ele
+V.contrato = async id => {
+  if (needLogin()) return;
+  const r = await api("GET", `/api/contracts/${id}/project`);
+  location.replace("#projeto-" + r.id);
+};
+V.projetos = async () => {
+  if (needLogin()) return;
+  const d = await api("GET", "/api/projects");
+  const card = p => `<a class="panel tk-pcard" href="#projeto-${p.id}"><span class="label">${p.kind === "contrato" ? "Contrato" : "Interno"}</span><b>${esc(p.name)}</b>
+    <span class="hint">${p.open} em aberto · ${p.done} concluída${p.done === 1 ? "" : "s"}${p.late ? ` · <span class="tk-due late">${p.late} atrasada${p.late === 1 ? "" : "s"}</span>` : ""}</span></a>`;
+  return `<div class="stack"><div class="row" style="justify-content:space-between; align-items:flex-end">
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Projetos</h1><p class="hint">Cada contrato tem um projeto para cliente e freela organizarem o trabalho.</p></div>
+    <div class="row" style="gap:6px"><a class="btn" href="#tarefas">Minhas tarefas</a>${d.canCreate ? `<button class="btn hl" data-pj-new="1">Novo projeto interno</button>` : ""}</div></div>
+    ${d.projects.length ? `<div class="tk-pgrid">${d.projects.map(card).join("")}</div>` : emptyBox("Nenhum projeto ainda.", "Quando um contrato começar, o projeto dele aparece aqui.", "painel", "Ir para o Painel")}</div>`;
+};
+V.tarefas = async () => {
+  if (needLogin()) return;
+  const { tasks } = await api("GET", "/api/me/tasks");
+  const t0 = today(), week = new Date(Date.now() - 3 * 3600e3 + 7 * 864e5).toISOString().slice(0, 10);
+  const groups = [["Atrasadas", x => x.due_date && x.due_date < t0], ["Hoje", x => x.due_date === t0], ["Próximos 7 dias", x => x.due_date > t0 && x.due_date <= week],
+    ["Mais adiante", x => x.due_date > week], ["Sem prazo", x => !x.due_date]];
+  const row = t => `<li class="tk-row"><input type="checkbox" class="tk-check" data-tk-done="${t.id}" aria-label="Concluir ${esc(t.title)}">
+    <a class="tk-title" href="#projeto-${t.project_id}" data-tk-goto="${t.id}">${esc(t.title)}</a><span class="tk-meta"><span class="hint">${esc(t.project)}</span>${t.due_date ? `<span class="tk-due ${dueCls(t)}">${fmtDue(t.due_date)}</span>` : ""}</span></li>`;
+  return `<div class="stack"><div class="row" style="justify-content:space-between; align-items:flex-end">
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Minhas tarefas</h1><p class="hint">Tudo o que está com você e ainda não foi concluído, em todos os projetos.</p></div><a class="btn" href="#projetos">Projetos</a></div>
+    ${tasks.length ? groups.map(([g, f]) => { const ts = tasks.filter(f); return ts.length ? `<section class="panel tk-section"><h3>${g} <span class="hint">${ts.length}</span></h3><ul class="tk-list">${ts.map(row).join("")}</ul></section>` : ""; }).join("")
+      : emptyBox("Nada com você agora.", "Quando alguém atribuir uma tarefa a você, ela aparece aqui.", "projetos", "Ver projetos")}</div>`;
+};
+// painel lateral da tarefa: tudo editável na hora (cada mudança salva sozinha), subtarefas e comentários
+async function openTask(id) {
+  let d; try { d = await api("GET", "/api/tasks/" + id); } catch (e) { return toast(e.message); }
+  const t = d.task, members = PJ.data ? PJ.data.members : [], sections = PJ.data ? PJ.data.sections : [];
+  $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer tk-drawer" role="dialog" aria-modal="true" aria-label="Tarefa">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="row" style="justify-content:space-between"><label class="check"><input type="checkbox" data-tk-done="${t.id}" ${t.done ? "checked" : ""}><span>${t.done ? "Concluída" : "Marcar como concluída"}</span></label><button class="btn sm ghost" data-adm-close="1">Fechar</button></div>
+    <input class="input tk-bigtitle" data-tk-field="title" data-id="${t.id}" value="${esc(t.title)}" aria-label="Nome da tarefa">
+    <div class="tk-grid">
+      <label for="tkWho">Responsável</label><select class="input" id="tkWho" data-tk-field="assignee_id" data-id="${t.id}"><option value="">Ninguém</option>${members.map(m => `<option value="${m.id}" ${m.id === t.assignee_id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+      <label for="tkDue">Prazo</label><input class="input" type="date" id="tkDue" data-tk-field="due_date" data-id="${t.id}" value="${esc(t.due_date)}">
+      ${!t.parent_id ? `<label for="tkSec">Seção</label><select class="input" id="tkSec" data-tk-field="section_id" data-id="${t.id}">${sections.map(s => `<option value="${s.id}" ${s.id === t.section_id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>` : ""}
+    </div>
+    <div class="field"><label for="tkNotes">Descrição</label><textarea class="input" id="tkNotes" rows="4" data-tk-field="notes" data-id="${t.id}" placeholder="Detalhes, links, o que conta como pronto">${esc(t.notes)}</textarea></div>
+    ${!t.parent_id ? `<div class="field"><span class="flabel">Subtarefas</span><ul class="tk-list">${d.subtasks.map(s => `<li class="tk-row ${s.done ? "done" : ""}"><input type="checkbox" class="tk-check" data-tk-done="${s.id}" data-parent="${t.id}" ${s.done ? "checked" : ""} aria-label="Concluir ${esc(s.title)}"><span class="tk-title">${esc(s.title)}</span><button class="icon-btn sm" data-tk-del="${s.id}" data-parent="${t.id}" aria-label="Apagar subtarefa">×</button></li>`).join("")}</ul>
+      <form class="tk-addsub" data-parent="${t.id}"><input class="input" name="title" placeholder="+ Adicionar subtarefa" aria-label="Nova subtarefa" autocomplete="off"></form></div>` : ""}
+    <div class="field"><span class="flabel">Comentários</span><ul class="tk-comments">${d.comments.map(c => `<li><b>${esc(c.author || "Alguém")}</b> <span class="hint">${when(c.created_at)}</span><p>${esc(c.body).replace(/\n/g, "<br>")}</p></li>`).join("") || `<li class="hint">Nenhum comentário ainda.</li>`}</ul>
+      <form class="tk-comment" data-id="${t.id}"><textarea class="input" name="body" rows="2" placeholder="Escreva um comentário" aria-label="Comentário"></textarea><button class="btn sm hl" type="submit">Comentar</button></form></div>
+    <div><button class="btn sm ghost" data-tk-del="${t.id}">Apagar tarefa</button></div>
+  </div>`;
+}
+const tkPut = (id, body) => api("PUT", "/api/tasks/" + id, body);
+document.addEventListener("click", async e => {
+  const t = e.target;
+  const v = t.closest("[data-pj-view]"); if (v) { PJ.view = v.dataset.pjView; store.set("pj-view", PJ.view); $$("[data-pj-view]").forEach(b => b.setAttribute("aria-pressed", b === v)); $("#pjBody").innerHTML = projectBody(); return; }
+  const cal = t.closest("[data-cal]"); if (cal) { const n = Number(cal.dataset.cal); if (!n) PJ.month = today().slice(0, 7); else { const [y, m] = PJ.month.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); PJ.month = d.toISOString().slice(0, 7); } $("#pjBody").innerHTML = projectBody(); return; }
+  const op = t.closest("[data-tk-open]"); if (op) return openTask(Number(op.dataset.tkOpen));
+  const gt = t.closest("[data-tk-goto]"); if (gt) { PJ.open = Number(gt.dataset.tkGoto); return; } // o link segue para o projeto, que abre a tarefa
+  const del = t.closest("[data-tk-del]"); if (del) {
+    if (!await confirmSheet({ title: "Apagar esta tarefa?", text: "As subtarefas e os comentários dela também somem.", ok: "Apagar" })) return;
+    try { await api("DELETE", "/api/tasks/" + del.dataset.tkDel); } catch (err) { return toast(err.message); }
+    if (del.dataset.parent) openTask(Number(del.dataset.parent)); else $("#layer").innerHTML = "";
+    return pjReload();
+  }
+  const sm = t.closest("[data-sec-move]"); if (sm) { try { await api("PUT", "/api/sections/" + sm.dataset.secMove, { dir: Number(sm.dataset.dir) }); } catch (err) { toast(err.message); } return pjReload(); }
+  const sr = t.closest("[data-sec-ren]"); if (sr) { const s = PJ.data.sections.find(x => x.id === Number(sr.dataset.secRen)); const name = prompt("Novo nome da seção", s.name); if (name && name.trim()) { try { await api("PUT", "/api/sections/" + s.id, { name }); } catch (err) { toast(err.message); } pjReload(); } return; }
+  const sd = t.closest("[data-sec-del]"); if (sd) {
+    if (!await confirmSheet({ title: "Apagar esta seção?", text: "As tarefas dela passam para a primeira seção do projeto.", ok: "Apagar" })) return;
+    try { await api("DELETE", "/api/sections/" + sd.dataset.secDel); } catch (err) { toast(err.message); } return pjReload();
+  }
+  if (t.closest("[data-pj-new]")) { const name = prompt("Nome do projeto interno"); if (name && name.trim()) { try { const r = await api("POST", "/api/projects", { name }); go("projeto-" + r.id); } catch (err) { toast(err.message); } } return; }
+  if (t.closest("[data-pj-ren]")) { const name = prompt("Novo nome do projeto", PJ.data.project.name); if (name && name.trim()) { try { await api("PUT", "/api/projects/" + PJ.data.project.id, { name }); route(); } catch (err) { toast(err.message); } } return; }
+  if (t.closest("[data-pj-del]")) {
+    if (!await confirmSheet({ title: `Apagar o projeto "${PJ.data.project.name}"?`, text: "Todas as tarefas, subtarefas e comentários somem. Não dá para desfazer.", ok: "Apagar projeto" })) return;
+    try { await api("DELETE", "/api/projects/" + PJ.data.project.id); go("projetos"); } catch (err) { toast(err.message); }
+  }
+});
+document.addEventListener("change", async e => {
+  const t = e.target;
+  if (t.dataset.tkDone) { // concluir ou reabrir, na lista, no quadro, no calendário, no painel ou em Minhas tarefas
+    try { await tkPut(t.dataset.tkDone, { done: t.checked }); } catch (err) { t.checked = !t.checked; return toast(err.message); }
+    if (location.hash === "#tarefas") { const li = t.closest("li"); if (li) li.classList.add("done"); return; }
+    if ($(".tk-drawer")) openTask(Number(t.dataset.parent || t.dataset.tkDone));
+    return pjReload();
+  }
+  if (t.dataset.tkMove) { try { await tkPut(t.dataset.tkMove, { section_id: Number(t.value) }); } catch (err) { toast(err.message); } return pjReload(); }
+  if (t.dataset.tkField) {
+    const f = t.dataset.tkField, val = f === "assignee_id" || f === "section_id" ? (t.value ? Number(t.value) : null) : t.value;
+    try { await tkPut(t.dataset.id, { [f]: val }); toast("Salvo"); } catch (err) { return toast(err.message); }
+    return pjReload();
+  }
+});
+document.addEventListener("submit", async e => {
+  const f = e.target, title = f.elements.title ? f.elements.title.value.trim() : "";
+  if (f.classList.contains("tk-add") && title) {
+    try { await api("POST", `/api/projects/${PJ.data.project.id}/tasks`, { title, section_id: Number(f.dataset.section) }); } catch (err) { return toast(err.message); }
+    await pjReload(); const again = $(`.tk-add[data-section="${f.dataset.section}"] input`); if (again) again.focus(); return;
+  }
+  if (f.classList.contains("tk-addsub") && title) {
+    try { await api("POST", `/api/projects/${PJ.data.project.id}/tasks`, { title, parent_id: Number(f.dataset.parent) }); } catch (err) { return toast(err.message); }
+    await openTask(Number(f.dataset.parent)); pjReload(); const again = $(".tk-addsub input"); if (again) again.focus(); return;
+  }
+  if (f.classList.contains("tk-newsec") && f.elements.name.value.trim()) {
+    try { await api("POST", `/api/projects/${PJ.data.project.id}/sections`, { name: f.elements.name.value }); } catch (err) { return toast(err.message); }
+    return pjReload();
+  }
+  if (f.classList.contains("tk-comment") && f.elements.body.value.trim()) {
+    try { await api("POST", `/api/tasks/${f.dataset.id}/comments`, { body: f.elements.body.value }); } catch (err) { return toast(err.message); }
+    await openTask(Number(f.dataset.id)); return pjReload();
+  }
+});
+// arrastar cartões no quadro: solta numa coluna, na altura de outro cartão, e a tarefa vai para aquela posição
+let DRAG = null;
+document.addEventListener("dragstart", e => { const c = e.target.closest && e.target.closest("[data-card]"); if (!c) return; DRAG = Number(c.dataset.card); c.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+document.addEventListener("dragend", e => { const c = e.target.closest && e.target.closest("[data-card]"); if (c) c.classList.remove("dragging"); $$(".tk-col.over").forEach(x => x.classList.remove("over")); });
+document.addEventListener("dragover", e => { const col = DRAG && e.target.closest && e.target.closest("[data-col]"); if (!col) return; e.preventDefault(); $$(".tk-col.over").forEach(x => x !== col && x.classList.remove("over")); col.classList.add("over"); });
+document.addEventListener("drop", async e => {
+  const col = DRAG && e.target.closest && e.target.closest("[data-col]"); if (!col) return;
+  e.preventDefault();
+  const cards = [...col.querySelectorAll("[data-card]")].filter(c => Number(c.dataset.card) !== DRAG);
+  let index = cards.findIndex(c => e.clientY < c.getBoundingClientRect().top + c.offsetHeight / 2); if (index < 0) index = cards.length;
+  const id = DRAG; DRAG = null;
+  try { await tkPut(id, { section_id: Number(col.dataset.col), index }); } catch (err) { toast(err.message); }
+  pjReload();
 });
 
 // SELO DE VERIFICADO: explica como funciona, pede a confirmação ("o laudo é meu") e envia o PDF

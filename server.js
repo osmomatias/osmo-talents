@@ -1123,6 +1123,10 @@ route("GET", "/api/admin/overview", ({ user }) => {
     talk: { messages7: count("SELECT COUNT(*) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
       threads7: count("SELECT COUNT(*) n FROM threads WHERE updated_at >= datetime('now', '-7 days')"),
       reviews: one("SELECT COUNT(*) n, ROUND(AVG(rating), 1) avg FROM reviews") },
+    // tarefas (estilo Asana): quantas abertas, concluídas e atrasadas, somando todos os projetos
+    tasks: { open: count("SELECT COUNT(*) n FROM tasks WHERE done = 0"), done: count("SELECT COUNT(*) n FROM tasks WHERE done = 1"),
+      late: count("SELECT COUNT(*) n FROM tasks WHERE done = 0 AND due_date != '' AND due_date < date('now', '-3 hours')"),
+      projects: count("SELECT COUNT(*) n FROM projects") },
     weekly: weeks.map(w => ({ week: w, users: wUsers[w] || 0, jobs: wJobs[w] || 0, contracts: wContracts[w] || 0, value: wMoney[w] || 0 })),
     // o que precisa de alguém olhando: coisas paradas há mais tempo do que deveriam
     attention: {
@@ -1365,6 +1369,196 @@ route("POST", "/api/admin/users/:id/password", ({ user, params }) => {
     adminLog(user, "trocar senha", "users", params.id, {}); });
   return { tempPassword: pass };
 }, { auth: false });
+
+// PROJETOS E TAREFAS (no estilo Asana): cada contrato ganha um projeto, criado sozinho na primeira vez que
+// alguém do contrato abre as tarefas, já com as seções "A fazer / Fazendo / Feito" e uma tarefa por etapa.
+// Projetos internos são só da equipe da Osmo (ADMIN_EMAILS). Regra de ouro: só os membros do projeto
+// enxergam e mexem nele; para qualquer outra pessoa ele "não existe" (404). O dono vê tudo.
+// As tarefas organizam o trabalho, mas não mexem em dinheiro: pagamento continua nas etapas do contrato.
+const SECTIONS0 = ["A fazer", "Fazendo", "Feito"];
+const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s));
+function newProject(kind, name, userId, contractId = null) {
+  return tx(() => {
+    const pid = Number(run("INSERT INTO projects (kind, contract_id, name, created_by) VALUES (?,?,?,?)", kind, contractId, name, userId).lastInsertRowid);
+    SECTIONS0.forEach((n, i) => run("INSERT INTO project_sections (project_id, name, pos) VALUES (?,?,?)", pid, n, i));
+    return pid;
+  });
+}
+// projeto do contrato: nasce na primeira visita, com uma tarefa por etapa (o valor vai no título)
+function contractProject(c) {
+  const p = one("SELECT id FROM projects WHERE contract_id = ?", c.id);
+  if (p) return p.id;
+  const job = one("SELECT title FROM jobs WHERE id = ?", c.job_id);
+  const pid = newProject("contrato", job ? job.title : `Contrato ${c.id}`, null, c.id);
+  // cada etapa já nasce na coluna certa: aprovada vai para "Feito" (concluída), em andamento ou entregue para "Fazendo"
+  const [todo, doing, done] = all("SELECT id FROM project_sections WHERE project_id = ? ORDER BY pos", pid).map(r => r.id);
+  all("SELECT title, value, status FROM milestones WHERE contract_id = ? ORDER BY pos", c.id).forEach((m, i) => {
+    const sec = m.status === "aprovada" ? done : ["andamento", "entregue", "ajustes"].includes(m.status) ? doing : todo;
+    run("INSERT INTO tasks (project_id, section_id, title, assignee_id, pos, done) VALUES (?,?,?,?,?,?)", pid, sec, `${m.title} (${brl(m.value)})`, c.freela_id, i, m.status === "aprovada" ? 1 : 0);
+  });
+  return pid;
+}
+// quem participa: no contrato, cliente e freela; no interno, a equipe da Osmo
+function projectMembers(p) {
+  if (p.kind === "contrato") { const c = one("SELECT client_id, freela_id FROM contracts WHERE id = ?", p.contract_id);
+    return c ? all("SELECT id, name, role FROM users WHERE id IN (?, ?)", c.client_id, c.freela_id) : []; }
+  return ADMINS.length ? all(`SELECT id, name, role FROM users WHERE lower(email) IN (${ADMINS.map(() => "?").join(",")})`, ...ADMINS) : [];
+}
+function canSee(user, p) {
+  if (isAdmin(user)) return true;
+  if (p.kind !== "contrato") return false;
+  return !!one("SELECT 1 FROM contracts WHERE id = ? AND (client_id = ? OR freela_id = ?)", p.contract_id, user.id, user.id);
+}
+function projectAccess(user, id) {
+  const p = one("SELECT * FROM projects WHERE id = ?", id);
+  if (!p || !canSee(user, p)) fail(404, "Projeto não encontrado.");
+  return p;
+}
+function taskAccess(user, id) {
+  const t = one("SELECT * FROM tasks WHERE id = ?", id);
+  if (!t) fail(404, "Tarefa não encontrada.");
+  projectAccess(user, t.project_id);
+  return t;
+}
+const memberId = (p, v) => {
+  if (v === null || v === "" || v === undefined) return null;
+  const id = int(v, 1); if (!projectMembers(p).some(m => m.id === id)) fail(400, "O responsável precisa ser alguém do projeto.");
+  return id;
+};
+const sectionOf = (p, v) => { const s = one("SELECT id FROM project_sections WHERE id = ? AND project_id = ?", int(v, 1), p.id); if (!s) fail(400, "Seção inválida."); return s.id; };
+const taskOut = t => ({ id: t.id, project_id: t.project_id, section_id: t.section_id, parent_id: t.parent_id, title: t.title, notes: t.notes,
+  assignee_id: t.assignee_id, assignee: t.assignee || "", due_date: t.due_date, done: !!t.done, done_at: t.done_at, pos: t.pos, comments: t.n_comments || 0 });
+const TASK_SELECT = `SELECT t.*, u.name assignee, (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) n_comments FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id`;
+
+// LISTA DE PROJETOS: os dos contratos da pessoa (criados aqui se ainda não existirem) e, para o dono, os internos
+route("GET", "/api/projects", ({ user }) => {
+  for (const c of all("SELECT * FROM contracts WHERE client_id = ? OR freela_id = ?", user.id, user.id)) contractProject(c);
+  const rows = all(`SELECT p.*, (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.done = 0) open,
+      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.done = 1) done,
+      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.done = 0 AND t.due_date != '' AND t.due_date < date('now', '-3 hours')) late
+    FROM projects p ORDER BY p.kind, p.id DESC`).filter(p => canSee(user, p));
+  return { projects: rows.map(p => ({ id: p.id, kind: p.kind, name: p.name, open: p.open, done: p.done, late: p.late })), canCreate: isAdmin(user) };
+});
+// PROJETO INTERNO NOVO (só o dono)
+route("POST", "/api/projects", ({ user, body }) => {
+  if (!isAdmin(user)) fail(404, "Rota não encontrada.");
+  const name = str(body.name, 80); if (name.length < 2) fail(400, "Dê um nome ao projeto.");
+  return { id: newProject("interno", name, user.id) };
+});
+// UM PROJETO COMPLETO: seções, todas as tarefas (com subtarefas) e os membros, para a tela montar lista, quadro e calendário
+route("GET", "/api/projects/:id", ({ user, params }) => {
+  const p = projectAccess(user, params.id);
+  return { project: { id: p.id, kind: p.kind, name: p.name, contract_id: p.contract_id },
+    sections: all("SELECT id, name, pos FROM project_sections WHERE project_id = ? ORDER BY pos, id", p.id),
+    tasks: all(TASK_SELECT + " WHERE t.project_id = ? ORDER BY t.pos, t.id", p.id).map(taskOut),
+    members: projectMembers(p), canManage: isAdmin(user) && p.kind === "interno" };
+});
+route("PUT", "/api/projects/:id", ({ user, params, body }) => {
+  const p = projectAccess(user, params.id);
+  const name = str(body.name, 80); if (name.length < 2) fail(400, "Dê um nome ao projeto.");
+  run("UPDATE projects SET name = ? WHERE id = ?", name, p.id);
+  return { ok: true };
+});
+route("DELETE", "/api/projects/:id", ({ user, params }) => {
+  const p = projectAccess(user, params.id);
+  if (p.kind !== "interno" || !isAdmin(user)) fail(409, "Projetos de contrato acompanham o contrato e não podem ser apagados.");
+  run("DELETE FROM projects WHERE id = ?", p.id);
+  return { ok: true };
+});
+// SEÇÕES (colunas do quadro): criar, renomear, mudar de lugar e apagar (as tarefas vão para a primeira seção que sobrar)
+route("POST", "/api/projects/:id/sections", ({ user, params, body }) => {
+  const p = projectAccess(user, params.id);
+  const name = str(body.name, 60); if (!name) fail(400, "Dê um nome à seção.");
+  const pos = one("SELECT COALESCE(MAX(pos), -1) + 1 n FROM project_sections WHERE project_id = ?", p.id).n;
+  return { id: Number(run("INSERT INTO project_sections (project_id, name, pos) VALUES (?,?,?)", p.id, name, pos).lastInsertRowid) };
+});
+route("PUT", "/api/sections/:id", ({ user, params, body }) => {
+  const s = one("SELECT * FROM project_sections WHERE id = ?", params.id); if (!s) fail(404, "Seção não encontrada.");
+  projectAccess(user, s.project_id);
+  if (body.name !== undefined) { const name = str(body.name, 60); if (!name) fail(400, "Dê um nome à seção."); run("UPDATE project_sections SET name = ? WHERE id = ?", name, s.id); }
+  if (body.dir) {
+    const ids = all("SELECT id FROM project_sections WHERE project_id = ? ORDER BY pos, id", s.project_id).map(r => r.id);
+    const i = ids.indexOf(s.id), j = i + (body.dir < 0 ? -1 : 1);
+    if (j >= 0 && j < ids.length) { [ids[i], ids[j]] = [ids[j], ids[i]]; tx(() => ids.forEach((id, pos) => run("UPDATE project_sections SET pos = ? WHERE id = ?", pos, id))); }
+  }
+  return { ok: true };
+});
+route("DELETE", "/api/sections/:id", ({ user, params }) => {
+  const s = one("SELECT * FROM project_sections WHERE id = ?", params.id); if (!s) fail(404, "Seção não encontrada.");
+  projectAccess(user, s.project_id);
+  const other = one("SELECT id FROM project_sections WHERE project_id = ? AND id != ? ORDER BY pos LIMIT 1", s.project_id, s.id);
+  if (!other) fail(409, "O projeto precisa ter pelo menos uma seção.");
+  tx(() => { run("UPDATE tasks SET section_id = ? WHERE section_id = ?", other.id, s.id); run("DELETE FROM project_sections WHERE id = ?", s.id); });
+  return { ok: true };
+});
+// TAREFAS: criar (ou subtarefa, com parent_id), abrir com subtarefas e comentários, editar, mover e apagar
+route("POST", "/api/projects/:id/tasks", ({ user, params, body }) => {
+  const p = projectAccess(user, params.id);
+  const title = str(body.title, 200); if (!title) fail(400, "Escreva o nome da tarefa.");
+  let parent = null, section = null;
+  if (body.parent_id) {
+    parent = one("SELECT id, section_id, parent_id FROM tasks WHERE id = ? AND project_id = ?", int(body.parent_id, 1), p.id);
+    if (!parent) fail(400, "Tarefa principal inválida."); if (parent.parent_id) fail(400, "Subtarefas têm um nível só.");
+    section = parent.section_id;
+  } else section = body.section_id ? sectionOf(p, body.section_id) : (one("SELECT id FROM project_sections WHERE project_id = ? ORDER BY pos LIMIT 1", p.id) || {}).id;
+  const due = str(body.due_date || "", 10); if (due && !isDate(due)) fail(400, "Data de prazo inválida.");
+  const pos = one("SELECT COALESCE(MAX(pos), -1) + 1 n FROM tasks WHERE project_id = ? AND section_id IS ? AND parent_id IS ?", p.id, section, parent ? parent.id : null).n;
+  const id = Number(run("INSERT INTO tasks (project_id, section_id, parent_id, title, assignee_id, due_date, pos, created_by) VALUES (?,?,?,?,?,?,?,?)",
+    p.id, section, parent ? parent.id : null, title, memberId(p, body.assignee_id), due, pos, user.id).lastInsertRowid);
+  return { task: taskOut(one(TASK_SELECT + " WHERE t.id = ?", id)) };
+});
+route("GET", "/api/tasks/:id", ({ user, params }) => {
+  const t = taskAccess(user, params.id);
+  return { task: taskOut(one(TASK_SELECT + " WHERE t.id = ?", t.id)),
+    subtasks: all(TASK_SELECT + " WHERE t.parent_id = ? ORDER BY t.pos, t.id", t.id).map(taskOut),
+    comments: all("SELECT c.id, c.body, c.created_at, c.author_id, u.name author FROM task_comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.task_id = ? ORDER BY c.id", t.id) };
+});
+route("PUT", "/api/tasks/:id", ({ user, params, body }) => {
+  const t = taskAccess(user, params.id), p = one("SELECT * FROM projects WHERE id = ?", t.project_id);
+  const set = {};
+  if (body.title !== undefined) { set.title = str(body.title, 200); if (!set.title) fail(400, "Escreva o nome da tarefa."); }
+  if (body.notes !== undefined) set.notes = str(body.notes, 4000);
+  if (body.assignee_id !== undefined) set.assignee_id = memberId(p, body.assignee_id);
+  if (body.due_date !== undefined) { set.due_date = str(body.due_date, 10); if (set.due_date && !isDate(set.due_date)) fail(400, "Data de prazo inválida."); }
+  if (body.done !== undefined) { set.done = body.done ? 1 : 0; set.done_at = body.done ? new Date().toISOString().slice(0, 19).replace("T", " ") : ""; }
+  // mover: para outra seção (e/ou outra posição dentro dela); as outras tarefas da seção se reorganizam
+  if (body.section_id !== undefined && !t.parent_id) {
+    const sec = sectionOf(p, body.section_id);
+    const ids = all("SELECT id FROM tasks WHERE project_id = ? AND section_id IS ? AND parent_id IS NULL AND id != ? ORDER BY pos, id", p.id, sec, t.id).map(r => r.id);
+    const at = body.index === undefined ? ids.length : int(body.index, 0, ids.length);
+    ids.splice(at, 0, t.id);
+    tx(() => { run("UPDATE tasks SET section_id = ? WHERE id = ? OR parent_id = ?", sec, t.id, t.id); ids.forEach((id, pos) => run("UPDATE tasks SET pos = ? WHERE id = ?", pos, id)); });
+  }
+  const keys = Object.keys(set);
+  if (keys.length) run(`UPDATE tasks SET ${keys.map(k => `${k} = ?`).join(", ")}, updated_at = datetime('now') WHERE id = ?`, ...keys.map(k => set[k]), t.id);
+  return { task: taskOut(one(TASK_SELECT + " WHERE t.id = ?", t.id)) };
+});
+route("DELETE", "/api/tasks/:id", ({ user, params }) => {
+  const t = taskAccess(user, params.id);
+  run("DELETE FROM tasks WHERE id = ?", t.id);
+  return { ok: true };
+});
+route("POST", "/api/tasks/:id/comments", ({ user, params, body, ip }) => {
+  limit("tcom:" + user.id, 60, 60_000);
+  const t = taskAccess(user, params.id);
+  const text = str(body.body, 2000); if (!text) fail(400, "O comentário está vazio.");
+  run("INSERT INTO task_comments (task_id, author_id, body) VALUES (?,?,?)", t.id, user.id, text);
+  return { ok: true };
+});
+// PROJETO DE UM CONTRATO: o botão "Tarefas" do Painel pergunta aqui qual é o projeto (e ele nasce se ainda não existir)
+route("GET", "/api/contracts/:id/project", ({ user, params }) => {
+  const c = one("SELECT * FROM contracts WHERE id = ?", params.id);
+  if (!c || (c.client_id !== user.id && c.freela_id !== user.id && !isAdmin(user))) fail(404, "Contrato não encontrado.");
+  return { id: contractProject(c) };
+});
+// MINHAS TAREFAS: tudo o que está com a pessoa e ainda não foi concluído, em todos os projetos que ela vê
+route("GET", "/api/me/tasks", ({ user }) => {
+  for (const c of all("SELECT * FROM contracts WHERE client_id = ? OR freela_id = ?", user.id, user.id)) contractProject(c);
+  const rows = all(`SELECT t.*, p.name project, p.kind, p.contract_id, (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = t.id) n_comments
+    FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.assignee_id = ? AND t.done = 0
+    ORDER BY t.due_date = '', t.due_date, t.id`, user.id).filter(t => canSee(user, t));
+  return { tasks: rows.map(t => ({ ...taskOut(t), project: t.project })) };
+});
 
 // CARTEIRO PACIENTE: em vez de mandar um e-mail a cada mensagem (seria chato!), uma vez por
 // minuto ele olha as conversas e só manda se:
