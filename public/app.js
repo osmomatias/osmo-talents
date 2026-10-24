@@ -2224,6 +2224,8 @@ const themeHTML = () => { const cur = getTheme(); return `<div class="field"><sp
 let installPrompt = null;
 const isInstalled = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+// Safari no Mac: não tem o aviso automático, mas instala pelo menu Arquivo (Safari 17 em diante)
+const isMacSafari = () => /Macintosh/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg|OPR|Firefox/.test(navigator.userAgent) && !isIOS();
 addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; refreshInstallHTML(); });
 addEventListener("appinstalled", () => { installPrompt = null; refreshInstallHTML(); toast("Osmo instalado. Procure o ícone na tela inicial."); });
 function installHTML() {
@@ -2231,6 +2233,7 @@ function installHTML() {
   if (isInstalled()) return row("Você já está usando o app instalado neste aparelho.");
   if (installPrompt) return row("Ícone na tela inicial, abre em janela própria e sem a barra do navegador", `<button class="btn sm" data-install="1">Instalar</button>`);
   if (isIOS()) return row("No iPhone ou iPad, toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.");
+  if (isMacSafari()) return row("No Safari do Mac, use o menu <b>Arquivo → Adicionar ao Dock</b>. O app abre em janela própria.");
   return row("Se o seu navegador permitir, procure no menu dele a opção <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.");
 }
 function refreshInstallHTML() { const box = $("#adjInstall"); if (box) box.innerHTML = installHTML(); }
