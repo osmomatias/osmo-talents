@@ -104,6 +104,20 @@ Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e o
 
 ---
 
+## HTTPS entre a Cloudflare e o servidor
+
+Com a Cloudflare na frente, o cadeado do navegador cobre só o caminho até a Cloudflare. Para a conexão Cloudflare → servidor também ser segura:
+
+1. Na Cloudflare, no site osmo.com.br: **SSL/TLS → Origin Server → Create Certificate**. Deixe "Generate private key and CSR with Cloudflare", tipo RSA, os nomes `osmo.com.br` e `*.osmo.com.br`, validade 15 anos. Clique em **Create**.
+2. Formato **PEM**. Copie o "Origin Certificate" para um arquivo `osmo.pem` e a "Private key" para `osmo.key`, no seu computador. A chave só aparece nessa tela: guarde antes de fechar.
+3. No terminal do editor: `bash configurar-https-cloudflare.sh` e informe os dois arquivos (pode arrastar para o terminal). Ele confere o par, envia ao servidor e publica.
+4. Na Cloudflare: **SSL/TLS → Overview → Configure → Full (strict)**. Abra o site e confira que carrega.
+5. Apague `osmo.key` do seu computador.
+
+Se o site mostrar erro 521 ou 522 depois do passo 4, a porta 443 está fechada no firewall da Hostinger (VPS → Firewall): libere a 443 para entrada ou volte o modo para Flexible enquanto isso.
+
+---
+
 ## Pagamentos com Asaas
 
 Sem configuração, os pagamentos ficam simulados. Para ligar:
@@ -220,6 +234,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `package.json`: a "ficha" do projeto. Diz o nome, a versão mínima do Node.js (22.13) e os atalhos: `npm run dev` (liga no computador e religa a cada mudança), `npm start`, `npm run seed` (dados de exemplo), `npm run publicar` e `npm run asaas:setup`. Também é JSON, então não leva comentários.
 - `publicar.sh`: empacota a pasta e leva para o servidor.
 - `instalar.sh`: monta tudo no servidor em 7 passos (Node.js, serviço, nginx, HTTPS).
+- `configurar-https-cloudflare.sh`: envia ao servidor o certificado de origem da Cloudflare, para a conexão Cloudflare → servidor também ser segura.
 - `configurar-email.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
 - `configurar-admin.sh`: diz quais e-mails podem abrir o painel do dono em `/#panorama` (números gerais, evolução por semana, funil, dinheiro e o que está parado). A página não aparece em nenhum menu e, para as outras pessoas, responde como se não existisse.
 - `scripts/seed.js`: cria pessoas e vagas de exemplo.

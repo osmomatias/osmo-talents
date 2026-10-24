@@ -6,7 +6,8 @@
 #   3. copia o app para /var/www/osmo-talents, sem mexer no banco e no .env;
 #   4. cria um "serviço" que liga o app sozinho e o religa se ele cair;
 #   5. configura o nginx, o "porteiro da frente" que recebe as visitas e repassa ao app;
-#   6. confere o DNS e, se o domínio já aponta para cá, ativa o HTTPS (o cadeadinho);
+#   6. ativa o HTTPS (o cadeadinho): com o certificado de origem da Cloudflare, se ele foi
+#      enviado, ou com o Let's Encrypt, se o domínio aponta direto para cá;
 #   7. mostra como testar.
 # Instalador do Osmo Talents para VPS Ubuntu/Debian limpa.
 # Uso (como root, dentro da pasta descompactada):
@@ -112,13 +113,15 @@ if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondend
 # 3000, contando o IP de verdade de quem visitou (X-Forwarded-For). Se outro programa (como
 # o Apache) estiver ocupando a porta 80, desliga ou avisa.
 say "5/7 Configurando o nginx para $DOMAIN"
-LISTEN6="    listen [::]:80;"
-[ -f /proc/net/if_inet6 ] || LISTEN6="    # IPv6 desativado neste servidor"
-cat > /etc/nginx/sites-available/osmo-talents <<EOF
-server {
-    listen 80;
-$LISTEN6
-    server_name $DOMAIN www.$DOMAIN;
+# Se o certificado de origem da Cloudflare já foi enviado (configurar-https-cloudflare.sh),
+# o nginx também atende na porta 443 com ele. A porta 80 continua funcionando: enquanto a
+# Cloudflare estiver no modo "Flexible" ela ainda chega por ali, e mandar para o https
+# criaria um vaivém sem fim.
+CF_CERT="/etc/ssl/cloudflare/$DOMAIN.pem"
+CF_KEY="/etc/ssl/cloudflare/$DOMAIN.key"
+LISTEN6="    listen [::]:80;"; LISTEN6_SSL="    listen [::]:443 ssl http2;"
+[ -f /proc/net/if_inet6 ] || { LISTEN6="    # IPv6 desativado neste servidor"; LISTEN6_SSL="$LISTEN6"; }
+PROXY="    server_name $DOMAIN www.$DOMAIN;
     client_max_body_size 12m;
 
     location / {
@@ -128,9 +131,29 @@ $LISTEN6
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-    }
+    }"
+cat > /etc/nginx/sites-available/osmo-talents <<EOF
+server {
+    listen 80;
+$LISTEN6
+$PROXY
 }
 EOF
+if [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ]; then
+  # se o firewall do servidor (ufw) estiver ligado, abre a porta 443 para a Cloudflare chegar
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then ufw allow 443/tcp >/dev/null; fi
+  cat >> /etc/nginx/sites-available/osmo-talents <<EOF
+
+server {
+    listen 443 ssl http2;
+$LISTEN6_SSL
+    ssl_certificate $CF_CERT;
+    ssl_certificate_key $CF_KEY;
+    ssl_protocols TLSv1.2 TLSv1.3;
+$PROXY
+}
+EOF
+fi
 ln -sf /etc/nginx/sites-available/osmo-talents /etc/nginx/sites-enabled/osmo-talents
 rm -f /etc/nginx/sites-enabled/default
 nginx -t >/dev/null 2>&1 || { nginx -t; exit 1; }
@@ -160,14 +183,22 @@ ok "nginx pronto"
 # HTTPS: só dá para tirar o certificado (o cadeadinho) se o domínio apontar para este
 # servidor. O certbot pede o certificado grátis ao Let's Encrypt e, se der certo, os
 # crachás de login passam a só viajar por conexão segura (COOKIE_SECURE=true).
-# Obs.: quando o site passa pela Cloudflare, o DNS mostra o endereço dela e não o daqui;
-# por isso este passo avisa que "não aponta", mesmo com o site funcionando.
+# Quando o site passa pela Cloudflare, o DNS mostra o endereço dela e não o daqui, e o
+# Let's Encrypt não funciona. Nesse caso o HTTPS vem do certificado de origem da Cloudflare,
+# enviado pelo configurar-https-cloudflare.sh (e este passo só confirma que ele está lá).
 say "6/7 Conferindo o DNS e ativando o HTTPS"
 SERVER_IP="$(curl -fsS -4 https://api.ipify.org || true)"
 DNS_IP="$(dig +short A "$DOMAIN" | tail -n1 || true)"
 WWW_IP="$(dig +short A "www.$DOMAIN" | tail -n1 || true)"
 HTTPS=0
-if [ -n "$SERVER_IP" ] && [ "$DNS_IP" = "$SERVER_IP" ]; then
+if [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ]; then
+  # com a Cloudflare na frente, o certificado de origem (passo 5) já é o HTTPS daqui:
+  # não precisa do DNS apontar para cá nem do Let's Encrypt
+  if grep -q '^COOKIE_SECURE=' "$APP_DIR/.env"; then sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' "$APP_DIR/.env"; else echo "COOKIE_SECURE=true" >> "$APP_DIR/.env"; fi
+  systemctl restart osmo-talents
+  HTTPS=1; ok "HTTPS ativo com o certificado de origem da Cloudflare"
+  ok "no painel da Cloudflare, o modo SSL/TLS precisa estar em Full (strict)"
+elif [ -n "$SERVER_IP" ] && [ "$DNS_IP" = "$SERVER_IP" ]; then
   apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
   DOMS=(-d "$DOMAIN"); [ "$WWW_IP" = "$SERVER_IP" ] && DOMS+=(-d "www.$DOMAIN")
   if [ -n "$EMAIL" ]; then MAIL=(-m "$EMAIL"); else MAIL=(--register-unsafely-without-email); fi
@@ -184,6 +215,7 @@ elif [ -d "/etc/letsencrypt/live/$DOMAIN" ] && command -v certbot >/dev/null 2>&
 else
   warn "$DOMAIN ainda não aponta para este servidor (DNS: ${DNS_IP:-nenhum}, servidor: ${SERVER_IP:-?})."
   warn "Aponte o DNS e rode este script de novo para ativar o HTTPS."
+  warn "Usa a Cloudflare? Então rode no seu computador: bash configurar-https-cloudflare.sh"
 fi
 
 say "7/7 Pronto"
