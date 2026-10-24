@@ -2213,6 +2213,36 @@ const themeHTML = () => { const cur = getTheme(); return `<div class="field"><sp
   <div class="seg theme-seg" role="group" aria-labelledby="themeLbl">${THEMES.map(([k, n]) => `<button type="button" data-theme-set="${k}" aria-pressed="${cur === k}">${n}</button>`).join("")}</div>
   <span class="hint">"Sistema" segue o modo claro ou escuro do seu celular ou computador.</span></div>`; };
 
+// APP INSTALÁVEL (PWA): o site pode virar um ícone na tela inicial e abrir em janela própria,
+// sem a barra do navegador. Quem faz isso possível é o sw.js (o ajudante que mora no aparelho)
+// e o manifest.webmanifest (nome, ícone e cores do app).
+// - Android, Chrome e Edge avisam "dá para instalar" com o evento beforeinstallprompt: guardamos
+//   esse aviso e só o usamos quando a pessoa aperta "Instalar" em Ajustes (nada de pop-up surpresa);
+// - iPhone e iPad não têm esse aviso: lá mostramos o caminho pelo botão Compartilhar;
+// - se o app já está aberto como app instalado, Ajustes só conta isso.
+/* ---------- app instalável ---------- */
+let installPrompt = null;
+const isInstalled = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; refreshInstallHTML(); });
+addEventListener("appinstalled", () => { installPrompt = null; refreshInstallHTML(); toast("Osmo instalado. Procure o ícone na tela inicial."); });
+function installHTML() {
+  const row = (hint, btn = "") => `<div class="toggle"><span><b>Instalar como app</b><br><span class="hint">${hint}</span></span>${btn}</div>`;
+  if (isInstalled()) return row("Você já está usando o app instalado neste aparelho.");
+  if (installPrompt) return row("Ícone na tela inicial, abre em janela própria e sem a barra do navegador", `<button class="btn sm" data-install="1">Instalar</button>`);
+  if (isIOS()) return row("No iPhone ou iPad, toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.");
+  return row("Se o seu navegador permitir, procure no menu dele a opção <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.");
+}
+function refreshInstallHTML() { const box = $("#adjInstall"); if (box) box.innerHTML = installHTML(); }
+document.addEventListener("click", async e => {
+  if (!e.target.closest("[data-install]") || !installPrompt) return;
+  const p = installPrompt; installPrompt = null;
+  p.prompt();
+  try { await p.userChoice; } catch {}
+  refreshInstallHTML();
+});
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+
 // CONFORTO: as preferências de acessibilidade (texto maior, mais espaço entre linhas, sem
 // animações, modo foco, vidro líquido). Cada uma liga uma "classe" no <html>, e o styles.css
 // muda o visual quando a classe está ligada.
@@ -2236,6 +2266,7 @@ function openA11y() {
       ${sw("focus", "Modo foco", "Esconde painéis laterais e informações extras")}
       ${sw("calm", "Sem animações", "Remove transições e movimentos")}
       <div class="toggle"><span><b>Relógio Pomodoro</b><br><span class="hint">Blocos de foco e pausa, numa bolinha que fica no canto da tela</span></span><button class="btn sm" data-pomo-open="1">🍅 Abrir</button></div></section>
+    <section class="adj-group" aria-labelledby="adjApp"><h3 class="label" id="adjApp">App</h3><div id="adjInstall">${installHTML()}</div></section>
     ${ga ? `<section class="adj-group" aria-labelledby="adjPriv"><h3 class="label" id="adjPriv">Privacidade</h3>${ga}</section>` : ""}
   </div>`;
   $("#a11yClose").focus();

@@ -24,7 +24,14 @@
 <meta name="twitter:title" content="Osmo Talents">
 <meta name="twitter:description" content="Trabalho freelance para mentes neurodivergentes: briefing claro, comunicação combinada e pagamento por etapa.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/favicon.svg">
+<!-- PWA: o manifest diz ao celular/computador o nome, o ícone e as cores do app instalado;
+     o iPhone ainda usa as linhas "apple" abaixo (ele não aceita ícone em SVG). -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Osmo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- theme.js vem ANTES do CSS de propósito: ele liga o tema escuro e as
      preferências antes de qualquer coisa aparecer, para a tela não piscar. -->
 <script src="/theme.js"></script>
