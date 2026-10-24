@@ -257,6 +257,7 @@ function renderChrome() {
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
+      <button class="btn" data-pomo-open="1">🍅 Relógio Pomodoro</button>
       <button class="btn" id="mmA11y">Ajustes de conforto</button>
       ${ME ? `<button class="btn ghost" data-act="logout">Sair da conta</button>` : ""}
     </div>`;
@@ -1218,7 +1219,7 @@ V.tarefas = async () => {
   const row = t => `<li class="tk-row"><input type="checkbox" class="tk-check" data-tk-done="${t.id}" aria-label="Concluir ${esc(t.title)}">
     <a class="tk-title" href="#projeto-${t.project_id}" data-tk-goto="${t.id}">${esc(t.title)}</a><span class="tk-meta"><span class="hint">${esc(t.project)}</span>${t.due_date ? `<span class="tk-due ${dueCls(t)}">${fmtDue(t.due_date)}</span>` : ""}</span></li>`;
   return `<div class="stack"><div class="row" style="justify-content:space-between; align-items:flex-end">
-    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Minhas tarefas</h1><p class="hint">Tudo o que está com você e ainda não foi concluído, em todos os projetos.</p></div><a class="btn" href="#projetos">Projetos</a></div>
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Minhas tarefas</h1><p class="hint">Tudo o que está com você e ainda não foi concluído, em todos os projetos.</p></div><div class="row" style="gap:6px"><button class="btn" data-pomo-open="1">🍅 Pomodoro</button><a class="btn" href="#projetos">Projetos</a></div></div>
     ${tasks.length ? groups.map(([g, f]) => { const ts = tasks.filter(f); return ts.length ? `<section class="panel tk-section"><h3>${g} <span class="hint">${ts.length}</span></h3><ul class="tk-list">${ts.map(row).join("")}</ul></section>` : ""; }).join("")
       : emptyBox("Nada com você agora.", "Quando alguém atribuir uma tarefa a você, ela aparece aqui.", "projetos", "Ver projetos")}</div>`;
 };
@@ -1948,6 +1949,164 @@ document.addEventListener("click", e => { const c = e.target.closest("[data-cons
 document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
 const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Estatísticas de uso</b><br><span class="hint">Deixa a Osmo contar visitas com o Google Analytics, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaChoice() === "sim" ? "checked" : ""}></label>` : "";
 
+// RELÓGIO POMODORO: o "tomate de cozinha" da Osmo. Você trabalha concentrado por um tempo (foco, 25 min),
+// descansa um pouco (pausa curta, 5 min) e, a cada 4 focos, descansa mais (pausa longa, 15 min).
+// Ele tem dois jeitos:
+// - ABERTO: um cartão com o tomate, o tempo grande, o anel que vai esvaziando e os botões;
+// - MINIMIZADO: vira uma bolinha de tomate que flutua por cima do site, como os vídeos que vão para o canto
+//   da tela ou as bolhas de conversa antigas do Facebook no Android. Dá para arrastar com o dedo ou o mouse;
+//   ao soltar, ela gruda na borda mais perto. Se ninguém mexe nela por alguns segundos, ela se esconde
+//   pela metade no canto (e volta inteira ao passar o mouse, tocar ou focar com o teclado).
+// O tempo continua certo mesmo trocando de tela ou recarregando a página: guardamos a HORA EM QUE TERMINA,
+// não um contador. Ao acabar, toca um aviso curto (pode desligar) e o relógio já prepara a próxima fase,
+// mas só começa quando você mandar (ninguém é empurrado para a próxima tarefa sem querer).
+/* ---------- relógio pomodoro (bolha flutuante) ---------- */
+const POMO_MODES = { foco: ["Foco", "Hora de focar"], curta: ["Pausa curta", "Hora de uma pausa curta"], longa: ["Pausa longa", "Hora de uma pausa longa"] };
+const POMO = Object.assign({ on: false, open: true, mode: "foco", running: false, endsAt: 0, left: 25 * 60e3, cycles: 0,
+  mins: { foco: 25, curta: 5, longa: 15 }, sound: true, side: "right", y: null }, store.get("pomo", {}));
+let pomoTick = null, pomoIdle = null, pomoTitle = document.title;
+const pomoSave = () => store.set("pomo", POMO);
+const pomoTotal = () => POMO.mins[POMO.mode] * 60e3;
+const pomoLeft = () => Math.max(0, POMO.running ? POMO.endsAt - Date.now() : POMO.left);
+const pomoFmt = ms => { const s = Math.ceil(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+// o tomate desenhado em SVG: corpo vermelho, folhinhas verdes e o anel de progresso em volta
+const pomoTomato = (size, frac) => { const r = 46, c = 2 * Math.PI * r;
+  return `<svg class="pomo-tomato" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true">
+    <circle cx="50" cy="50" r="${r}" class="pomo-ring-bg"/><circle cx="50" cy="50" r="${r}" class="pomo-ring" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - frac)).toFixed(1)}" transform="rotate(-90 50 50)"/>
+    <ellipse cx="50" cy="55" rx="34" ry="31" class="pomo-body"/><ellipse cx="39" cy="45" rx="9" ry="6" class="pomo-shine"/>
+    <path d="M50 27c-4-6-12-7-16-4 5 1 9 4 11 7-7-1-13 2-15 6 6-2 13-1 18 1 1-3 1-6 2-10z M50 27c4-6 12-7 16-4-5 1-9 4-11 7 7-1 13 2 15 6-6-2-13-1-18 1-1-3-1-6-2-10z" class="pomo-leaf"/>
+    <rect x="48.5" y="18" width="3" height="10" rx="1.5" class="pomo-leaf"/></svg>`; };
+function pomoHTML() {
+  const left = pomoLeft(), frac = left / pomoTotal();
+  if (!POMO.open) return `<button class="pomo-bubble" id="pomoBubble" aria-label="Relógio Pomodoro: ${POMO_MODES[POMO.mode][0]}, faltam ${pomoFmt(left)}${POMO.running ? "" : ", pausado"}. Toque para abrir ou arraste para mover.">
+    ${pomoTomato(64, frac)}<span class="pomo-btime">${pomoFmt(left)}</span>${POMO.running ? "" : `<span class="pomo-paused" aria-hidden="true">❚❚</span>`}</button>`;
+  return `<section class="pomo-panel" role="dialog" aria-label="Relógio Pomodoro">
+    <div class="row" style="justify-content:space-between; flex-wrap:nowrap"><b>Pomodoro</b>
+      <span class="row" style="gap:4px; flex-wrap:nowrap"><button class="icon-btn sm" data-pomo="min" aria-label="Minimizar para a bolinha">–</button><button class="icon-btn sm" data-pomo="close" aria-label="Fechar o relógio">×</button></span></div>
+    <div class="seg pomo-modes" role="group" aria-label="Fase">${Object.keys(POMO_MODES).map(k => `<button type="button" data-pomo-mode="${k}" aria-pressed="${POMO.mode === k}">${POMO_MODES[k][0]}</button>`).join("")}</div>
+    <div class="pomo-face">${pomoTomato(150, frac)}<span class="pomo-time mono" id="pomoTime" aria-live="off">${pomoFmt(left)}</span></div>
+    <p class="hint" style="text-align:center">${POMO.running ? POMO_MODES[POMO.mode][0] + " em andamento" : left < pomoTotal() ? "Pausado" : "Pronto para começar"} · ${POMO.cycles} foco${POMO.cycles === 1 ? "" : "s"} concluído${POMO.cycles === 1 ? "" : "s"}</p>
+    <div class="row" style="justify-content:center; gap:8px"><button class="btn hl" data-pomo="toggle">${POMO.running ? "Pausar" : left < pomoTotal() ? "Continuar" : "Começar"}</button><button class="btn" data-pomo="reset">Recomeçar</button><button class="btn ghost" data-pomo="skip">Pular</button></div>
+    <details class="pomo-cfg"><summary class="hint">Ajustar tempos e som</summary>
+      <div class="pomo-grid">${Object.keys(POMO_MODES).map(k => `<label for="pomo_${k}">${POMO_MODES[k][0]} (min)</label><input class="input" type="number" min="1" max="120" id="pomo_${k}" data-pomo-min="${k}" value="${POMO.mins[k]}">`).join("")}</div>
+      <label class="check"><input type="checkbox" id="pomoSound" ${POMO.sound ? "checked" : ""}><span>Tocar um aviso curto ao terminar</span></label></details>
+    <p class="sr-only" aria-live="polite" id="pomoSay"></p>
+  </section>`;
+}
+// coloca a bolinha (ou o cartão) no lugar: grudada na borda guardada, na altura guardada, sem cobrir a barra de baixo do celular
+function pomoPlace() {
+  const el = $("#pomo"); if (!el) return;
+  const m = 12, bottomBar = matchMedia("(max-width:980px)").matches ? 70 : 0;
+  if (POMO.open) { // aberto: cartão no canto de baixo, do mesmo lado em que a bolinha estava
+    el.style.top = ""; el.style.bottom = (m + bottomBar) + "px";
+    el.style.left = POMO.side === "left" ? m + "px" : ""; el.style.right = POMO.side === "left" ? "" : m + "px"; return; }
+  const size = 72, maxY = innerHeight - size - m - bottomBar, minY = m + 70;
+  const y = Math.min(maxY, Math.max(minY, POMO.y ?? maxY));
+  el.style.bottom = el.style.right = ""; el.style.top = y + "px";
+  el.style.left = (POMO.side === "left" ? m : innerWidth - size - m) + "px";
+}
+function pomoRender() {
+  let el = $("#pomo");
+  if (!POMO.on) { if (el) el.remove(); clearInterval(pomoTick); pomoTick = null; document.title = pomoTitle; return; }
+  if (!el) { el = document.createElement("div"); el.id = "pomo"; document.body.appendChild(el); }
+  el.className = "pomo " + (POMO.open ? "is-open" : "is-bubble") + (POMO.side === "left" ? " on-left" : "");
+  el.innerHTML = pomoHTML(); pomoPlace(); pomoWake();
+  if (!pomoTick) pomoTick = setInterval(pomoStep, 1000);
+}
+// a cada segundo: atualiza o número e o anel (sem redesenhar tudo) e confere se o tempo acabou
+function pomoStep() {
+  if (!POMO.on) return;
+  const left = pomoLeft();
+  if (POMO.running && left <= 0) return pomoDone();
+  const t = $("#pomoTime") || $("#pomo .pomo-btime"); if (t) t.textContent = pomoFmt(left);
+  const ring = $("#pomo .pomo-ring"); if (ring) { const c = 2 * Math.PI * 46; ring.setAttribute("stroke-dashoffset", (c * (1 - left / pomoTotal())).toFixed(1)); }
+  document.title = POMO.running ? `${pomoFmt(left)} · ${POMO_MODES[POMO.mode][0]} · Osmo` : pomoTitle;
+}
+function pomoDone() {
+  const wasFocus = POMO.mode === "foco";
+  if (wasFocus) POMO.cycles++;
+  POMO.mode = wasFocus ? (POMO.cycles % 4 === 0 ? "longa" : "curta") : "foco";
+  POMO.running = false; POMO.left = pomoTotal(); pomoSave();
+  if (POMO.sound) pomoChime();
+  if (navigator.vibrate) try { navigator.vibrate([200, 100, 200]); } catch {}
+  toast(`${wasFocus ? "Foco concluído" : "Pausa concluída"}. ${POMO_MODES[POMO.mode][1]} quando quiser.`);
+  pomoRender(); const say = $("#pomoSay"); if (say) say.textContent = POMO_MODES[POMO.mode][1];
+}
+// aviso sonoro curto e suave, gerado na hora (três notas), sem baixar nenhum arquivo
+function pomoChime() {
+  try { const A = window.AudioContext || window.webkitAudioContext; const ac = new A();
+    [660, 880, 990].forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, ac.currentTime + i * 0.22); g.gain.exponentialRampToValueAtTime(0.18, ac.currentTime + i * 0.22 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + i * 0.22 + 0.2); o.connect(g).connect(ac.destination); o.start(ac.currentTime + i * 0.22); o.stop(ac.currentTime + i * 0.22 + 0.22); });
+  } catch {}
+}
+// recolher no canto: sem mexer por 4 segundos, a bolinha se esconde pela metade na borda
+// (só fica inteira enquanto o mouse está em cima ou quando ela foi focada pelo teclado)
+function pomoWake() {
+  const el = $("#pomo"); if (!el) return;
+  el.classList.remove("docked"); clearTimeout(pomoIdle);
+  if (!POMO.open) pomoIdle = setTimeout(() => { if (!el.matches(":hover") && !el.querySelector(":focus-visible")) el.classList.add("docked"); }, 4000);
+}
+function pomoOpen() { POMO.on = true; POMO.open = true; pomoSave(); pomoRender(); const b = $("#pomo [data-pomo='toggle']"); if (b) b.focus(); }
+document.addEventListener("click", e => {
+  const t = e.target;
+  if (t.closest("[data-pomo-open]")) { if (t.closest("#layer .drawer")) closeA11y(); if (menuOpen) closeMenu(false); return pomoOpen(); }
+  const md = t.closest("[data-pomo-mode]"); if (md) { POMO.mode = md.dataset.pomoMode; POMO.running = false; POMO.left = pomoTotal(); pomoSave(); return pomoRender(); }
+  const a = t.closest("[data-pomo]"); if (!a) return;
+  const act = a.dataset.pomo;
+  if (act === "toggle") { if (POMO.running) { POMO.left = pomoLeft(); POMO.running = false; } else { POMO.endsAt = Date.now() + pomoLeft(); POMO.running = true; } }
+  if (act === "reset") { POMO.running = false; POMO.left = pomoTotal(); }
+  if (act === "skip") { POMO.running = false; POMO.left = 0; pomoSave(); return pomoDone(); }
+  if (act === "min") { POMO.open = false; pomoSave(); pomoRender(); const b = $("#pomoBubble"); if (b) b.focus(); return; }
+  if (act === "close") { POMO.on = false; POMO.running = false; POMO.left = pomoTotal(); }
+  pomoSave(); pomoRender();
+});
+document.addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.pomoMin) { const k = t.dataset.pomoMin, v = Math.min(120, Math.max(1, Math.round(Number(t.value) || POMO.mins[k]))); POMO.mins[k] = v;
+    if (POMO.mode === k && !POMO.running) POMO.left = pomoTotal(); pomoSave(); pomoStep(); }
+  if (t.id === "pomoSound") { POMO.sound = t.checked; pomoSave(); }
+});
+// ARRASTAR A BOLINHA: segura e move (dedo ou mouse). Se andou menos de 6 px, foi um toque: abre o relógio.
+// Ao soltar, ela escolhe a borda mais perto (esquerda ou direita) e desliza até lá, guardando a altura.
+let PDRAG = null;
+document.addEventListener("pointerdown", e => {
+  const b = e.target.closest("#pomoBubble"); if (!b) return;
+  const el = $("#pomo"), r = el.getBoundingClientRect();
+  PDRAG = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved: false };
+  try { b.setPointerCapture(e.pointerId); } catch {} // alguns navegadores recusam a captura; o arrastar funciona do mesmo jeito
+  el.classList.remove("docked"); el.classList.add("dragging"); clearTimeout(pomoIdle);
+});
+document.addEventListener("pointermove", e => {
+  if (!PDRAG || e.pointerId !== PDRAG.id) return;
+  if (Math.hypot(e.clientX - PDRAG.x0, e.clientY - PDRAG.y0) > 6) PDRAG.moved = true;
+  if (!PDRAG.moved) return;
+  const el = $("#pomo"); el.style.left = (e.clientX - PDRAG.dx) + "px"; el.style.top = (e.clientY - PDRAG.dy) + "px";
+});
+document.addEventListener("pointerup", e => {
+  if (!PDRAG || e.pointerId !== PDRAG.id) return;
+  const el = $("#pomo"), d = PDRAG; PDRAG = null; el.classList.remove("dragging");
+  if (!d.moved) { POMO.open = true; pomoSave(); return pomoRender(); }
+  const r = el.getBoundingClientRect();
+  POMO.side = r.left + r.width / 2 < innerWidth / 2 ? "left" : "right"; POMO.y = r.top; pomoSave();
+  el.classList.toggle("on-left", POMO.side === "left"); pomoPlace(); pomoWake();
+});
+document.addEventListener("pointercancel", () => { if (PDRAG) { PDRAG = null; const el = $("#pomo"); if (el) { el.classList.remove("dragging"); pomoPlace(); } } });
+// teclado: com a bolinha focada, as setas levam para o outro lado ou para cima e para baixo
+document.addEventListener("keydown", e => {
+  if (e.target.id !== "pomoBubble") return;
+  const k = e.key; if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) return;
+  e.preventDefault();
+  if (k === "ArrowLeft") POMO.side = "left"; if (k === "ArrowRight") POMO.side = "right";
+  if (k === "ArrowUp" || k === "ArrowDown") POMO.y = ($("#pomo").getBoundingClientRect().top) + (k === "ArrowUp" ? -60 : 60);
+  pomoSave(); $("#pomo").classList.toggle("on-left", POMO.side === "left"); pomoPlace(); pomoWake();
+});
+document.addEventListener("pointerover", e => { if (e.target.closest && e.target.closest("#pomo")) pomoWake(); });
+document.addEventListener("focusin", e => { if (e.target.closest && e.target.closest("#pomo")) pomoWake(); });
+addEventListener("resize", () => { if (POMO.on) pomoPlace(); });
+// se a página recarregar com o relógio ligado, ele volta como estava (e, se o tempo acabou enquanto isso, avisa)
+if (POMO.on) { if (POMO.running && POMO.endsAt <= Date.now()) { POMO.running = false; POMO.left = 0; pomoDone(); } else pomoRender(); }
+
 // TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
 // (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
 /* ---------- tema: claro, escuro ou do sistema (paletas da Osmo em styles.css) ---------- */
@@ -1972,6 +2131,7 @@ function openA11y() {
     <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
+    <button class="btn pomo-open-btn" data-pomo-open="1">🍅 Abrir relógio Pomodoro</button>
     ${themeHTML()}
     ${gaToggleHTML()}
     ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"], ["glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}

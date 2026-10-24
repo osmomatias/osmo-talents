@@ -1022,3 +1022,34 @@ html.glass .consent{background:var(--glass-bg-strong); border-color:var(--glass-
 /* menu de cima: com o item "Tarefas", entre 981 e 1180 px os rótulos ficam curtos para caber numa linha */
 .nav-short{display:none}
 @media (min-width:981px) and (max-width:1180px){ .nav-long{display:none} .nav-short{display:inline} }
+
+/* ---------- relógio Pomodoro: cartão aberto e bolinha flutuante (arrasta, gruda na borda e se recolhe) ----------
+   O tomate é desenhado em SVG; o anel laranja em volta vai esvaziando com o tempo. A bolinha fica por cima de
+   tudo do site (mas abaixo dos painéis de confirmação) e não cobre a barra de navegação do celular. */
+.pomo{position:fixed; z-index:38}
+.pomo.is-bubble{transition:left .28s cubic-bezier(.2,.8,.2,1), top .28s cubic-bezier(.2,.8,.2,1), transform .35s ease, opacity .35s ease}
+.pomo.dragging{transition:none}
+.pomo.docked{transform:translateX(55%); opacity:.72}
+.pomo.on-left.docked{transform:translateX(-55%)}
+.pomo-bubble{position:relative; width:72px; height:72px; padding:0; border:0; border-radius:50%; background:none; cursor:grab; touch-action:none;
+  filter:drop-shadow(0 8px 16px rgb(0 0 0 / .35)); display:grid; place-items:center}
+.pomo.dragging .pomo-bubble{cursor:grabbing; transform:scale(1.08)}
+.pomo-bubble .pomo-tomato{width:72px; height:72px}
+.pomo-btime{position:absolute; left:50%; top:56%; transform:translate(-50%,-50%); font:800 .82rem/1 var(--f-body); color:#fff; text-shadow:0 1px 2px rgb(0 0 0 / .45); font-variant-numeric:tabular-nums; pointer-events:none}
+.pomo-paused{position:absolute; right:2px; top:2px; width:22px; height:22px; border-radius:50%; background:var(--surface); color:var(--fg); font-size:.55rem; display:grid; place-items:center; border:1px solid var(--line); pointer-events:none}
+.pomo-panel{width:min(340px, calc(100vw - 24px)); max-height:calc(100dvh - 120px); overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:16px;
+  background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:24px; box-shadow:0 18px 48px rgb(0 0 0 / .35)}
+html.glass .pomo-panel{background:var(--glass-bg-strong); border-color:var(--glass-line); -webkit-backdrop-filter:var(--glass-blur); backdrop-filter:var(--glass-blur)}
+.pomo-modes{display:flex; margin:0}
+.pomo-modes button{flex:1; padding:6px 8px; font-size:.85rem}
+.pomo-face{position:relative; display:grid; place-items:center; margin:4px auto 0}
+.pomo-time{position:absolute; top:56%; left:50%; transform:translate(-50%,-50%); font-size:1.7rem; font-weight:800; color:#fff; text-shadow:0 1px 3px rgb(0 0 0 / .4)}
+.pomo-ring-bg{fill:none; stroke:var(--line); stroke-width:5}
+.pomo-ring{fill:none; stroke:var(--orange); stroke-width:5; stroke-linecap:round; transition:stroke-dashoffset 1s linear}
+.pomo-body{fill:#E23B2E}
+.pomo-shine{fill:#fff; opacity:.28}
+.pomo-leaf{fill:#2F8A4C}
+.pomo-cfg summary{cursor:pointer}
+.pomo-grid{display:grid; grid-template-columns:minmax(0,1fr) 90px; gap:8px 10px; align-items:center; margin:10px 0}
+.pomo-grid label{font-size:.9rem; font-weight:600}
+.pomo-open-btn{align-self:flex-start}
