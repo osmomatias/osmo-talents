@@ -2114,10 +2114,9 @@ if (POMO.on) { if (POMO.running && POMO.endsAt <= Date.now()) { POMO.running = f
 //   naquela direção (como num menu de TV), OK/Enter clica, e o botão "Voltar" do controle volta uma tela.
 //   Ao abrir cada tela, o foco já vai para o primeiro item, para a pessoa ver onde está;
 // - CELULAR e TABLET: o CSS cuida (campos com letra de 16 px para o iPhone não dar zoom, alvos de toque grandes).
-// Em Ajustes, a pessoa pode corrigir o tipo de tela se a detecção errar.
+// O tipo de tela é sempre automático: não há opção para trocar em Ajustes.
 /* ---------- tipo de tela: celular, tablet, computador ou tv ---------- */
 const DEVICE = document.documentElement.dataset.device || "desktop";
-const DEVICE_NAMES = { phone: "Celular", tablet: "Tablet", desktop: "Computador", tv: "TV" };
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 const isTyping = el => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 // o que está visível de verdade (dentro de um painel aberto, só ele conta)
@@ -2179,18 +2178,6 @@ document.addEventListener("keydown", e => {
   }
   if (spatialMove(e.key)) e.preventDefault();
 });
-// Ajustes: o tipo de tela detectado, com opção de corrigir (a página recarrega para aplicar)
-const deviceHTML = () => {
-  let saved = ""; try { saved = localStorage.getItem("osmo-device") || ""; } catch {}
-  return `<div class="field"><label for="deviceSel">Tipo de tela</label><select class="input" id="deviceSel">
-    <option value="">Automático (${DEVICE_NAMES[document.documentElement.dataset.deviceAuto] || DEVICE_NAMES[DEVICE]})</option>${[["celular", "Celular"], ["tablet", "Tablet"], ["computador", "Computador"], ["tv", "TV (controle remoto)"]].map(([v, l]) => `<option value="${v}" ${saved === v ? "selected" : ""}>${l}</option>`).join("")}</select>
-    <span class="hint">Muda o tamanho das letras e o jeito de navegar. Na TV, use as setas e o OK do controle.</span></div>`;
-};
-document.addEventListener("change", e => {
-  if (e.target.id !== "deviceSel") return;
-  try { e.target.value ? localStorage.setItem("osmo-device", e.target.value) : localStorage.removeItem("osmo-device"); sessionStorage.removeItem("osmo-tela"); } catch {}
-  location.reload();
-});
 
 // TEMA: claro, escuro ou igual ao do sistema. A escolha fica guardada no navegador
 // (osmo-theme) e o theme.js aplica antes da página aparecer, para não piscar.
@@ -2221,7 +2208,6 @@ function openA11y() {
     <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
-      ${deviceHTML()}
       ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
     <section class="adj-group" aria-labelledby="adjRead"><h3 class="label" id="adjRead">Leitura</h3>
       ${sw("big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma")}
