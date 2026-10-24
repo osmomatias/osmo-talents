@@ -1904,18 +1904,21 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
-// GOOGLE ANALYTICS COM PERMISSÃO (LGPD): o Analytics só é carregado depois que a pessoa aceita, no aviso
-// que aparece embaixo da tela. Quem recusa nunca baixa nada do Google. A escolha fica guardada neste
-// navegador e pode ser trocada a qualquer hora em Ajustes.
+// GOOGLE ANALYTICS QUE CONTA DESDE A ENTRADA, COM AVISO DE COOKIES: assim que a pessoa entra no site, a visita
+// já é contada (o Analytics carrega sozinho). Ao mesmo tempo aparece um aviso embaixo da tela, com um cookie
+// desenhado, explicando que usamos cookies de estatística. Quem não quiser clica em "Não quero": o Analytics
+// para na hora, os cookies dele são apagados e ele não carrega mais nas próximas visitas. A escolha fica guardada
+// neste navegador e pode ser trocada a qualquer hora em Ajustes. Anúncios ficam sempre desligados.
 // Cada troca de tela vira uma "visualização de página", mas o endereço enviado é limpo: só o nome da tela
 // e, quando houver, o número (ex.: /vaga/12). Códigos secretos (links de senha, de avisos, de cadastro)
 // nunca saem daqui. As telas do dono (panorama e gestão) não são contadas.
-/* ---------- google analytics (só com consentimento) ---------- */
+/* ---------- google analytics (conta desde a entrada; recusa a qualquer hora) ---------- */
 let GA_ID = "", gaLoaded = false;
 const GA_SKIP = ["panorama", "gestao"];
-const gaChoice = () => store.get("analytics", "");
+const gaChoice = () => store.get("analytics", ""); // "" = ainda não respondeu o aviso (conta), "sim" = entendi, "nao" = não quero
+const gaOn = () => !!GA_ID && gaChoice() !== "nao";
 function gaLoad() {
-  if (gaLoaded || !GA_ID || gaChoice() !== "sim") return;
+  if (gaLoaded || !gaOn()) return;
   gaLoaded = true;
   window.dataLayer = window.dataLayer || [];
   window.gtag = function () { window.dataLayer.push(arguments); };
@@ -1926,28 +1929,45 @@ function gaLoad() {
   document.head.appendChild(s);
 }
 function gaPage(name, id) {
-  if (!gaLoaded || gaChoice() !== "sim" || GA_SKIP.includes(name)) return;
+  if (!gaLoaded || !gaOn() || GA_SKIP.includes(name)) return;
   const path = "/" + name + (/^\d+$/.test(String(id || "")) ? "/" + id : "");
   gtag("event", "page_view", { page_path: path, page_location: location.origin + path, page_title: document.title });
 }
+// apaga os cookies do Google Analytics (_ga, _ga_XXXX) deste site e do domínio principal
+function gaWipe() {
+  const host = location.hostname, parts = host.split("."), domains = ["", host, "." + host];
+  if (parts.length > 2) domains.push("." + parts.slice(-3).join("."), "." + parts.slice(-2).join("."));
+  document.cookie.split(";").map(c => c.trim().split("=")[0]).filter(n => /^_ga/.test(n))
+    .forEach(n => domains.forEach(d => { document.cookie = `${n}=; Max-Age=0; path=/${d ? "; domain=" + d : ""}`; }));
+}
 function gaSet(choice) {
   store.set("analytics", choice);
-  if (choice === "sim") { gaLoad(); gaPage((location.hash.slice(1) || "inicio").split("-")[0], location.hash.split("-")[1]); }
-  else if (gaLoaded) gtag("consent", "update", { analytics_storage: "denied" }); // para de medir na hora; some de vez ao recarregar
+  if (choice === "sim") { const was = gaLoaded; gaLoad(); if (!was) gaPage((location.hash.slice(1) || "inicio").split("-")[0], location.hash.split("-")[1]); }
+  else { if (gaLoaded) gtag("consent", "update", { analytics_storage: "denied" }); gaWipe(); } // para de medir na hora; some de vez ao recarregar
   const b = $("#consent"); if (b) b.remove();
 }
-// o aviso só aparece se o Analytics estiver configurado e a pessoa ainda não tiver escolhido
+// o cookie desenhado: massa dourada com borda tostada, uma mordida, gotas de chocolate e farelinhos caindo
+const COOKIE_SVG = `<svg class="cookie-ico" viewBox="0 0 64 64" aria-hidden="true">
+  <defs><mask id="ckBite"><rect width="64" height="64" fill="#fff"/><circle cx="53" cy="12" r="9" fill="#000"/><circle cx="60.5" cy="23" r="6.5" fill="#000"/><circle cx="44" cy="5" r="5" fill="#000"/></mask></defs>
+  <g mask="url(#ckBite)"><circle class="ck-edge" cx="31" cy="34" r="27"/><circle class="ck-dough" cx="31" cy="34" r="24"/>
+    <ellipse class="ck-chip" cx="19" cy="24" rx="4" ry="3.3" transform="rotate(-18 19 24)"/><ellipse class="ck-chip" cx="31" cy="35" rx="3.7" ry="3.1"/>
+    <ellipse class="ck-chip" cx="17" cy="42" rx="3.3" ry="2.8" transform="rotate(20 17 42)"/><ellipse class="ck-chip" cx="40" cy="47" rx="3.8" ry="3.1" transform="rotate(-10 40 47)"/>
+    <ellipse class="ck-chip" cx="29" cy="17" rx="2.6" ry="2.1"/><circle class="ck-chip" cx="45" cy="32" r="2.3"/><circle class="ck-chip" cx="26" cy="51" r="2"/>
+    <circle class="ck-dot" cx="37" cy="25" r="1"/><circle class="ck-dot" cx="22" cy="33" r="1"/><circle class="ck-dot" cx="34" cy="44" r="1"/><circle class="ck-dot" cx="48" cy="42" r=".9"/></g>
+  <circle class="ck-crumb" cx="51" cy="18" r="1.7"/><circle class="ck-crumb" cx="55.5" cy="27" r="1.2"/><path class="ck-crumb" d="M46 11.5l2.5-.7 1 2.2-2.4 1.1z"/>
+  <circle class="ck-crumb" cx="58" cy="33" r=".9"/><path class="ck-crumb" d="M54 6.5l1.9.3-.4 1.7-1.7-.5z"/></svg>`;
+// o aviso aparece para quem ainda não respondeu; a contagem já está valendo enquanto isso
 function gaBanner() {
   if (!GA_ID || gaChoice() || $("#consent")) return;
   const b = document.createElement("div");
-  b.id = "consent"; b.className = "consent"; b.setAttribute("role", "region"); b.setAttribute("aria-label", "Estatísticas de uso");
-  b.innerHTML = `<p>Podemos usar o Google Analytics para entender quais telas ajudam e quais confundem? Só contamos visitas, sem seus dados de conta. <a href="/privacidade">Privacidade</a></p>
-    <div class="row" style="gap:8px; flex-wrap:nowrap"><button class="btn sm" data-consent="nao">Agora não</button><button class="btn sm hl" data-consent="sim">Pode usar</button></div>`;
+  b.id = "consent"; b.className = "consent"; b.setAttribute("role", "region"); b.setAttribute("aria-label", "Aviso de cookies");
+  b.innerHTML = `${COOKIE_SVG}<p><b>Usamos cookies de estatística.</b> O Google Analytics conta as visitas para entendermos quais telas ajudam e quais confundem. Nada de anúncios nem dos seus dados de conta. <a href="/privacidade">Privacidade</a></p>
+    <div class="row consent-actions"><button class="btn sm" data-consent="nao">Não quero</button><button class="btn sm hl" data-consent="sim">Entendi</button></div>`;
   document.body.appendChild(b);
 }
-document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado! Estatísticas ligadas" : "Tudo bem, nada será medido"); } });
+document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado!" : "Pronto, cookies de estatística desligados"); } });
 document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
-const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Estatísticas de uso</b><br><span class="hint">Deixa a Osmo contar visitas com o Google Analytics, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaChoice() === "sim" ? "checked" : ""}></label>` : "";
+const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Cookies de estatística</b><br><span class="hint">O Google Analytics conta as visitas para melhorarmos a plataforma, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaOn() ? "checked" : ""}></label>` : "";
 
 // RELÓGIO POMODORO: o "tomate de cozinha" da Osmo. Você trabalha concentrado por um tempo (foco, 25 min),
 // descansa um pouco (pausa curta, 5 min) e, a cada 4 focos, descansa mais (pausa longa, 15 min).

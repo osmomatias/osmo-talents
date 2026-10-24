@@ -1095,3 +1095,18 @@ html[data-device="tv"] :focus-visible,html[data-device="tv"] :focus{outline:4px 
 html[data-device="tv"] :is(.job,.talent,.cat,.tk-card,.tk-pcard,.btn,.nav button):focus{transform:scale(1.04); transition:transform .15s ease}
 html.calm[data-device="tv"] :is(.job,.talent,.cat,.tk-card,.tk-pcard,.btn,.nav button):focus{transform:none}
 html[data-device="tv"] .drawer{width:min(40vw,100%)}
+
+/* ---------- aviso de cookies: cookie desenhado (massa dourada, borda tostada, gotas de chocolate e farelinhos) ---------- */
+.consent{align-items:center}
+.cookie-ico{width:48px; height:48px; flex:none; filter:drop-shadow(0 3px 4px rgb(0 0 0 / .25))}
+.ck-edge{fill:#B8763A}
+.ck-dough{fill:#DFA65F}
+.ck-chip{fill:#4A2914}
+.ck-dot{fill:#F6D59C; opacity:.75}
+.ck-crumb{fill:#C98B46}
+.consent-actions{gap:8px; flex-wrap:nowrap; flex:none}
+@media (max-width:600px){
+  .consent{display:grid; grid-template-columns:44px minmax(0,1fr); gap:10px 12px}
+  .consent .cookie-ico{width:40px; height:40px; align-self:start}
+  .consent-actions{grid-column:1 / -1; justify-content:flex-end}
+}
