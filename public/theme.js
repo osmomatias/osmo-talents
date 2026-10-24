@@ -6,7 +6,7 @@
 // todo branco antes de ficar escuro. Isso dá um "flash" chato nos olhos.
 // Então este arquivo pequenininho corre na frente e já liga:
 // - o tema (escuro é o padrão; claro ou "igual ao sistema" se a pessoa escolheu);
-// - as preferências de Conforto (texto maior, mais espaço, sem animações, modo foco);
+// - as preferências de Ajustes (texto maior, mais espaço, sem animações, modo foco);
 // - o vidro líquido (desligado para quem pediu menos transparência no sistema);
 // - o cabeçalho grande do topo.
 // Ele só coloca "etiquetas" (classes e atributos) no <html>; quem muda as cores e
@@ -14,7 +14,7 @@
 // O try/catch é um "se der errado, tudo bem": em janela anônima o navegador às vezes
 // não deixa ler o que foi guardado, e aí ficamos com os valores padrão.
 // Aplica o tema escolhido (claro, escuro ou do sistema) e o vidro líquido antes de a página aparecer, para não piscar.
-// As escolhas são feitas em Conforto e ficam salvas neste navegador.
+// As escolhas são feitas em Ajustes e ficam salvas neste navegador.
 (function () {
   var r = document.documentElement;
   try {

@@ -684,14 +684,14 @@ html.glass .psec-b>.panel{border:0; background:none; box-shadow:none; -webkit-ba
 .theme-seg{display:flex}
 .theme-seg button{flex:1; min-height:44px}
 
-/* VIDRO LÍQUIDO (só vale com a classe "glass" no <html>; desliga em Conforto):
+/* VIDRO LÍQUIDO (só vale com a classe "glass" no <html>; desliga em Ajustes):
    - potes de tinta novos: brancos e vinhos meio transparentes, brilho na borda, sombra;
    - o fundo ganha "manchas de luz" paradas nas cores da marca;
    - painéis, botões e barras ficam translúcidos com backdrop-filter: blur, que DESFOCA o que
      está atrás, como um vidro fosco de banheiro;
    - no final, um plano B: se o navegador não sabe desfocar, o vidro fica mais opaco para o
      texto continuar fácil de ler. */
-/* ---------- vidro líquido: superfícies translúcidas sobre um fundo com luz da marca (desliga em Conforto) ---------- */
+/* ---------- vidro líquido: superfícies translúcidas sobre um fundo com luz da marca (desliga em Ajustes) ---------- */
 :root{
   --glass-bg:rgb(255 255 255 / .58); --glass-bg-strong:rgb(255 255 255 / .78); --glass-sunken:rgb(122 11 60 / .06);
   --glass-line:rgb(255 255 255 / .7); --glass-edge:rgb(122 11 60 / .1);
@@ -1053,3 +1053,9 @@ html.glass .pomo-panel{background:var(--glass-bg-strong); border-color:var(--gla
 .pomo-grid{display:grid; grid-template-columns:minmax(0,1fr) 90px; gap:8px 10px; align-items:center; margin:10px 0}
 .pomo-grid label{font-size:.9rem; font-weight:600}
 .pomo-open-btn{align-self:flex-start}
+
+/* ---------- painel de Ajustes: preferências agrupadas (aparência, leitura, foco e movimento, privacidade) ---------- */
+.adj-group{display:flex; flex-direction:column; gap:4px; padding-top:6px}
+.adj-group>h3.label{margin:6px 0 2px}
+.adj-group .toggle:last-child{border-bottom:0}
+.adj-group+.adj-group{border-top:1px solid var(--line); padding-top:12px}

@@ -189,7 +189,7 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 // - ME: quem está logado (ou null se ninguém);
 // - PAY, OAUTH, MAIL: como a plataforma está configurada (pagamentos, botões de login, e-mail);
 // - S: os filtros de busca escolhidos (palavra, área, só briefing claro...);
-// - PREFS: as preferências de Conforto (texto maior, sem animações, vidro líquido...);
+// - PREFS: as preferências de Ajustes (texto maior, sem animações, vidro líquido...);
 // - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
 //   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
@@ -244,7 +244,7 @@ function renderChrome() {
   $$("[data-unread]").forEach(b => { b.hidden = !unread; b.textContent = unread; });
   const top = $("#topActions");
   const pub = !ME || ME.role === "cliente" ? `<button class="btn sm hl" data-go="publicar">Publicar<span class="only-d"> vaga</span></button>` : "";
-  top.innerHTML = `<button class="btn sm" id="a11yBtn" aria-haspopup="dialog">Conforto</button>
+  top.innerHTML = `<button class="btn sm" id="a11yBtn" aria-haspopup="dialog">Ajustes</button>
     ${ME ? `<button class="whoami" data-go="perfil" title="Meu perfil">${esc(ME.name.split(" ")[0])}</button>` : `<button class="btn sm" data-go="entrar">Entrar</button>`}
     ${pub}
     <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
@@ -257,8 +257,7 @@ function renderChrome() {
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
-      <button class="btn" data-pomo-open="1">🍅 Relógio Pomodoro</button>
-      <button class="btn" id="mmA11y">Ajustes de conforto</button>
+      <button class="btn" id="mmA11y">Ajustes</button>
       ${ME ? `<button class="btn ghost" data-act="logout">Sair da conta</button>` : ""}
     </div>`;
   // barra de navegação embaixo (só em telas pequenas; o CSS decide quando aparece)
@@ -395,7 +394,7 @@ V.inicio = async () => {
   <div class="principles">
     <div class="principle"><h3>Sem adivinhação</h3><p class="muted">Só é possível publicar vaga com pelo menos metade do briefing preenchido. A nota de clareza fica visível para todos.</p></div>
     <div class="principle"><h3>Propor não custa nada</h3><p class="muted">Sem créditos nem taxa por proposta. O limite de propostas abertas acompanha a capacidade que você declara.</p></div>
-    <div class="principle"><h3>Interface calma</h3><p class="muted">Sem contadores piscando nem pressa artificial. Ajuste tamanho de texto, espaçamento e movimento em Conforto.</p></div>
+    <div class="principle"><h3>Interface calma</h3><p class="muted">Sem contadores piscando nem pressa artificial. Ajuste tamanho de texto, espaçamento e movimento em Ajustes.</p></div>
     <div class="principle"><h3>Comunicação combinada antes</h3><p class="muted">Cada conversa tem um resumo fixo do que foi combinado, editável pelos dois lados.</p></div>
   </div>
 </section>`;
@@ -1906,7 +1905,7 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
 
 // GOOGLE ANALYTICS COM PERMISSÃO (LGPD): o Analytics só é carregado depois que a pessoa aceita, no aviso
 // que aparece embaixo da tela. Quem recusa nunca baixa nada do Google. A escolha fica guardada neste
-// navegador e pode ser trocada a qualquer hora em Conforto.
+// navegador e pode ser trocada a qualquer hora em Ajustes.
 // Cada troca de tela vira uma "visualização de página", mas o endereço enviado é limpo: só o nome da tela
 // e, quando houver, o número (ex.: /vaga/12). Códigos secretos (links de senha, de avisos, de cadastro)
 // nunca saem daqui. As telas do dono (panorama e gestão) não são contadas.
@@ -2124,17 +2123,27 @@ const themeHTML = () => { const cur = getTheme(); return `<div class="field"><sp
 // CONFORTO: as preferências de acessibilidade (texto maior, mais espaço entre linhas, sem
 // animações, modo foco, vidro líquido). Cada uma liga uma "classe" no <html>, e o styles.css
 // muda o visual quando a classe está ligada.
-/* ---------- conforto ---------- */
+/* ---------- ajustes (antes "Conforto") ---------- */
 function applyPrefs() { const r = document.documentElement; ["big", "airy", "calm", "focus", "glass"].forEach(k => r.classList.toggle(k, !!PREFS[k])); store.set("prefs", PREFS); }
 function openA11y() {
-  $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer" role="dialog" aria-modal="true" aria-label="Conforto">
+  // cada interruptor de preferência: nome, explicação curta e a chave guardada em PREFS
+  const sw = (k, name, hint) => `<label class="toggle"><span><b>${name}</b><br><span class="hint">${hint}</span></span><input type="checkbox" class="sw" data-pref="${k}" ${PREFS[k] ? "checked" : ""}></label>`;
+  const ga = gaToggleHTML();
+  $("#layer").innerHTML = `<div class="scrim" id="scrim"></div><div class="drawer" role="dialog" aria-modal="true" aria-label="Ajustes">
     <div class="sheet-grip" aria-hidden="true"></div>
-    <div class="row" style="justify-content:space-between"><h2>Conforto</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
-    <p class="muted">Ajuste a interface ao seu jeito. Fica salvo neste navegador.</p>
-    <button class="btn pomo-open-btn" data-pomo-open="1">🍅 Abrir relógio Pomodoro</button>
-    ${themeHTML()}
-    ${gaToggleHTML()}
-    ${[["big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma"], ["airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos"], ["calm", "Sem animações", "Remove transições e movimentos"], ["focus", "Modo foco", "Esconde painéis laterais e informações extras"], ["glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste"]].map(o => `<label class="toggle"><span><b>${o[1]}</b><br><span class="hint">${o[2]}</span></span><input type="checkbox" class="sw" data-pref="${o[0]}" ${PREFS[o[0]] ? "checked" : ""}></label>`).join("")}
+    <div class="row" style="justify-content:space-between"><h2>Ajustes</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
+    <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
+    <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
+      ${themeHTML()}
+      ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
+    <section class="adj-group" aria-labelledby="adjRead"><h3 class="label" id="adjRead">Leitura</h3>
+      ${sw("big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma")}
+      ${sw("airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos")}</section>
+    <section class="adj-group" aria-labelledby="adjFocus"><h3 class="label" id="adjFocus">Foco e movimento</h3>
+      ${sw("focus", "Modo foco", "Esconde painéis laterais e informações extras")}
+      ${sw("calm", "Sem animações", "Remove transições e movimentos")}
+      <div class="toggle"><span><b>Relógio Pomodoro</b><br><span class="hint">Blocos de foco e pausa, numa bolinha que fica no canto da tela</span></span><button class="btn sm" data-pomo-open="1">🍅 Abrir</button></div></section>
+    ${ga ? `<section class="adj-group" aria-labelledby="adjPriv"><h3 class="label" id="adjPriv">Privacidade</h3>${ga}</section>` : ""}
   </div>`;
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);
@@ -2174,7 +2183,7 @@ document.addEventListener("keydown", e => {
 
 // HORA DE COMEÇAR! Quando a página abre:
 // - a cada 30 s (se a aba estiver à vista), pergunta "quem sou eu?" para atualizar avisos;
-// - aplica as preferências de Conforto;
+// - aplica as preferências de Ajustes;
 // - liga o cabeçalho que diminui ao rolar a página;
 // - se voltou do Google com erro, guarda a mensagem e limpa o endereço;
 // - carrega quem está logado E as categorias ao mesmo tempo e então desenha a primeira tela.

@@ -209,7 +209,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 **O site (o garçom, roda no navegador)**
 - `public/index.html`: o esqueleto da página (cabeçalho, espaço do meio, rodapé).
 - `public/app.js`: desenha cada tela, escuta cliques e digitação e leva os pedidos ao servidor.
-- `public/theme.js`: liga o tema escuro e as preferências de Conforto antes de a página aparecer, para não piscar.
+- `public/theme.js`: liga o tema escuro e as preferências de Ajustes antes de a página aparecer, para não piscar.
 - `public/styles.css`: as roupas do site (cores, letras, tamanhos, celular, tablet e telas grandes).
 - `public/fonts.css`: onde entra a fonte oficial DIN Pro, quando os arquivos dela forem colocados no projeto.
 - `public/termos.html` e `public/privacidade.html`: as páginas de regras, já prontas com o texto.
