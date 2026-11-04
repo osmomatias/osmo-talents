@@ -268,7 +268,7 @@ function renderChrome() {
   markNav();
 }
 function markNav() {
-  const name = (location.hash.slice(1) || "inicio").split("-")[0];
+  const name = curH().split("-")[0];
   $$("#nav button, #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
     const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name));
@@ -276,17 +276,57 @@ function markNav() {
   });
 }
 
-// O ROTEADOR (o mapa das telas): olha o que vem depois do "#" no endereço e chama a função
-// que desenha aquela tela. Exemplo: "#vaga-12" chama V.vaga(12).
-// - go("vagas") muda o endereço para #vagas (e a tela muda junto);
+// O ROTEADOR (o mapa das telas): olha o endereço e chama a função que desenha aquela tela.
+// Exemplo: "/vagas/12" chama V.vaga(12). Por dentro, cada tela continua com um nome curto
+// ("vaga-12"); hToPath e pathToH traduzem entre o nome curto e o endereço de verdade.
+// - go("vagas") muda o endereço para /vagas sem recarregar a página (e a tela muda junto);
+// - voltar e avançar do navegador funcionam (popstate);
+// - links antigos com "#" (de e-mails já enviados) são convertidos para o endereço novo;
 // - needLogin: se a tela pede login e ninguém entrou, manda para "Entrar" e lembra para onde
 //   a pessoa queria ir, para voltar lá depois;
 // - se a tela demora mais de 150 ms, mostra "blocos de carregamento" no formato do conteúdo;
 // - se o servidor disser "você não está logado" (401), manda para Entrar.
 /* ---------- roteador ---------- */
-function go(h) { if (location.hash === "#" + h) route(); else location.hash = h; }
+// Códigos secretos (recuperar senha, desligar avisos, escolher perfil) ficam depois do "#":
+// essa parte nunca sai do navegador, então não aparece nos registros do servidor nem da Cloudflare.
+const ID_PATHS = { vaga: "vagas", talento: "talentos", mensagens: "mensagens", contrato: "contratos", projeto: "projetos" };
+const SECRET = ["recuperar", "avisos", "escolher"];
+// endereços que são telas do app (o servidor usa a mesma lista para entregar o site em vez da 404)
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
+function hToPath(h) {
+  const i = h.indexOf("-"), name = i < 0 ? h : h.slice(0, i), id = i < 0 ? "" : h.slice(i + 1);
+  if (!name || name === "inicio") return "/";
+  if (SECRET.includes(name)) return `/${name}${id ? "#" + id : ""}`;
+  if (name === "proposta") return `/vagas/${id}/proposta`;
+  if (ID_PATHS[name] && id) return `/${ID_PATHS[name]}/${id}`;
+  return "/" + name;
+}
+function pathToH(pathname, hash) {
+  const p = pathname.replace(/\/+$/, "") || "/", code = (hash || "").slice(1);
+  if (p === "/") return "inicio";
+  let m = p.match(/^\/vagas\/(\d+)\/proposta$/);
+  if (m) return "proposta-" + m[1];
+  m = p.match(/^\/(vagas|talentos|mensagens|contratos|projetos)\/(\d+)$/);
+  if (m) return Object.keys(ID_PATHS).find(k => ID_PATHS[k] === m[1]) + "-" + m[2];
+  const name = p.slice(1);
+  return SECRET.includes(name) && code ? name + "-" + code : name;
+}
+const curH = () => pathToH(location.pathname, location.hash);
+const url = h => hToPath(h); // para links: href="${url("vaga-" + id)}"
+function go(h) {
+  const p = hToPath(h);
+  if (p !== location.pathname + location.hash) history.pushState(null, "", p);
+  route();
+}
+// link antigo "osmo.com.br/#vaga-12" vira "osmo.com.br/vagas/12" (sem criar entrada nova no histórico)
+function fixLegacyHash() {
+  if (location.pathname !== "/" || location.hash.length < 2) return false;
+  const old = location.hash.slice(1), name = old.split("-")[0];
+  if (!V[name]) return false;
+  history.replaceState(null, "", hToPath(old)); return true;
+}
 function needLogin(role) {
-  if (!ME) { S.next = location.hash.slice(1); go("entrar"); return true; }
+  if (!ME) { S.next = curH(); go("entrar"); return true; }
   if (role && ME.role !== role) { $("#view").innerHTML = emptyBox(role === "cliente" ? "Esta área é para contas de cliente." : "Esta área é para contas de freelancer.", "Você está com uma conta de " + (ME.role === "cliente" ? "cliente" : "freelancer") + ".", "inicio", "Ir para o início"); return true; }
   return false;
 }
@@ -299,7 +339,7 @@ async function route() {
   checkVersion();
   clearInterval(pollTimer);
   const seq = ++renderSeq;
-  const h = location.hash.slice(1) || "inicio";
+  const h = curH();
   const [name, idStr] = h.split("-"); const id = Number(idStr) || null;
   const fn = V[name] || V.inicio;
   markNav();
@@ -312,7 +352,8 @@ async function route() {
     $("#view").innerHTML = html; SHOWN = h;
     window.scrollTo(0, 0);
     after[name] && after[name](id);
-    gaPage(name, id);
+    setPageTitle(name);
+    gaPage(name);
     tvFocusFirst();
   } catch (e) {
     clearTimeout(skT);
@@ -321,7 +362,23 @@ async function route() {
     $("#view").innerHTML = emptyBox("Não deu para abrir esta página.", e.message, "inicio", "Voltar ao início");
   }
 }
-window.addEventListener("hashchange", route);
+window.addEventListener("popstate", route);
+window.addEventListener("hashchange", () => { if (fixLegacyHash()) route(); });
+// links <a href="/vagas/12"> dentro do site trocam de tela sem recarregar (Ctrl/Cmd+clique continua abrindo em outra aba)
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("a[href]");
+  if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.hasAttribute("download")) return;
+  const u = new URL(a.getAttribute("href"), location.href);
+  if (u.origin !== location.origin || (u.pathname !== "/" && !APP_PATH.test(u.pathname))) return; // arquivos, /privacidade, /api... seguem normal
+  e.preventDefault(); go(pathToH(u.pathname, u.hash));
+}, true);
+// título da aba: o título da tela (ex.: "Identidade visual para cafeteria · Osmo Talents")
+function setPageTitle(name) {
+  const h1 = $("#view h1") || $("#view h2"), t = h1 ? h1.textContent.replace(/\s+/g, " ").trim() : "";
+  const title = t && name !== "inicio" ? `${t} · Osmo Talents` : "Osmo Talents";
+  if (typeof pomoTitle !== "undefined") pomoTitle = title; // o Pomodoro devolve este título quando para
+  if (!(typeof POMO !== "undefined" && POMO.on && POMO.running)) document.title = title;
+}
 // SKELETON: os "blocos cinza" que aparecem enquanto a tela carrega, com o formato aproximado
 // de cada tela. Ficam parados de propósito (sem piscar), para não incomodar.
 // V é a caixa onde moram as funções de cada tela; "after" guarda o que fazer DEPOIS que uma
@@ -460,7 +517,7 @@ V.esqueci = async () => `<div class="auth stack">
   <button class="btn ghost" data-go="entrar">Voltar para entrar</button></div>`;
 
 V.recuperar = async () => {
-  const token = location.hash.split("-")[1] || "";
+  const token = curH().split("-")[1] || "";
   let d;
   try { d = await api("GET", "/api/auth/reset?token=" + encodeURIComponent(token)); }
   catch (e) { return `<div class="auth stack">${emptyBox("Esse link não funciona mais.", e.status === 404 ? "Ele vale por 1 hora e só pode ser usado uma vez. Peça um link novo." : e.message, "esqueci", "Pedir link novo")}</div>`; }
@@ -478,7 +535,7 @@ V.recuperar = async () => {
 // Quem entrou pela primeira vez com o Google escolhe aqui: quero trabalhar ou quero contratar.
 /* ---------- escolher perfil (conta nova pelo login social) ---------- */
 V.escolher = async () => {
-  const token = (location.hash.split("-")[1] || "");
+  const token = (curH().split("-")[1] || "");
   const d = await api("GET", "/api/auth/oauth/pending?token=" + encodeURIComponent(token));
   return `<div class="auth stack">
     <div><span class="label">Quase lá</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Olá${d.name ? ", " + esc(d.name.split(" ")[0]) : ""}!</h1>
@@ -783,7 +840,7 @@ function bubbles() {
 function convoHTML() {
   const t = TH.thread;
   return `<div class="convo-head"><button class="back only-m" data-go="mensagens" style="margin:0">← Conversas</button>
-      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}${vbadge(t.with.role === "freela" && t.with.verified)}</b><p class="hint">${t.job ? `<a href="#vaga-${t.job.id}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
+      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}${vbadge(t.with.role === "freela" && t.with.verified)}</b><p class="hint">${t.job ? `<a href="${url("vaga-" + (t.job.id))}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
       ${t.with.how && t.with.how.resp ? `<span class="chip accent">${esc(t.with.how.resp)}</span>` : ""}</div>
     <div class="pin" id="pinBox"><b>Combinado até agora:</b> <span id="pinText">${esc(t.pin) || "Nada registrado ainda."}</span> <button class="btn sm ghost" data-act="pin-edit" style="padding:2px 8px">Editar</button></div>
     <div class="bubbles" id="bubbles" aria-live="polite">${bubbles()}</div>
@@ -858,8 +915,8 @@ V.painel = async () => {
   const [cs, extra] = await Promise.all([api("GET", "/api/contracts"), isF ? api("GET", "/api/me/proposals") : api("GET", "/api/me/jobs")]);
   const st = cs.stats;
   const contracts = cs.contracts.length ? cs.contracts.map(c => `<div class="panel">
-    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px"><a class="btn sm" href="#contrato-${c.id}">Tarefas</a>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
-    <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="#mensagens-${c.thread}">Abrir conversa</a></p>
+    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px"><a class="btn sm" href="${url("contrato-" + (c.id))}">Tarefas</a>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
+    <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="${url("mensagens-" + (c.thread))}">Abrir conversa</a></p>
     ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
     ${c.status === "concluido" ? reviewBox(c) : ""}
   </div>`).join("") : emptyBox("Nenhum contrato ainda.", isF ? "Quando um cliente aceitar sua proposta, o contrato aparece aqui." : "Quando você aceitar uma proposta, o contrato aparece aqui.");
@@ -869,9 +926,9 @@ V.painel = async () => {
       <div class="row" style="justify-content:space-between"><h3>Como está sua energia esta semana?</h3><span class="hint">Só você vê. Ajusta quantas propostas você pode ter abertas.</span></div>
       <div class="energy" role="group" aria-label="Energia">${[["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]].map(e => `<button data-energy="${e[0]}" aria-pressed="${ME.energy === e[0]}">${e[1]}</button>`).join("")}</div>
       <p class="hint">Propostas aguardando resposta: <b class="mono">${extra.open} de ${extra.cap}</b>.</p></div>
-    <section class="stack" style="gap:12px"><h2>Minhas propostas</h2>${extra.proposals.length ? `<div class="panel stack" style="gap:0">${extra.proposals.map(p => `<div class="ms" style="grid-template-columns:minmax(0,1fr) auto"><div><a href="#vaga-${p.job_id}"><b>${esc(p.job_title)}</b></a><p class="hint">${esc(p.client_name)} · ${when(p.created_at)} · <span class="mono">${brl(p.value)}</span></p></div><div class="row">${pill(PSTATUS, p.status)}${p.status === "enviada" ? `<button class="btn sm ghost" data-act="withdraw" data-id="${p.id}">Retirar</button>` : ""}</div></div>`).join("")}</div>` : emptyBox("Você ainda não enviou propostas.", "", "vagas", "Ver vagas abertas")}</section>`;
+    <section class="stack" style="gap:12px"><h2>Minhas propostas</h2>${extra.proposals.length ? `<div class="panel stack" style="gap:0">${extra.proposals.map(p => `<div class="ms" style="grid-template-columns:minmax(0,1fr) auto"><div><a href="${url("vaga-" + (p.job_id))}"><b>${esc(p.job_title)}</b></a><p class="hint">${esc(p.client_name)} · ${when(p.created_at)} · <span class="mono">${brl(p.value)}</span></p></div><div class="row">${pill(PSTATUS, p.status)}${p.status === "enviada" ? `<button class="btn sm ghost" data-act="withdraw" data-id="${p.id}">Retirar</button>` : ""}</div></div>`).join("")}</div>` : emptyBox("Você ainda não enviou propostas.", "", "vagas", "Ver vagas abertas")}</section>`;
   } else {
-    side = `<section class="stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h2>Minhas vagas</h2><button class="btn sm hl" data-go="publicar">Publicar vaga</button></div>${extra.jobs.length ? `<div class="panel stack" style="gap:0">${extra.jobs.map(j => `<div class="ms" style="grid-template-columns:minmax(0,1fr) auto"><div><a href="#vaga-${j.id}"><b>${esc(j.title)}</b></a><p class="hint">${when(j.created_at)} · ${j.proposals} ${j.proposals === 1 ? "proposta" : "propostas"} · ${j.clarity}% claro</p></div>${pill(JSTATUS, j.status)}</div>`).join("")}</div>` : emptyBox("Você ainda não publicou vagas.", "Uma vaga clara recebe propostas mais certeiras.", "publicar", "Publicar a primeira vaga")}</section>`;
+    side = `<section class="stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h2>Minhas vagas</h2><button class="btn sm hl" data-go="publicar">Publicar vaga</button></div>${extra.jobs.length ? `<div class="panel stack" style="gap:0">${extra.jobs.map(j => `<div class="ms" style="grid-template-columns:minmax(0,1fr) auto"><div><a href="${url("vaga-" + (j.id))}"><b>${esc(j.title)}</b></a><p class="hint">${when(j.created_at)} · ${j.proposals} ${j.proposals === 1 ? "proposta" : "propostas"} · ${j.clarity}% claro</p></div>${pill(JSTATUS, j.status)}</div>`).join("")}</div>` : emptyBox("Você ainda não publicou vagas.", "Uma vaga clara recebe propostas mais certeiras.", "publicar", "Publicar a primeira vaga")}</section>`;
   }
   return `<div class="listhead" style="margin-bottom:20px"><div><h2>Painel</h2><p class="muted">O que está em andamento e o que vem a seguir.</p></div></div>
 <div class="stats" style="margin-bottom:24px">
@@ -921,7 +978,7 @@ V.panorama = async () => {
   <div class="row" style="justify-content:space-between; align-items:flex-end">
     <div><span class="label">Só para a Osmo</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Panorama da plataforma</h1>
       <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
-    <div class="row" style="gap:6px"><a class="btn sm hl" href="#gestao">Gerenciar dados</a><a class="btn sm" href="#projetos">Projetos</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+    <div class="row" style="gap:6px"><a class="btn sm hl" href="/gestao">Gerenciar dados</a><a class="btn sm" href="/projetos">Projetos</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
   </div>
 
   <div class="adm-kpis">
@@ -962,17 +1019,17 @@ V.panorama = async () => {
   <h2>Precisa de atenção</h2>
   <div class="adm-two">
     ${admList("Entregas sem resposta há 3+ dias", a.deliveredWaiting, x => `<li><b>${esc(x.title)}</b> · ${brl(x.value)}<br><span class="hint">${esc(x.job)} · ${esc(x.client)} ainda não aprovou · entregue ${when(x.at)}</span></li>`, "Nenhuma entrega esperando aprovação.")}
-    ${admList("Propostas sem resposta há 7+ dias", a.proposalsWaiting, x => `<li><a href="#vaga-${x.job_id}"><b>${esc(x.job)}</b></a> · ${brl(x.value)}<br><span class="hint">${esc(x.freela)} · enviada ${when(x.at)}</span></li>`, "Todas as propostas recentes tiveram resposta.")}
-    ${admList("Vagas abertas há 7+ dias sem proposta", a.jobsNoProposal, x => `<li><a href="#vaga-${x.id}"><b>${esc(x.title)}</b></a> · ${x.clarity}% claro<br><span class="hint">${esc(x.client)} · publicada ${when(x.at)}</span></li>`, "Toda vaga aberta já recebeu proposta.")}
+    ${admList("Propostas sem resposta há 7+ dias", a.proposalsWaiting, x => `<li><a href="${url("vaga-" + (x.job_id))}"><b>${esc(x.job)}</b></a> · ${brl(x.value)}<br><span class="hint">${esc(x.freela)} · enviada ${when(x.at)}</span></li>`, "Todas as propostas recentes tiveram resposta.")}
+    ${admList("Vagas abertas há 7+ dias sem proposta", a.jobsNoProposal, x => `<li><a href="${url("vaga-" + (x.id))}"><b>${esc(x.title)}</b></a> · ${x.clarity}% claro<br><span class="hint">${esc(x.client)} · publicada ${when(x.at)}</span></li>`, "Toda vaga aberta já recebeu proposta.")}
     ${d.config.payments ? admList("Cobranças aguardando pagamento", a.unpaid, x => `<li><b>${esc(x.title)}</b> · ${brl(x.value)}<br><span class="hint">${esc(x.job)} · ${esc(x.client)}</span></li>`, "Nenhuma cobrança em aberto.") : ""}
   </div>
 
   <h2>Últimas novidades</h2>
   <div class="panel adm-table"><h3>Cadastros</h3><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Quando</th></tr></thead><tbody>
-    ${d.recent.users.map(u => `<tr><td>${u.role === "freela" ? `<a href="#talento-${u.id}">${esc(u.name)}</a>` : esc(u.name)}${vbadge(u.verified)}</td><td>${esc(u.email)}</td><td>${u.role === "freela" ? "Freela" : "Cliente"}</td><td>${when(u.at)}</td></tr>`).join("")}
+    ${d.recent.users.map(u => `<tr><td>${u.role === "freela" ? `<a href="${url("talento-" + (u.id))}">${esc(u.name)}</a>` : esc(u.name)}${vbadge(u.verified)}</td><td>${esc(u.email)}</td><td>${u.role === "freela" ? "Freela" : "Cliente"}</td><td>${when(u.at)}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="panel adm-table"><h3>Vagas</h3><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Situação</th><th>Clareza</th><th>Propostas</th><th>Quando</th></tr></thead><tbody>
-    ${d.recent.jobs.map(j => `<tr><td><a href="#vaga-${j.id}">${esc(j.title)}</a></td><td>${esc(j.client)}</td><td>${pill(JSTATUS, j.status)}</td><td class="mono">${j.clarity}%</td><td class="mono">${j.props}</td><td>${when(j.at)}</td></tr>`).join("")}
+    ${d.recent.jobs.map(j => `<tr><td><a href="${url("vaga-" + (j.id))}">${esc(j.title)}</a></td><td>${esc(j.client)}</td><td>${pill(JSTATUS, j.status)}</td><td class="mono">${j.clarity}%</td><td class="mono">${j.props}</td><td>${when(j.at)}</td></tr>`).join("")}
   </tbody></table></div>
   <div class="panel adm-table"><h3>Contratos</h3><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Freela</th><th>Valor</th><th>Etapas</th><th>Quando</th></tr></thead><tbody>
     ${d.recent.contracts.map(c => `<tr><td>${esc(c.job)}</td><td>${esc(c.client)}</td><td>${esc(c.freela)}</td><td class="mono">${brl(c.value)}</td><td class="mono">${c.done}/${c.total}${c.status === "concluido" ? " ✓" : ""}</td><td>${when(c.at)}</td></tr>`).join("")}
@@ -982,8 +1039,8 @@ V.panorama = async () => {
 };
 after.panorama = () => {
   pollTimer = setInterval(async () => {
-    if (document.hidden || location.hash !== "#panorama") return;
-    try { const html = await V.panorama(); if (html && location.hash === "#panorama") $("#view").innerHTML = html; } catch {}
+    if (document.hidden || curH() !== "panorama") return;
+    try { const html = await V.panorama(); if (html && curH() === "panorama") $("#view").innerHTML = html; } catch {}
   }, 60_000);
 };
 
@@ -1030,7 +1087,7 @@ V.gestao = async () => {
   const e = ADM.ent === "log" ? null : admEnt();
   return `<div class="adm stack">
   <div class="row" style="justify-content:space-between; align-items:flex-end">
-    <div><a href="#panorama" class="back">← Panorama</a><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Gestão de dados</h1>
+    <div><a href="/panorama" class="back">← Panorama</a><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Gestão de dados</h1>
       <p class="hint">Criar, ver, editar e apagar registros da plataforma. Tudo fica anotado no Registro.</p></div>
     ${e && e.canCreate ? `<button class="btn hl" data-adm-new="1">Novo: ${esc(e.label.replace(/s$/, "").toLowerCase())}</button>` : ""}
   </div>
@@ -1173,7 +1230,7 @@ const openCount = () => { const n = PJ.data.tasks.filter(t => !t.parent_id && !t
 function projectHTML() {
   const p = PJ.data.project;
   return `<div class="stack tk-page">
-  <div><a href="#projetos" class="back">← Projetos</a>
+  <div><a href="/projetos" class="back">← Projetos</a>
     <div class="row" style="justify-content:space-between; align-items:flex-end">
       <div><span class="label">${p.kind === "contrato" ? "Projeto do contrato" : "Projeto interno da Osmo"}</span><h1 style="font-size:clamp(1.6rem,4vw,2.2rem); margin-top:4px">${esc(p.name)}</h1>
         <p class="hint"><span id="pjCount">${openCount()}</span> · ${PJ.data.members.map(m => esc(m.name)).join(", ")}</p></div>
@@ -1203,11 +1260,11 @@ V.contrato = async id => {
 V.projetos = async () => {
   if (needLogin()) return;
   const d = await api("GET", "/api/projects");
-  const card = p => `<a class="panel tk-pcard" href="#projeto-${p.id}"><span class="label">${p.kind === "contrato" ? "Contrato" : "Interno"}</span><b>${esc(p.name)}</b>
+  const card = p => `<a class="panel tk-pcard" href="${url("projeto-" + (p.id))}"><span class="label">${p.kind === "contrato" ? "Contrato" : "Interno"}</span><b>${esc(p.name)}</b>
     <span class="hint">${p.open} em aberto · ${p.done} concluída${p.done === 1 ? "" : "s"}${p.late ? ` · <span class="tk-due late">${p.late} atrasada${p.late === 1 ? "" : "s"}</span>` : ""}</span></a>`;
   return `<div class="stack"><div class="row" style="justify-content:space-between; align-items:flex-end">
     <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Projetos</h1><p class="hint">Cada contrato tem um projeto para cliente e freela organizarem o trabalho.</p></div>
-    <div class="row" style="gap:6px"><a class="btn" href="#tarefas">Minhas tarefas</a>${d.canCreate ? `<button class="btn hl" data-pj-new="1">Novo projeto interno</button>` : ""}</div></div>
+    <div class="row" style="gap:6px"><a class="btn" href="/tarefas">Minhas tarefas</a>${d.canCreate ? `<button class="btn hl" data-pj-new="1">Novo projeto interno</button>` : ""}</div></div>
     ${d.projects.length ? `<div class="tk-pgrid">${d.projects.map(card).join("")}</div>` : emptyBox("Nenhum projeto ainda.", "Quando um contrato começar, o projeto dele aparece aqui.", "painel", "Ir para o Painel")}</div>`;
 };
 V.tarefas = async () => {
@@ -1217,9 +1274,9 @@ V.tarefas = async () => {
   const groups = [["Atrasadas", x => x.due_date && x.due_date < t0], ["Hoje", x => x.due_date === t0], ["Próximos 7 dias", x => x.due_date > t0 && x.due_date <= week],
     ["Mais adiante", x => x.due_date > week], ["Sem prazo", x => !x.due_date]];
   const row = t => `<li class="tk-row"><input type="checkbox" class="tk-check" data-tk-done="${t.id}" aria-label="Concluir ${esc(t.title)}">
-    <a class="tk-title" href="#projeto-${t.project_id}" data-tk-goto="${t.id}">${esc(t.title)}</a><span class="tk-meta"><span class="hint">${esc(t.project)}</span>${t.due_date ? `<span class="tk-due ${dueCls(t)}">${fmtDue(t.due_date)}</span>` : ""}</span></li>`;
+    <a class="tk-title" href="${url("projeto-" + (t.project_id))}" data-tk-goto="${t.id}">${esc(t.title)}</a><span class="tk-meta"><span class="hint">${esc(t.project)}</span>${t.due_date ? `<span class="tk-due ${dueCls(t)}">${fmtDue(t.due_date)}</span>` : ""}</span></li>`;
   return `<div class="stack"><div class="row" style="justify-content:space-between; align-items:flex-end">
-    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Minhas tarefas</h1><p class="hint">Tudo o que está com você e ainda não foi concluído, em todos os projetos.</p></div><div class="row" style="gap:6px"><button class="btn" data-pomo-open="1">🍅 Pomodoro</button><a class="btn" href="#projetos">Projetos</a></div></div>
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Minhas tarefas</h1><p class="hint">Tudo o que está com você e ainda não foi concluído, em todos os projetos.</p></div><div class="row" style="gap:6px"><button class="btn" data-pomo-open="1">🍅 Pomodoro</button><a class="btn" href="/projetos">Projetos</a></div></div>
     ${tasks.length ? groups.map(([g, f]) => { const ts = tasks.filter(f); return ts.length ? `<section class="panel tk-section"><h3>${g} <span class="hint">${ts.length}</span></h3><ul class="tk-list">${ts.map(row).join("")}</ul></section>` : ""; }).join("")
       : emptyBox("Nada com você agora.", "Quando alguém atribuir uma tarefa a você, ela aparece aqui.", "projetos", "Ver projetos")}</div>`;
 };
@@ -1274,7 +1331,7 @@ document.addEventListener("change", async e => {
   const t = e.target;
   if (t.dataset.tkDone) { // concluir ou reabrir, na lista, no quadro, no calendário, no painel ou em Minhas tarefas
     try { await tkPut(t.dataset.tkDone, { done: t.checked }); } catch (err) { t.checked = !t.checked; return toast(err.message); }
-    if (location.hash === "#tarefas") { const li = t.closest("li"); if (li) li.classList.add("done"); return; }
+    if (curH() === "tarefas") { const li = t.closest("li"); if (li) li.classList.add("done"); return; }
     if ($(".tk-drawer")) openTask(Number(t.dataset.parent || t.dataset.tkDone));
     return pjReload();
   }
@@ -1361,7 +1418,7 @@ const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos 
 const notifyOpts = cur => `<div class="field" role="radiogroup" aria-label="Avisos por e-mail">${NOTIFY_OPTS.map(([v, t, d]) =>
   `<label class="check"><input type="radio" name="notify" value="${v}" ${cur === v ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>`;
 V.avisos = async () => {
-  const token = location.hash.split("-")[1] || "";
+  const token = curH().split("-")[1] || "";
   const d = await api("GET", "/api/notify?token=" + encodeURIComponent(token));
   return `<div class="auth stack">
   <div><span class="label">Avisos por e-mail</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">O que você quer receber?</h1>
@@ -1823,7 +1880,7 @@ document.addEventListener("submit", async e => {
     }
     if (f.id === "resetForm") {
       try { await api("POST", "/api/auth/reset", { token: f.dataset.token, password: $("#a_pass").value }); } catch (err) { return showErr("#resetErr", err.message); }
-      history.replaceState(null, "", "/#painel"); await refreshMe(); toast("Senha nova salva"); return route();
+      history.replaceState(null, "", "/painel"); await refreshMe(); toast("Senha nova salva"); return route();
     }
     if (f.classList.contains("review-form")) {
       const rating = Number((f.querySelector('input[name="rating"]:checked') || {}).value || 0);
@@ -1928,9 +1985,9 @@ function gaLoad() {
   const s = document.createElement("script"); s.async = true; s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(GA_ID);
   document.head.appendChild(s);
 }
-function gaPage(name, id) {
+function gaPage(name) {
   if (!gaLoaded || !gaOn() || GA_SKIP.includes(name)) return;
-  const path = "/" + name + (/^\d+$/.test(String(id || "")) ? "/" + id : "");
+  const path = location.pathname; // o código secreto (depois do "#") nunca vai para o Google
   gtag("event", "page_view", { page_path: path, page_location: location.origin + path, page_title: document.title });
 }
 // apaga os cookies do Google Analytics (_ga, _ga_XXXX) deste site e do domínio principal
@@ -1942,7 +1999,7 @@ function gaWipe() {
 }
 function gaSet(choice) {
   store.set("analytics", choice);
-  if (choice === "sim") { const was = gaLoaded; gaLoad(); if (!was) gaPage((location.hash.slice(1) || "inicio").split("-")[0], location.hash.split("-")[1]); }
+  if (choice === "sim") { const was = gaLoaded; gaLoad(); if (!was) gaPage(curH().split("-")[0]); }
   else { if (gaLoaded) gtag("consent", "update", { analytics_storage: "denied" }); gaWipe(); } // para de medir na hora; some de vez ao recarregar
   const b = $("#consent"); if (b) b.remove();
 }
@@ -2321,5 +2378,6 @@ applyPrefs();
 function syncTopSize() { const y = scrollY, r = document.documentElement; if (y <= 8) r.classList.add("top-big"); else if (y > 40) r.classList.remove("top-big"); }
 addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
-if (oauthErr) history.replaceState(null, "", "/" + location.hash);
+if (oauthErr) history.replaceState(null, "", location.pathname + location.hash);
+fixLegacyHash();
 Promise.all([refreshMe(), loadTaxonomy()]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });

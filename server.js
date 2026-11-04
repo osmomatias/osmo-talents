@@ -331,7 +331,7 @@ route("POST", "/api/auth/forgot", ({ body, ip }) => {
   const token = crypto.randomBytes(32).toString("hex");
   run("DELETE FROM password_resets WHERE user_id = ?", u.id);
   run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), u.id, new Date(Date.now() + RESET_MIN * 60e3).toISOString());
-  const link = `${PUBLIC_URL}/#recuperar-${token}`, first = u.name.split(" ")[0];
+  const link = `${PUBLIC_URL}/recuperar#${token}`, first = u.name.split(" ")[0];
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   mail.send({
     to: u.email, subject: "Criar uma senha nova na Osmo Talents",
@@ -1598,7 +1598,7 @@ function notifySweep() {
 }
 async function sendNotice(p, msgs) {
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const link = `${PUBLIC_URL}/#mensagens-${p.thread_id}`, prefs = `${PUBLIC_URL}/#avisos-${notifyToken(p.user_id)}`;
+  const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
   const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
   const about = p.job_title ? `"${p.job_title}"` : "sua conversa";
   const subject = people.length && msgs.every(m => m.sender) ? `${people[0]} mandou mensagem sobre ${about}` : `Novidade em ${about}`;
@@ -1652,7 +1652,7 @@ function redirect(res, to) { res.writeHead(302, { ...SECURITY_HEADERS, Location:
 const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
 async function handleAuth(req, res, url, ip) {
   const m = url.pathname.match(/^\/auth\/(google|linkedin|adobe|github)(\/callback)?$/);
-  const fail2 = code => redirect(res, `/?oauth_error=${code}#entrar`);
+  const fail2 = code => redirect(res, `/entrar?oauth_error=${code}`);
   if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   const k = m[1];
   if (!oauth.enabled(k)) return fail2("indisponivel");
@@ -1688,13 +1688,13 @@ async function handleAuth(req, res, url, ip) {
   if (!uid) {
     if (!prof.email || !prof.emailVerified) return fail2("sem_email");
     const r = { provider: k, sub: prof.sub, email: prof.email, name: prof.name };
-    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/#perfil" : "/#publicar"); }
+    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/perfil" : "/publicar"); }
     const token = crypto.randomBytes(24).toString("hex");
     run("INSERT INTO oauth_pending (token, provider, sub, email, name) VALUES (?,?,?,?,?)", token, k, prof.sub, prof.email, prof.name);
-    return redirect(res, `/#escolher-${token}`);
+    return redirect(res, `/escolher#${token}`);
   }
   createSession(res, uid);
-  return redirect(res, "/#painel");
+  return redirect(res, "/painel");
 }
 
 // MIME: a "etiqueta" que diz ao navegador que tipo de arquivo está chegando (página, estilo,
@@ -1749,7 +1749,8 @@ function readBody(req, max = 200_000) {
 }
 
 // ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
-// - Só "/" recebe o index.html (as telas do app usam #vagas, #perfil...: o app.js resolve);
+// - "/" e os endereços das telas do app (/vagas, /vagas/12, /painel...: lista APP_PATH, igual à do app.js)
+//   recebem o index.html; o app.js desenha a tela certa;
 //   endereço que não existe recebe a 404.html com código 404, para o Google não guardar página vazia;
 // - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
 // - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
@@ -1760,6 +1761,7 @@ function readBody(req, max = 200_000) {
 // para a página aberta perceber que saiu versão nova
 const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
   fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
@@ -1769,7 +1771,7 @@ function notFound(res) {
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
-  else if (rel === "/") rel = "/index.html";
+  else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
   else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
@@ -1808,7 +1810,7 @@ const server = http.createServer(async (req, res) => {
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
   const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
   if (url.pathname.startsWith("/auth/")) {
-    return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
+    return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
   const fm = url.pathname.match(/^\/arquivo\/(\d+)$/);
   if (fm && (req.method === "GET" || req.method === "HEAD")) return serveFile(req, res, Number(fm[1]));
