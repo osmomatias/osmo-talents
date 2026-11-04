@@ -188,8 +188,13 @@ ok "nginx pronto"
 # enviado pelo configurar-https-cloudflare.sh (e este passo só confirma que ele está lá).
 say "6/7 Conferindo o DNS e ativando o HTTPS"
 SERVER_IP="$(curl -fsS -4 https://api.ipify.org || true)"
-DNS_IP="$(dig +short A "$DOMAIN" | tail -n1 || true)"
-WWW_IP="$(dig +short A "www.$DOMAIN" | tail -n1 || true)"
+# pergunta o endereço ao DNS público (1.1.1.1): o /etc/hosts do servidor costuma dizer que o
+# próprio nome dele aponta para 127.0.1.1, o que fazia a conferência dar alarme falso
+DNS_IP="$(dig +short A "$DOMAIN" @1.1.1.1 | grep -E '^[0-9.]+$' | tail -n1 || true)"
+WWW_IP="$(dig +short A "www.$DOMAIN" @1.1.1.1 | grep -E '^[0-9.]+$' | tail -n1 || true)"
+# o site passa pela Cloudflare? (ela responde com "server: cloudflare" no endereço público)
+CF_FRONT=0
+if [ -n "$DNS_IP" ] && curl -sI -m 10 --resolve "$DOMAIN:443:$DNS_IP" "https://$DOMAIN/" 2>/dev/null | grep -qi '^server: *cloudflare'; then CF_FRONT=1; fi
 HTTPS=0
 if [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ]; then
   # com a Cloudflare na frente, o certificado de origem (passo 5) já é o HTTPS daqui:
@@ -198,6 +203,9 @@ if [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ]; then
   systemctl restart osmo-talents
   HTTPS=1; ok "HTTPS ativo com o certificado de origem da Cloudflare"
   ok "no painel da Cloudflare, o modo SSL/TLS precisa estar em Full (strict)"
+elif [ "$CF_FRONT" -eq 1 ]; then
+  # a Cloudflare está na frente e já entrega o cadeado para quem visita: nada a fazer aqui
+  HTTPS=1; ok "o site passa pela Cloudflare: o cadeado (HTTPS) fica com ela"
 elif [ -n "$SERVER_IP" ] && [ "$DNS_IP" = "$SERVER_IP" ]; then
   apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
   DOMS=(-d "$DOMAIN"); [ "$WWW_IP" = "$SERVER_IP" ] && DOMS+=(-d "www.$DOMAIN")
