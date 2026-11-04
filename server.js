@@ -1714,10 +1714,11 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google (e só eles)
+  // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google;
+  // o Cloudflare Web Analytics (static.cloudflareinsights.com / cloudflareinsights.com) vale nas duas versões
   "Content-Security-Policy": GA_ID
-    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 // Responde ao navegador: se for objeto, vira JSON; sempre com os capacetes de segurança.
@@ -1748,7 +1749,8 @@ function readBody(req, max = 200_000) {
 }
 
 // ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
-// - Endereços sem extensão (#vagas, /perfil...) recebem o index.html: o resto o app.js resolve;
+// - Só "/" recebe o index.html (as telas do app usam #vagas, #perfil...: o app.js resolve);
+//   endereço que não existe recebe a 404.html com código 404, para o Google não guardar página vazia;
 // - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
 // - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
 //   "304, nada mudou" e economizamos internet;
@@ -1758,14 +1760,21 @@ function readBody(req, max = 200_000) {
 // para a página aberta perceber que saiu versão nova
 const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+// endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
+function notFound(res) {
+  fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
+    ? send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" })
+    : send(res, 404, buf, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }));
+}
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
-  else if (rel === "/" || !path.extname(rel)) rel = "/index.html";
+  else if (rel === "/") rel = "/index.html";
+  else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
   fs.stat(file, (err, st) => {
-    if (err || !st.isFile()) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+    if (err || !st.isFile()) return notFound(res);
     const ext = path.extname(file);
     // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
