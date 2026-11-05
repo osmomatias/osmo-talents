@@ -30,6 +30,7 @@ const asaas = require("./src/asaas");
 const oauth = require("./src/oauth");
 const mail = require("./src/mail");
 const icp = require("./src/icp");
+const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -147,7 +148,7 @@ function currentUser(req) {
   if (!tok) return null;
   const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
   if (!s || s.expires_at < new Date().toISOString()) return null;
-  return one("SELECT id, name, email, role, energy, notify_level notify FROM users WHERE id = ?", s.user_id) || null;
+  return one("SELECT id, name, email, role, energy, notify_level notify, lang FROM users WHERE id = ?", s.user_id) || null;
 }
 function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("base64url");
@@ -319,13 +320,13 @@ function resetRow(token) {
   run("DELETE FROM password_resets WHERE expires_at < ?", new Date().toISOString());
   return one("SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id WHERE r.token_hash = ?", sha(t));
 }
-route("POST", "/api/auth/forgot", ({ body, ip }) => {
+route("POST", "/api/auth/forgot", ({ req, body, ip }) => {
   if (!mail.ENABLED) fail(503, "A recuperação de senha ainda não está ativa. Fale com a Osmo.");
   limit("forgot:" + ip, 5, 900_000);
   const email = str(body.email, 160).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
   // a resposta é sempre a mesma, para não revelar quais e-mails têm conta
-  const u = one("SELECT id, name, email FROM users WHERE email = ?", email);
+  const u = one("SELECT id, name, email, lang FROM users WHERE email = ?", email);
   if (!u) return { ok: true };
   try { limit("forgot-mail:" + u.id, 3, 3600_000); } catch { return { ok: true }; }
   const token = crypto.randomBytes(32).toString("hex");
@@ -333,14 +334,16 @@ route("POST", "/api/auth/forgot", ({ body, ip }) => {
   run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), u.id, new Date(Date.now() + RESET_MIN * 60e3).toISOString());
   const link = `${PUBLIC_URL}/recuperar#${token}`, first = u.name.split(" ")[0];
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  // idioma do e-mail: o da tela de quem pediu (ou o último que a pessoa usou)
+  const lang = i18n.pick(req.headers["x-osmo-lang"]) || u.lang, T = (k, ...a) => i18n.T(lang, k, ...a);
   mail.send({
-    to: u.email, subject: "Criar uma senha nova na Osmo Talents",
-    text: `Olá, ${first}.\n\nRecebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.\n\nPara escolher a senha nova, abra este link (vale por ${RESET_MIN} minutos e funciona uma vez só):\n${link}\n\nSe não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.\n\nOsmo Talents`,
+    to: u.email, subject: T("Criar uma senha nova na Osmo Talents"),
+    text: `${T("Olá, {1}.", first)}\n\n${T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.")}\n\n${T("Para escolher a senha nova, abra este link (vale por {1} minutos e funciona uma vez só):", RESET_MIN)}\n${link}\n\n${T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.")}\n\nOsmo Talents`,
     html: `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>Olá, ${escHtml(first)}.</p>
-<p>Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.</p>
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Criar senha nova</a></p>
-<p style="color:#666">O link vale por ${RESET_MIN} minutos e funciona uma vez só.<br>Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.</p>
+<p>${escHtml(T("Olá, {1}.", first))}</p>
+<p>${escHtml(T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents."))}</p>
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Criar senha nova"))}</a></p>
+<p style="color:#666">${escHtml(T("O link vale por {1} minutos e funciona uma vez só.", RESET_MIN))}<br>${escHtml(T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma."))}</p>
 <p>Osmo Talents</p></div>`,
   }).catch(e => console.error(new Date().toISOString(), "mail", e.message));
   return { ok: true };
@@ -1580,7 +1583,7 @@ function notifyToken(userId) {
   return t;
 }
 function notifySweep() {
-  const pairs = all(`SELECT t.id thread_id, u.id user_id, u.name, u.email, u.notify_level, j.title job_title, n.last_at,
+  const pairs = all(`SELECT t.id thread_id, u.id user_id, u.name, u.email, u.notify_level, u.lang, j.title job_title, n.last_at,
       CASE WHEN u.id = t.client_id THEN t.client_read_at ELSE t.freela_read_at END read_at
     FROM threads t JOIN users u ON u.id IN (t.client_id, t.freela_id) LEFT JOIN jobs j ON j.id = t.job_id
     LEFT JOIN notify_log n ON n.thread_id = t.id AND n.user_id = u.id
@@ -1600,17 +1603,21 @@ async function sendNotice(p, msgs) {
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
   const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
-  const about = p.job_title ? `"${p.job_title}"` : "sua conversa";
-  const subject = people.length && msgs.every(m => m.sender) ? `${people[0]} mandou mensagem sobre ${about}` : `Novidade em ${about}`;
+  // tudo no idioma de quem recebe; mensagens do sistema ("Proposta aceita...") também são traduzidas
+  const T = (k, ...a) => i18n.T(p.lang, k, ...a);
+  const about = p.job_title ? `"${p.job_title}"` : T("sua conversa");
+  const subject = people.length && msgs.every(m => m.sender) ? T("{1} mandou mensagem sobre {2}", people[0], about) : T("Novidade em {1}", about);
   const shown = msgs.slice(-5), more = msgs.length - shown.length;
-  const line = m => (m.sender ? `${m.sender}: ` : "") + (m.body.length > 400 ? m.body.slice(0, 400) + "…" : m.body);
+  const body = m => m.sender_id == null ? i18n.tx(p.lang, m.body) : m.body; // só as do sistema; o que as pessoas escrevem fica como está
+  const line = m => (m.sender ? `${m.sender}: ` : "") + (body(m).length > 400 ? body(m).slice(0, 400) + "…" : body(m));
   const first = p.name.split(" ")[0];
-  const text = `Olá, ${first}.\n\n${more ? `(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)\n` : ""}${shown.map(line).join("\n\n")}\n\nAbrir a conversa: ${link}\n\n--\nOsmo Talents. Para mudar ou desligar estes avisos: ${prefs}`;
+  const moreTxt = more ? T(more > 1 ? "(e mais {1} mensagens antes)" : "(e mais {1} mensagem antes)", more) : "";
+  const text = `${T("Olá, {1}.", first)}\n\n${more ? moreTxt + "\n" : ""}${shown.map(line).join("\n\n")}\n\n${T("Abrir a conversa:")} ${link}\n\n--\nOsmo Talents. ${T("Para mudar ou desligar estes avisos:")} ${prefs}`;
   const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>Olá, ${escHtml(first)}.</p>${more ? `<p style="color:#666">(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)</p>` : ""}
+<p>${escHtml(T("Olá, {1}.", first))}</p>${more ? `<p style="color:#666">${escHtml(moreTxt)}</p>` : ""}
 ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1">${m.sender ? `<b>${escHtml(m.sender)}</b><br>` : ""}${escHtml(line({ ...m, sender: "" })).replace(/\n/g, "<br>")}</p>`).join("")}
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Abrir conversa</a></p>
-<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">Mudar ou desligar estes avisos</a></p></div>`;
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Abrir conversa"))}</a></p>
+<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">${escHtml(T("Mudar ou desligar estes avisos"))}</a></p></div>`;
   await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
 }
 if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
@@ -1759,7 +1766,13 @@ function readBody(req, max = 200_000) {
 //   muda, e o navegador baixa a versão nova em vez de usar a velha guardada.
 // carimbo de versão de cada arquivo (data de modificação): vai no endereço do arquivo e em /api/me,
 // para a página aberta perceber que saiu versão nova
-const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
+const stamp = name => {
+  try {
+    // o i18n.js leva junto a data dos dicionários (public/i18n/*.json): mudou uma tradução, muda o carimbo
+    const files = name === "i18n.js" ? ["i18n.js", ...fs.readdirSync(path.join(PUBLIC_DIR, "i18n")).map(f => "i18n/" + f)] : [name];
+    return Math.floor(Math.max(...files.map(f => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs))).toString(36);
+  } catch { return "0"; }
+};
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
 const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
@@ -1786,7 +1799,7 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
@@ -1833,6 +1846,9 @@ const server = http.createServer(async (req, res) => {
     if (!r) fail(404, "Rota não encontrada.");
     const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
     const user = currentUser(req);
+    // o site manda o idioma da tela em cada pedido; guardamos para escrever os e-mails nesse idioma
+    const hl = i18n.pick(req.headers["x-osmo-lang"]);
+    if (user && hl && user.lang !== hl) { run("UPDATE users SET lang = ? WHERE id = ?", hl, user.id); user.lang = hl; }
     if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
     const body = req.method === "GET" ? {} : r.raw ? await readRaw(req, r.raw) : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);

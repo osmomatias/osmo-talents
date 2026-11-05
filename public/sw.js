@@ -14,8 +14,8 @@
 // e das que estão abaixo dela.
 // Trocar VERSION apaga as cópias antigas de todo mundo na próxima visita.
 
-const VERSION = "osmo-v1";
-const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png"];
+const VERSION = "osmo-v2"; // v2: idiomas (i18n)
+const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png", "/i18n-core.js", "/i18n.js"];
 // endereços que nunca passam pelo cache: dados de conta, sessão e arquivos enviados pelas pessoas
 const PRIVATE = /^\/(api|auth|arquivo|avatar|portfolio)\//;
 const ASSET = /\.(js|css|svg|png|jpg|ico|woff2|json|webmanifest)$/;
@@ -51,6 +51,7 @@ self.addEventListener("fetch", e => {
   if (ASSET.test(url.pathname)) {
     const net = fetch(req);
     e.waitUntil(net.then(res => res.ok ? keep(req, res.clone()) : null).catch(() => {}));
-    e.respondWith(caches.match(req).then(hit => hit || net));
+    // sem internet, um arquivo guardado com outro carimbo (?v=) serve: melhor que nada (ex.: dicionário de idioma)
+    e.respondWith(caches.match(req).then(hit => hit || net.catch(() => caches.match(req, { ignoreSearch: true }))));
   }
 });

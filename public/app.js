@@ -24,7 +24,11 @@
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR");
+// IDIOMA: o I18N (i18n.js) diz o idioma escolhido; LOC é o "jeito local" de escrever datas e números
+const TR = window.I18N || { lang: "pt-BR", locale: "pt-BR", t: s => s, tx: s => s, flush() {}, set() {}, ready: Promise.resolve(), langs: [] };
+const LOC = TR.locale;
+const brl = n => "R$ " + Number(n || 0).toLocaleString(LOC);
+const dec = n => Number(n || 0).toLocaleString(LOC, { maximumFractionDigits: 1 }); // 4,5 em português; 4.5 em inglês
 const words = s => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 const isMobile = () => matchMedia("(max-width:700px)").matches;
 // CATEGORIAS E HABILIDADES: a lista vem do arquivo taxonomia.json (baseada no Upwork).
@@ -62,16 +66,19 @@ const catName = id => (CATS.find(c => c.id === id) || {}).n || "";
 /* ---------- campo de habilidades: etiquetas + autocompletar com a lista do Upwork (taxonomia.json) ----------
    O valor fica num campo escondido #p_skills ("A, B, C"), então salvar o perfil e a vaga continua igual. */
 const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// nome da habilidade no idioma da tela (a lista e o banco guardam o nome em português)
+const skLabel = k => TR.tx(k);
 const skillsOf = v => String(v || "").split(",").map(s => s.trim()).filter(Boolean);
 // começo do nome primeiro, depois começo de palavra, depois qualquer trecho; sem texto, as da área escolhida
 function matchSkills(term, cat, have, n = 8) {
   const t = fold(term.trim()), own = new Set(have.map(fold));
   const pool = t ? [...(SKILLS.byCat[cat] || []), ...SKILLS.all] : (SKILLS.byCat[cat] || []);
-  const rank = k => { const f = fold(k); return f.startsWith(t) ? 0 : (" " + f).includes(" " + t) ? 1 : 2; };
-  return [...new Set(pool)].filter(k => !own.has(fold(k)) && (!t || fold(k).includes(t)))
+  // procura tanto no nome traduzido quanto no original (quem digita "logo" ou "logotipo" acha o mesmo)
+  const rank = k => { const f = fold(skLabel(k)); return f.startsWith(t) ? 0 : (" " + f).includes(" " + t) ? 1 : fold(k).startsWith(t) ? 1 : 2; };
+  return [...new Set(pool)].filter(k => !own.has(fold(k)) && (!t || fold(skLabel(k)).includes(t) || fold(k).includes(t)))
     .map((k, i) => [k, t ? rank(k) : 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, n);
 }
-const markTerm = (k, term) => { const t = term.trim(), i = fold(k).indexOf(fold(t)); return !t || i < 0 ? esc(k) : esc(k.slice(0, i)) + "<mark>" + esc(k.slice(i, i + t.length)) + "</mark>" + esc(k.slice(i + t.length)); };
+const markTerm = (k0, term) => { const k = skLabel(k0), t = term.trim(), i = fold(k).indexOf(fold(t)); return !t || i < 0 ? esc(k) : esc(k.slice(0, i)) + "<mark>" + esc(k.slice(i, i + t.length)) + "</mark>" + esc(k.slice(i + t.length)); };
 const skillTagsHTML = list => list.map(k => `<li class="sk-tag">${esc(k)}<button type="button" data-skill-del="${esc(k)}" aria-label="Remover ${esc(k)}">×</button></li>`).join("");
 function skillBoxHTML({ value = "", cat = "", max = 12, dataP = "" }) {
   const list = skillsOf(value).slice(0, max), full = list.length >= max;
@@ -147,9 +154,9 @@ function when(iso) {
   if (s < 3600) return `há ${Math.floor(s / 60)} min`;
   if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
   if (s < 172800) return "ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  return d.toLocaleDateString(LOC, { day: "2-digit", month: "short" });
 }
-function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
+function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString(LOC, { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
 function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
 // O DESENHO DO SELO VERDE: uma "roseta" feita de 1 círculo grande + 12 bolinhas em volta
 // (calculadas com seno e cosseno, como os números num relógio) e um "✓" branco no meio.
@@ -171,7 +178,7 @@ function toast(m) { const t = document.createElement("div"); t.className = "toas
 // - sem internet, devolve uma mensagem amigável;
 // - se o servidor disser que deu erro, transforma a explicação dele num erro que a tela mostra.
 async function api(method, path, body) {
-  const opt = { method, headers: { "X-Osmo": "1" }, credentials: "same-origin" };
+  const opt = { method, headers: { "X-Osmo": "1", "X-Osmo-Lang": TR.lang }, credentials: "same-origin" };
   if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
   let res;
   try { res = await fetch(path, opt); } catch { throw Object.assign(new Error("Sem conexão com o servidor. Confira sua internet e tente de novo."), { status: 0 }); }
@@ -374,6 +381,7 @@ document.addEventListener("click", e => {
 }, true);
 // título da aba: o título da tela (ex.: "Identidade visual para cafeteria · Osmo Talents")
 function setPageTitle(name) {
+  TR.flush();
   const h1 = $("#view h1") || $("#view h2"), t = h1 ? h1.textContent.replace(/\s+/g, " ").trim() : "";
   const title = t && name !== "inicio" ? `${t} · Osmo Talents` : "Osmo Talents";
   if (typeof pomoTitle !== "undefined") pomoTitle = title; // o Pomodoro devolve este título quando para
@@ -627,7 +635,7 @@ V.vaga = async id => {
     <div class="prop">
       <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button>${vbadge(p.freela.verified)}<p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
       <p class="mono"><b>${brl(p.value)}</b> · ${p.days} dias úteis · você recebe a entrega em ${p.milestones.length} etapa(s)</p>
-      <p style="white-space:pre-wrap">${esc(p.text)}</p>
+      <p style="white-space:pre-wrap" translate="no">${esc(p.text)}</p>
       ${p.freela.how.com ? `<p class="hint">Como trabalha melhor: ${esc(p.freela.how.com)} ${esc(p.freela.how.resp)}</p>` : ""}
       ${p.milestones.length > 1 ? `<ul style="margin:0; padding-left:20px">${p.milestones.map(m => `<li>${esc(m.title)}: <span class="mono">${brl(m.value)}</span></li>`).join("")}</ul>` : ""}
       ${p.status === "enviada" && j.status === "aberta" ? `<div class="row"><button class="btn hl sm" data-act="accept" data-id="${p.id}">Aceitar e criar contrato</button><button class="btn sm" data-act="decline" data-id="${p.id}">Recusar</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>` : ""}
@@ -737,7 +745,7 @@ function msRows() {
 // AVALIAÇÕES: estrelas, as etiquetas mais citadas e o formulário de avaliar no fim do contrato.
 /* ---------- avaliações ---------- */
 const RATE_WORDS = ["", "Ruim", "Fraco", "Ok", "Bom", "Excelente"];
-const stars = (avg, n) => n ? `<span class="stars" title="Nota média ${String(avg).replace(".", ",")} de 5, ${n} ${n === 1 ? "avaliação" : "avaliações"}"><span aria-hidden="true">★</span> <b class="mono">${String(avg).replace(".", ",")}</b> <span class="muted">(${n})</span></span>` : "";
+const stars = (avg, n) => n ? `<span class="stars" title="Nota média ${dec(avg)} de 5, ${n} ${n === 1 ? "avaliação" : "avaliações"}"><span aria-hidden="true">★</span> <b class="mono">${dec(avg)}</b> <span class="muted">(${n})</span></span>` : "";
 const tagSummary = r => r.tags.length ? `<div class="row" style="gap:6px">${r.tags.slice(0, 4).map(t => `<span class="chip accent">${esc(t.tag)} · ${t.n}</span>`).join("")}</div>` : "";
 function reviewList(list) {
   return list.map(r => `<div class="review"><div class="row" style="justify-content:space-between"><b>${esc(r.author)}</b><span class="stars" aria-label="Nota ${r.rating} de 5">${"★".repeat(r.rating)}<span class="off">${"★".repeat(5 - r.rating)}</span></span></div>
@@ -787,7 +795,7 @@ V.talento = async id => {
   <article class="stack">
     <div class="prof-head">${av(t.name, t.id, "lg", t.avatar)}
       <div class="stack" style="gap:6px"><h1 style="font-size:clamp(1.8rem,4vw,2.6rem)">${esc(t.name)}${vbadge(t.verified)}</h1><p class="muted">${esc(t.title || "Perfil em construção")}${t.location ? " · " + esc(t.location) : ""}</p>${t.tag ? `<div class="row"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}</div></div>
-    ${t.bio ? `<p style="max-width:65ch; white-space:pre-wrap">${esc(t.bio)}</p>` : ""}
+    ${t.bio ? `<p style="max-width:65ch; white-space:pre-wrap" translate="no">${esc(t.bio)}</p>` : ""}
     ${has ? `<div class="stack" style="gap:12px"><h2>Como eu trabalho melhor</h2><div class="howgrid">
       ${[["Comunicação", t.how.com], ["Tempo de resposta", t.how.resp], ["Feedback", t.how.fb], ["Ritmo", t.how.foco]].filter(x => x[1]).map(x => `<div class="how"><span class="label">${x[0]}</span>${esc(x[1])}</div>`).join("")}
     </div></div>` : ""}
@@ -835,7 +843,7 @@ V.mensagens = async id => {
 };
 function bubbles() {
   return TH.messages.map(m => m.system ? `<div class="bub sys">${esc(m.body)}<small>${hm(m.created_at)}</small></div>`
-    : `<div class="bub ${m.mine ? "me" : ""}">${esc(m.body)}<small>${hm(m.created_at)}</small></div>`).join("");
+    : `<div class="bub ${m.mine ? "me" : ""}"><span translate="no">${esc(m.body)}</span><small>${hm(m.created_at)}</small></div>`).join("");
 }
 function convoHTML() {
   const t = TH.thread;
@@ -946,7 +954,7 @@ V.painel = async () => {
 // Enquanto está aberta, se atualiza sozinha a cada minuto.
 /* ---------- panorama (painel do dono) ---------- */
 const ADM_MS = { pendente: "A seguir", andamento: "Em andamento", entregue: "Entregue", ajustes: "Ajustes", aprovada: "Aprovada" };
-const num = n => Number(n || 0).toLocaleString("pt-BR");
+const num = n => Number(n || 0).toLocaleString(LOC);
 const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "–";
 // barras de uma série por semana, desenhadas à mão em SVG (sem bibliotecas); o texto escondido descreve o gráfico para leitores de tela
 function weekBars(title, rows, key, fmt = num) {
@@ -1006,7 +1014,7 @@ V.panorama = async () => {
       <p class="hint">${d.proposals.perJob} propostas por vaga em média · ${num(d.proposals.byStatus.enviada || 0)} propostas aguardando resposta agora.</p></div>
     <div class="panel stack" style="gap:12px"><h3>Saúde da comunidade</h3>
       ${hBars([["Freelas", p.freelas], ["Perfil completo", p.profilesReady, pct(p.profilesReady, p.freelas)], ["Com selo verificado", p.verified, pct(p.verified, p.freelas)], ["Com conta de recebimento", p.withPayout, pct(p.withPayout, p.freelas)]])}
-      <p class="hint">${num(d.talk.messages7)} mensagens e ${num(d.talk.threads7)} conversas ativas em 7 dias · ${d.talk.reviews.n ? `nota média ${String(d.talk.reviews.avg).replace(".", ",")} em ${num(d.talk.reviews.n)} avaliações` : "nenhuma avaliação ainda"}.</p></div>
+      <p class="hint">${num(d.talk.messages7)} mensagens e ${num(d.talk.threads7)} conversas ativas em 7 dias · ${d.talk.reviews.n ? `nota média ${dec(d.talk.reviews.avg)} em ${num(d.talk.reviews.n)} avaliações` : "nenhuma avaliação ainda"}.</p></div>
   </div>
 
   <div class="adm-two">
@@ -1216,16 +1224,18 @@ function calendarView() {
     const iso = `${m}-${String(d).padStart(2, "0")}`, ts = PJ.data.tasks.filter(t => t.due_date === iso);
     cells.push(`<div class="tk-day ${iso === today() ? "today" : ""}"><span class="tk-dnum">${d}</span>${ts.map(t => `<button class="tk-chip ${t.done ? "done" : dueCls(t)}" data-tk-open="${t.id}">${esc(t.title)}</button>`).join("")}</div>`);
   }
-  const label = first.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  const label = first.toLocaleDateString(LOC, { month: "long", year: "numeric", timeZone: "UTC" });
   const noDate = PJ.data.tasks.filter(t => !t.parent_id && !t.due_date && !t.done);
   return `<div class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h3>${label.charAt(0).toUpperCase() + label.slice(1)}</h3>
       <div class="row" style="gap:6px"><button class="btn sm" data-cal="-1">Anterior</button><button class="btn sm" data-cal="0">Hoje</button><button class="btn sm" data-cal="1">Próximo</button></div></div>
-    <div class="tk-cal">${["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map(d => `<div class="tk-wd">${d}</div>`).join("")}${cells.join("")}</div></div>
+    <div class="tk-cal">${WEEKDAYS().map(d => `<div class="tk-wd">${d}</div>`).join("")}${cells.join("")}</div></div>
     <div class="panel stack" style="gap:8px"><h3>Sem prazo</h3>${noDate.length ? `<ul class="tk-list">${noDate.map(taskRow).join("")}</ul>` : ""}${PJ.data.sections.length ? addForm(PJ.data.sections[0].id) : ""}</div>`;
 }
 function projectBody() {
   return PJ.view === "quadro" ? boardView() : PJ.view === "calendario" ? calendarView() : listView();
 }
+// dias da semana (segunda a domingo) abreviados no idioma da tela: "seg", "Mon", "lun."...
+const WEEKDAYS = () => Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(LOC, { weekday: "short", timeZone: "UTC" }).replace(/\.$/, ""));
 const openCount = () => { const n = PJ.data.tasks.filter(t => !t.parent_id && !t.done).length; return `${n} tarefa${n === 1 ? "" : "s"} em aberto`; };
 function projectHTML() {
   const p = PJ.data.project;
@@ -1315,13 +1325,13 @@ document.addEventListener("click", async e => {
     return pjReload();
   }
   const sm = t.closest("[data-sec-move]"); if (sm) { try { await api("PUT", "/api/sections/" + sm.dataset.secMove, { dir: Number(sm.dataset.dir) }); } catch (err) { toast(err.message); } return pjReload(); }
-  const sr = t.closest("[data-sec-ren]"); if (sr) { const s = PJ.data.sections.find(x => x.id === Number(sr.dataset.secRen)); const name = prompt("Novo nome da seção", s.name); if (name && name.trim()) { try { await api("PUT", "/api/sections/" + s.id, { name }); } catch (err) { toast(err.message); } pjReload(); } return; }
+  const sr = t.closest("[data-sec-ren]"); if (sr) { const s = PJ.data.sections.find(x => x.id === Number(sr.dataset.secRen)); const name = prompt(TR.t("Novo nome da seção"), s.name); if (name && name.trim()) { try { await api("PUT", "/api/sections/" + s.id, { name }); } catch (err) { toast(err.message); } pjReload(); } return; }
   const sd = t.closest("[data-sec-del]"); if (sd) {
     if (!await confirmSheet({ title: "Apagar esta seção?", text: "As tarefas dela passam para a primeira seção do projeto.", ok: "Apagar" })) return;
     try { await api("DELETE", "/api/sections/" + sd.dataset.secDel); } catch (err) { toast(err.message); } return pjReload();
   }
-  if (t.closest("[data-pj-new]")) { const name = prompt("Nome do projeto interno"); if (name && name.trim()) { try { const r = await api("POST", "/api/projects", { name }); go("projeto-" + r.id); } catch (err) { toast(err.message); } } return; }
-  if (t.closest("[data-pj-ren]")) { const name = prompt("Novo nome do projeto", PJ.data.project.name); if (name && name.trim()) { try { await api("PUT", "/api/projects/" + PJ.data.project.id, { name }); route(); } catch (err) { toast(err.message); } } return; }
+  if (t.closest("[data-pj-new]")) { const name = prompt(TR.t("Nome do projeto interno")); if (name && name.trim()) { try { const r = await api("POST", "/api/projects", { name }); go("projeto-" + r.id); } catch (err) { toast(err.message); } } return; }
+  if (t.closest("[data-pj-ren]")) { const name = prompt(TR.t("Novo nome do projeto"), PJ.data.project.name); if (name && name.trim()) { try { await api("PUT", "/api/projects/" + PJ.data.project.id, { name }); route(); } catch (err) { toast(err.message); } } return; }
   if (t.closest("[data-pj-del]")) {
     if (!await confirmSheet({ title: `Apagar o projeto "${PJ.data.project.name}"?`, text: "Todas as tarefas, subtarefas e comentários somem. Não dá para desfazer.", ok: "Apagar projeto" })) return;
     try { await api("DELETE", "/api/projects/" + PJ.data.project.id); go("projetos"); } catch (err) { toast(err.message); }
@@ -1381,7 +1391,7 @@ document.addEventListener("drop", async e => {
 /* ---------- selo de verificado ---------- */
 function verifyHTML(p) {
   if (p.verified) return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:10px">
-    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Perfil verificado</b><p class="hint">Desde ${new Date(p.verified.replace(" ", "T") + "Z").toLocaleDateString("pt-BR")}. O selo verde aparece ao lado do seu nome.</p></div></div>
+    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Perfil verificado</b><p class="hint">Desde ${new Date(p.verified.replace(" ", "T") + "Z").toLocaleDateString(LOC)}. O selo verde aparece ao lado do seu nome.</p></div></div>
     <div><button type="button" class="btn sm ghost" data-act="verify-del">Remover selo</button></div></div>`;
   return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:12px">
     <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg off">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Selo de verificado <span class="muted" style="font-weight:400">(opcional)</span></b>
@@ -2316,6 +2326,9 @@ function openA11y() {
     <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Ajustes</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
+    <section class="adj-group" aria-labelledby="adjLang"><h3 class="label" id="adjLang">Idioma</h3>
+      <div class="field"><label class="sr-only" for="langSel">Idioma</label><select class="input" id="langSel" data-lang-set translate="no">${TR.langs.map(([c, n]) => `<option value="${c}" ${c === TR.lang ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <span class="hint">Escolha o idioma da plataforma. Fica salvo neste navegador.</span></div></section>
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
       ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
@@ -2332,6 +2345,9 @@ function openA11y() {
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);
 }
+// IDIOMA: qualquer seletor com data-lang-set (Ajustes e rodapé) troca o idioma e recarrega a página
+document.addEventListener("change", e => { if (e.target.matches && e.target.matches("[data-lang-set]")) TR.set(e.target.value); });
+$$("[data-lang-set]").forEach(s => { s.value = TR.lang; });
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }
 
 // MENU HAMBÚRGUER (celular e tablet): abre deslizando da direita. Esc fecha e o Tab fica preso
@@ -2380,4 +2396,4 @@ addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
 if (oauthErr) history.replaceState(null, "", location.pathname + location.hash);
 fixLegacyHash();
-Promise.all([refreshMe(), loadTaxonomy()]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });
+Promise.all([refreshMe(), loadTaxonomy(), TR.ready]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });

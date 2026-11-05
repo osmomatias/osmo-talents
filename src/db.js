@@ -211,6 +211,8 @@ CREATE TABLE IF NOT EXISTS avatars (
 // --- migrações (versão 6: avisos por e-mail)
 addColumn("users", "notify_level", "TEXT NOT NULL DEFAULT 'tudo'"); // tudo | importante | nada
 addColumn("users", "notify_token", "TEXT NOT NULL DEFAULT ''");
+// --- idioma de cada pessoa (pt-BR, en-US, es-419, fr-CA): usado nos e-mails de aviso
+addColumn("users", "lang", "TEXT NOT NULL DEFAULT 'pt-BR'");
 db.exec(`
 CREATE TABLE IF NOT EXISTS notify_log (
   thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,

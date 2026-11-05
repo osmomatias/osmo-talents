@@ -270,3 +270,17 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 ## Ainda não faz (próximas versões)
 
 - Arquivos nas propostas, mensagens e entregas das etapas (hoje só o briefing da vaga aceita arquivos)
+
+---
+
+## Idiomas (pt-BR, en-US, es-419, fr-CA)
+
+O site é escrito em português e traduzido na hora para inglês (EUA), espanhol (América Latina) e francês (Canadá).
+
+- **Como o idioma é escolhido:** na primeira visita, pelo idioma do navegador. Depois, a pessoa troca no rodapé ou em **Ajustes → Idioma** (fica salvo no navegador). Para testar ou mandar link num idioma: `osmo.com.br/?lang=en-US`.
+- **Onde ficam as traduções:** `public/i18n/en-US.json`, `es-419.json` e `fr-CA.json`. Cada linha é `"frase em português": "tradução"`. Frase sem tradução aparece em português, sem quebrar nada.
+- **Lacunas:** `{1}` é qualquer texto (nome, título de vaga) e `{#1}` é um número. Ex.: `"há {#1} min": "{1} min ago"`.
+- **Texto novo no app.js:** escreva em português como sempre e acrescente a frase nos três arquivos `.json`.
+- **E-mails** (senha nova e avisos de conversa) saem no idioma que a pessoa usou por último no site (coluna `users.lang`, criada sozinha ao ligar o servidor).
+- **Privacidade e Termos** têm as quatro versões dentro do próprio arquivo HTML. As traduções são de cortesia: em caso de divergência, vale o português (o aviso aparece no topo). Vale pedir revisão de um advogado.
+- O que as pessoas escrevem (mensagens, propostas, bio, títulos de vaga) não é traduzido.

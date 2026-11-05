@@ -495,6 +495,9 @@ body.menu-open{overflow:hidden}
 .icon-btn{width:44px; height:44px; border-radius:12px; border:1.5px solid var(--line); background:var(--surface); cursor:pointer; font-size:1.2rem; color:var(--fg)}
 .loading{padding:40px 0; color:var(--muted)}
 .foot{border-top:1px solid var(--line); margin-top:40px; padding-block:24px; color:var(--muted); font-size:.9rem}
+/* seletor de idioma no rodapé: discreto, do tamanho do texto do rodapé */
+.lang-foot select{font:inherit; color:inherit; background:transparent; border:1px solid var(--line); border-radius:999px; padding:4px 10px; cursor:pointer}
+.lang-foot select option{color:var(--text); background:var(--surface)}
 .bub.sys{align-self:center; background:none; border:1px dashed var(--line); color:var(--muted); font-size:.9rem; max-width:90%; text-align:center; border-radius:12px}
 .pin-edit{display:flex; gap:8px; margin-top:8px}
 .pin-edit .input{flex:1; min-width:0}
