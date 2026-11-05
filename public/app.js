@@ -2327,7 +2327,7 @@ function openA11y() {
     <div class="row" style="justify-content:space-between"><h2>Ajustes</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
     <section class="adj-group" aria-labelledby="adjLang"><h3 class="label" id="adjLang">Idioma</h3>
-      <div class="field"><label class="sr-only" for="langSel">Idioma</label><select class="input" id="langSel" data-lang-set translate="no">${TR.langs.map(([c, n]) => `<option value="${c}" ${c === TR.lang ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <div class="field"><label class="lang-pill"><span class="sr-only">Idioma</span><span class="lang-flag" aria-hidden="true">${LANG_FLAGS[TR.lang] || ""}</span><select id="langSel" data-lang-set translate="no">${TR.langs.map(([c, n]) => `<option value="${c}" ${c === TR.lang ? "selected" : ""}>${n}</option>`).join("")}</select><svg class="lang-caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z"/></svg></label>
       <span class="hint">Escolha o idioma da plataforma. Fica salvo neste navegador.</span></div></section>
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
@@ -2345,9 +2345,18 @@ function openA11y() {
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);
 }
+// BANDEIRAS do seletor de idioma: desenhos simples em SVG, recortados em círculo pelo CSS.
+// Latinoamérica usa a do México (não existe uma bandeira única da região).
+const LANG_FLAGS = {
+  "pt-BR": `<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#009C3B"/><path d="M12 3.5 22 12 12 20.5 2 12z" fill="#FFDF00"/><circle cx="12" cy="12" r="5" fill="#002776"/><path d="M7.2 10.8c3.2-.6 6.6.1 9.6 1.9" stroke="#fff" stroke-width="1" fill="none"/></svg>`,
+  "en-US": `<svg viewBox="0 0 26 26"><rect width="26" height="26" fill="#fff"/>${[0, 4, 8, 12, 16, 20, 24].map(y => `<rect y="${y}" width="26" height="2" fill="#B22234"/>`).join("")}<rect width="13" height="14" fill="#3C3B6E"/>${[[3, 3], [7, 3], [11, 3], [5, 6.5], [9, 6.5], [3, 10], [7, 10], [11, 10]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r=".8" fill="#fff"/>`).join("")}</svg>`,
+  "es-419": `<svg viewBox="0 0 24 24"><rect width="8" height="24" fill="#006847"/><rect x="8" width="8" height="24" fill="#fff"/><rect x="16" width="8" height="24" fill="#CE1126"/><circle cx="12" cy="12" r="2.2" fill="#8C6A3F"/></svg>`,
+  "fr-CA": `<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#fff"/><rect width="6" height="24" fill="#D52B1E"/><rect x="18" width="6" height="24" fill="#D52B1E"/><path d="M12 5.5l1.1 2.2 1.3-.6-.5 3 1.8-1.6.4 1.2 1.6-.3-.6 1.9.8.5L14.6 14l.3 1.2-2.5-.4.1 3.2h-1l.1-3.2-2.5.4.3-1.2-3.3-2.2.8-.5-.6-1.9 1.6.3.4-1.2 1.8 1.6-.5-3 1.3.6z" fill="#D52B1E"/></svg>`,
+};
 // IDIOMA: qualquer seletor com data-lang-set (Ajustes e rodapé) troca o idioma e recarrega a página
 document.addEventListener("change", e => { if (e.target.matches && e.target.matches("[data-lang-set]")) TR.set(e.target.value); });
 $$("[data-lang-set]").forEach(s => { s.value = TR.lang; });
+$$(".lang-flag").forEach(f => { f.innerHTML = LANG_FLAGS[TR.lang] || ""; });
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }
 
 // MENU HAMBÚRGUER (celular e tablet): abre deslizando da direita. Esc fecha e o Tab fica preso
