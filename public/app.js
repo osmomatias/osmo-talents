@@ -247,7 +247,39 @@ const ICONS = {
   tarefas: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 12.5l3 3 6-7"/>',
   buscar: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   panorama: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  // setas cruzadas, como o botão de "aleatório" do iPod/iTunes: troca o papel (cliente ↔ freelancer)
+  shuffle: '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
 };
+// DOIS PAPÉIS: a mesma conta pode contratar (cliente) e trabalhar (freelancer). ME.role é o papel
+// ativo; ME.roles, os que a pessoa tem. O botão com o ícone de "aleatório" no menu troca o papel
+// ativo e o site inteiro se ajusta: abas, botões, painel, perfil e a busca da barra de baixo.
+const ROLE_NAME = { cliente: "Cliente", freela: "Freelancer" };
+const otherRole = () => ME && ME.role === "cliente" ? "freela" : "cliente";
+const hasBoth = () => !!(ME && ME.roles && ME.roles.includes("freela") && ME.roles.includes("cliente"));
+function roleSwitch() {
+  if (!ME) return "";
+  const o = otherRole(), both = hasBoth();
+  const hint = both ? (o === "cliente" ? "Trocar para contratar" : "Trocar para trabalhar") : (o === "cliente" ? "Também quero contratar" : "Também quero trabalhar");
+  return `<button type="button" class="mm-role" data-act="switch-role" data-role="${o}">
+    <span class="mm-role-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICONS.shuffle}</svg></span>
+    <span class="mm-role-txt"><span class="mm-role-k">Você está como</span><b>${ROLE_NAME[ME.role]}</b><span class="mm-role-h">${hint}</span></span>
+    <span class="mm-role-seg" aria-hidden="true">${["cliente", "freela"].map(r => `<span class="${r === ME.role ? "on" : ""}">${ROLE_NAME[r]}</span>`).join("")}</span>
+  </button>`;
+}
+async function switchRole(to, back) {
+  if (!hasBoth()) {
+    const ok = await confirmSheet(to === "cliente"
+      ? { title: "Usar a conta também para contratar?", text: "Você continua sendo freelancer. Passa a poder publicar vagas e convidar talentos, e troca de papel pelo menu quando quiser.", ok: "Ativar papel de cliente" }
+      : { title: "Usar a conta também para trabalhar?", text: "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.", ok: "Ativar papel de freelancer" });
+    if (!ok) return;
+  }
+  const r = await api("POST", "/api/me/role", { role: to });
+  await refreshMe();
+  if (menuOpen) closeMenu(false);
+  toast(r.role === "cliente" ? "Agora você está como cliente" : "Agora você está como freelancer");
+  // freela que acabou de virar cliente começa publicando; cliente que virou freela começa pelo perfil
+  return go(back || (r.added ? (r.role === "cliente" ? "publicar" : "perfil") : "painel"));
+}
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
   $$("[data-unread]").forEach(b => { b.hidden = !unread; b.textContent = unread; });
@@ -260,7 +292,7 @@ function renderChrome() {
     <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
   const item = (k, label, extra = "") => `<li><button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}${extra}</span><span class="chev" aria-hidden="true">›</span></button></li>`;
   $("#mmBody").innerHTML = `
-    ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])} · ${ME.role === "cliente" ? "conta de cliente" : "conta de freelancer"}</p>` : ""}
+    ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])}</p>${roleSwitch()}` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
       ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
@@ -344,7 +376,12 @@ function fixLegacyHash() {
 }
 function needLogin(role) {
   if (!ME) { S.next = curH(); go("entrar"); return true; }
-  if (role && ME.role !== role) { $("#view").innerHTML = emptyBox(role === "cliente" ? "Esta área é para contas de cliente." : "Esta área é para contas de freelancer.", "Você está com uma conta de " + (ME.role === "cliente" ? "cliente" : "freelancer") + ".", "inicio", "Ir para o início"); return true; }
+  if (role && ME.role !== role) {
+    $("#view").innerHTML = emptyBox(role === "cliente" ? "Esta área é para quem contrata." : "Esta área é para quem trabalha como freelancer.", "Agora você está como " + (ME.role === "cliente" ? "cliente" : "freelancer") + ".", "inicio", "Ir para o início");
+    const b = $("#view .empty"); // oferece trocar de papel ali mesmo e voltar para esta tela
+    if (b) b.insertAdjacentHTML("beforeend", `<button class="btn hl" data-act="switch-role" data-role="${role}" data-back="${esc(curH())}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS.shuffle}</svg>${role === "cliente" ? "Trocar para cliente" : "Trocar para freelancer"}</button>`);
+    return true;
+  }
   return false;
 }
 function emptyBox(title, text, goTo, label) {
@@ -1816,6 +1853,7 @@ document.addEventListener("click", async e => {
   const id = Number(act.dataset.id);
   const busy = fn => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
+    case "switch-role": return busy(() => switchRole(act.dataset.role, act.dataset.back))();
     case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
     case "oauth-role": return busy(async () => {
       try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }

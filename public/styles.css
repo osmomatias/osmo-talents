@@ -1158,3 +1158,25 @@ html[data-device="tv"] .drawer{width:min(40vw,100%)}
 @media (max-width:980px){ .adm-bar-fixed{bottom:96px; border-radius:18px; justify-content:center} }
 /* some quando um painel (formulário, confirmação) está aberto, para não cobrir os botões dele */
 body:has(#layer > *) .adm-bar-fixed{display:none}
+
+/* TROCAR DE PAPEL (menu): cartão com o ícone de "aleatório" (setas cruzadas). Ao tocar, as setas
+   dão meia-volta e o site passa a mostrar a interface do outro papel (cliente ↔ freelancer). */
+.mm-role{width:100%; display:flex; align-items:center; gap:14px; margin:8px 0 4px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--fg); text-align:left; cursor:pointer; font:inherit}
+.mm-role:hover{background:var(--sunken)}
+.mm-role:focus-visible{outline:3px solid var(--orange); outline-offset:2px}
+.mm-role-ico{flex:none; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--accent); color:var(--accent-ink)}
+.mm-role-ico svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:transform .45s cubic-bezier(.3,1.4,.5,1)}
+.mm-role:hover .mm-role-ico svg, .mm-role:focus-visible .mm-role-ico svg{transform:rotate(180deg)}
+.mm-role[disabled] .mm-role-ico svg{animation:role-spin .7s linear infinite}
+@keyframes role-spin{to{transform:rotate(360deg)}}
+.mm-role-txt{display:flex; flex-direction:column; min-width:0; line-height:1.25}
+.mm-role-k{font-size:.8rem; color:var(--muted)}
+.mm-role-txt b{font-size:1.08rem}
+.mm-role-h{font-size:.86rem; color:var(--accent); font-weight:600}
+.mm-role-seg{margin-left:auto; display:flex; padding:3px; border-radius:999px; background:var(--sunken); font-size:.74rem; font-weight:700}
+.mm-role-seg span{padding:4px 9px; border-radius:999px; color:var(--muted)}
+.mm-role-seg span.on{background:var(--surface); color:var(--fg); box-shadow:0 1px 3px rgb(0 0 0 / .12)}
+@media (max-width:380px){ .mm-role-seg{display:none} }
+.empty .btn .ico{width:18px; height:18px; margin-right:6px; vertical-align:-3px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+.calm .mm-role-ico svg{transition:none}
+@media (prefers-reduced-motion: reduce){ .mm-role-ico svg{transition:none} .mm-role[disabled] .mm-role-ico svg{animation:none} }

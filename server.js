@@ -143,12 +143,20 @@ function appendCookie(res, c) {
   const prev = res.getHeader("Set-Cookie");
   res.setHeader("Set-Cookie", prev ? [].concat(prev, c) : c);
 }
+// PAPÉIS: uma conta pode ser de freelancer, de cliente ou das duas coisas. "role" é o papel ativo.
+const ROLES = ["freela", "cliente"];
+const rolesOf = u => ROLES.filter(r => u.role === r || ("," + (u.roles || "") + ",").includes("," + r + ","));
+// pedaço de SQL: "esta pessoa tem o papel r?" (vale para quem só tem um papel e para quem tem os dois)
+const HAS = (r, a = "u") => `(${a}.role = '${r}' OR instr(',' || ${a}.roles || ',', ',${r},') > 0)`;
 function currentUser(req) {
   const tok = readCookie(req, "osmo_sid");
   if (!tok) return null;
   const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
   if (!s || s.expires_at < new Date().toISOString()) return null;
-  return one("SELECT id, name, email, role, energy, notify_level notify, lang FROM users WHERE id = ?", s.user_id) || null;
+  const u = one("SELECT id, name, email, role, roles, energy, notify_level notify, lang FROM users WHERE id = ?", s.user_id);
+  if (!u) return null;
+  u.roles = rolesOf(u);
+  return u;
 }
 function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("base64url");
@@ -192,12 +200,12 @@ function reviewsOf(userId) {
 const portfolioOf = userId => all("SELECT id, title, link, v FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", userId)
   .map(p => ({ id: p.id, title: p.title, link: p.link, image: p.v ? `/portfolio/${p.id}?v=${p.v}` : "" }));
 function profileOf(userId) {
-  const u = one(`SELECT u.id, u.name, u.role, a.v avatar_v, vf.verified_at, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+  const u = one(`SELECT u.id, u.name, u.role, u.roles, a.v avatar_v, vf.verified_at, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id
     LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN verifications vf ON vf.user_id = u.id WHERE u.id = ?`, userId);
   if (!u) return null;
   const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
   return {
-    id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
+    id: u.id, name: u.name, role: u.role, roles: rolesOf(u), title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
     tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id), verified: u.verified_at || "",
@@ -408,6 +416,16 @@ route("GET", "/api/me", ({ user }) => {
     ...pub };
 }, { auth: false });
 
+// TROCAR DE PAPEL: a mesma conta pode ser de freelancer e de cliente. Aqui a pessoa escolhe qual
+// papel está usando agora (o site inteiro se ajusta a ele). Se ainda não tinha o outro papel,
+// ele é ativado na hora: as vagas, propostas e contratos de cada lado continuam onde estavam.
+route("POST", "/api/me/role", ({ user, body }) => {
+  const role = ROLES.includes(body.role) ? body.role : user.roles.find(r => r !== user.role);
+  const roles = [...new Set([...user.roles, role])];
+  run("UPDATE users SET role = ?, roles = ? WHERE id = ?", role, roles.join(","), user.id);
+  return { ok: true, role, roles, added: !user.roles.includes(role) };
+});
+
 // SALVAR PERFIL: limpa e corta cada campo no tamanho certo (título até 100 letras, bio até
 // 1200, no máximo 12 habilidades...) e grava. Se veio CPF/CNPJ, confere se é válido antes.
 route("PUT", "/api/me/profile", ({ user, body }) => {
@@ -541,7 +559,7 @@ route("PUT", "/api/me/energy", ({ user, body }) => {
 // --- talentos
 route("GET", "/api/talents", ({ query }) => {
   const q = str(query.get("q") || "", 80).toLowerCase();
-  const rows = all("SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200");
+  const rows = all(`SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200`);
   let out = rows.map(r => profileOf(r.id)).filter(Boolean);
   if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
   return { talents: out };
@@ -549,7 +567,7 @@ route("GET", "/api/talents", ({ query }) => {
 
 route("GET", "/api/talents/:id", ({ params }) => {
   const t = profileOf(params.id);
-  if (!t || t.role !== "freela") fail(404, "Perfil não encontrado.");
+  if (!t || !t.roles.includes("freela")) fail(404, "Perfil não encontrado.");
   return { talent: { ...t, reviews: reviewsOf(t.id) } };
 }, { auth: false });
 
@@ -684,8 +702,9 @@ function serveFile(req, res, id) {
 route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ? AND status = 'aberta'", params.id, user.id);
   if (!j) fail(404, "Vaga aberta não encontrada.");
-  const t = one("SELECT id FROM users WHERE id = ? AND role = 'freela'", int(body.talentId));
+  const t = one(`SELECT id FROM users u WHERE id = ? AND ${HAS("freela")}`, int(body.talentId));
   if (!t) fail(404, "Talento não encontrado.");
+  if (t.id === user.id) fail(400, "Você não pode convidar a si mesmo.");
   const th = threadFor(j.id, user.id, t.id);
   postMessage(th, null, `${user.name} convidou você para a vaga "${j.title}". Leia o briefing e, se fizer sentido, envie uma proposta.`, user.id);
   return { thread: th };
@@ -702,6 +721,7 @@ route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
 route("POST", "/api/jobs/:id/proposals", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND status = 'aberta'", params.id);
   if (!j) fail(404, "Essa vaga não está mais aberta.");
+  if (j.client_id === user.id) fail(400, "Esta vaga é sua: você não pode mandar proposta para ela.");
   if (one("SELECT 1 FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id)) fail(409, "Você já enviou uma proposta para esta vaga.");
   const prof = one("SELECT hours FROM profiles WHERE user_id = ?", user.id);
   const open = one("SELECT COUNT(*) n FROM proposals WHERE freela_id = ? AND status = 'enviada'", user.id).n;
@@ -1051,7 +1071,7 @@ route("GET", "/api/threads/:id", ({ user, params }) => {
   const job = t.job_id ? one("SELECT id, title FROM jobs WHERE id = ?", t.job_id) : null;
   const msgs = all("SELECT id, sender_id, body, created_at FROM messages WHERE thread_id = ? ORDER BY id LIMIT 500", t.id)
     .map(m => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null }));
-  return { thread: { id: t.id, pin: t.pin, job, with: other }, messages: msgs };
+  return { thread: { id: t.id, pin: t.pin, job, with: other && { ...other, role: t.client_id === user.id ? "freela" : "cliente" } }, messages: msgs };
 });
 route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
   limit("msg:" + user.id, 60, 60_000);
@@ -1069,8 +1089,9 @@ route("PUT", "/api/threads/:id/pin", ({ user, params, body }) => {
   return { ok: true };
 });
 route("POST", "/api/threads", ({ user, body }) => {
-  const other = one("SELECT id, role FROM users WHERE id = ?", int(body.withId));
-  if (!other || other.role === user.role) fail(400, "Conversas são entre quem contrata e quem trabalha.");
+  const other = one("SELECT id, role, roles FROM users WHERE id = ?", int(body.withId));
+  const want = user.role === "cliente" ? "freela" : "cliente"; // conversa direta: o outro lado precisa ter o papel oposto ao seu
+  if (!other || other.id === user.id || !rolesOf(other).includes(want)) fail(400, "Conversas são entre quem contrata e quem trabalha.");
   const th = user.role === "cliente" ? threadFor(null, user.id, other.id) : threadFor(null, other.id, user.id);
   return { thread: th };
 });
@@ -1104,13 +1125,14 @@ route("GET", "/api/admin/overview", ({ user }) => {
     generatedAt: new Date().toISOString(),
     config: { payments: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS, mail: mail.ENABLED, oauth: oauth.list(), version: appVersion() },
     people: {
-      freelas: count("SELECT COUNT(*) n FROM users WHERE role = 'freela'"), clientes: count("SELECT COUNT(*) n FROM users WHERE role = 'cliente'"),
+      freelas: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")}`), clientes: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("cliente")}`),
+      both: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")} AND ${HAS("cliente")}`),
       new7: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-7 days')"),
       new30: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-30 days')"),
       active7: count("SELECT COUNT(DISTINCT sender_id) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
       verified: count("SELECT COUNT(*) n FROM verifications"),
       withPayout: count("SELECT COUNT(*) n FROM payout_accounts"),
-      profilesReady: count("SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''"),
+      profilesReady: count(`SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''`),
     },
     jobs: { byStatus: byKey("SELECT status k, COUNT(*) n FROM jobs GROUP BY status"), total: jobsTotal,
       avgClarity: Math.round(one("SELECT AVG(clarity) n FROM jobs").n || 0),
@@ -1224,7 +1246,7 @@ const ADMIN_ENT = {
     cols: [["title", "Vaga"], ["client", "Cliente"], ["status", "Situação"], ["clarity", "Clareza %"], ["created_at", "Publicada"]],
     get: id => one("SELECT * FROM jobs WHERE id = ?", id),
     create: v => {
-      if (!one("SELECT 1 FROM users WHERE id = ? AND role = 'cliente'", v.client_id)) fail(400, "Esse id não é de uma conta de cliente.");
+      if (!one(`SELECT 1 FROM users u WHERE id = ? AND ${HAS("cliente")}`, v.client_id)) fail(400, "Esse id não é de uma conta de cliente.");
       const j = { title: v.title, cat: v.cat, obj: v.obj || "", ent: v.ent || [], fora: v.fora || [], com: v.com || "", fb: v.fb || "", budget: v.budget || 0, duration: v.duration || "" };
       const id = Number(run(`INSERT INTO jobs (client_id, title, cat, obj, ent, fora, com, fb, ref, budget_type, budget, duration, skills, is_async, is_flex, clarity, status)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.client_id, j.title, j.cat, j.obj, JSON.stringify(j.ent), JSON.stringify(j.fora), j.com, j.fb, v.ref || "",
