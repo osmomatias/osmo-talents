@@ -34,7 +34,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- theme.js vem ANTES do CSS de propósito: ele liga o tema escuro e as
      preferências antes de qualquer coisa aparecer, para a tela não piscar. -->
-<script src="/theme.js?v=2"></script>
+<script src="/theme.js"></script>
 <!-- IDIOMA: i18n-core.js é o dicionário que sabe procurar; i18n.js descobre o idioma da pessoa,
      baixa o dicionário e troca os textos da tela. Vêm cedo para a página não piscar em português. -->
 <script src="/i18n-core.js"></script>
@@ -43,24 +43,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
 <link rel="stylesheet" href="/fonts.css">
-<link rel="stylesheet" href="/styles.css?v=2">
+<link rel="stylesheet" href="/styles.css">
 </head>
 <!-- O corpo da página: tudo daqui para baixo é o que aparece na tela. -->
 <body>
-<!-- VIDRO LÍQUIDO, REFRAÇÃO: estes dois filtros "entortam" o que está atrás do vidro só perto das bordas,
-     como a borda grossa de uma lente. Cada um lê um mapa (feImage): vermelho diz quanto empurrar para os lados,
-     verde, para cima e para baixo; cinza do meio (128) não mexe. Só o Chrome/Edge sabem usar isso em
-     backdrop-filter; nos outros o theme.js não liga a classe "refract" e o vidro fica só desfocado. -->
-<svg class="lg-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
-  <filter id="lg-refract" x="0" y="0" width="1" height="1" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">
-    <feImage href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22x%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ff0000%22%2F%3E%3Cstop%20offset%3D%220.04%22%20stop-color%3D%22%23c60000%22%2F%3E%3Cstop%20offset%3D%220.1%22%20stop-color%3D%22%239a0000%22%2F%3E%3Cstop%20offset%3D%220.18%22%20stop-color%3D%22%23800000%22%2F%3E%3Cstop%20offset%3D%220.82%22%20stop-color%3D%22%23800000%22%2F%3E%3Cstop%20offset%3D%220.9%22%20stop-color%3D%22%23660000%22%2F%3E%3Cstop%20offset%3D%220.96%22%20stop-color%3D%22%233a0000%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000000%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22y%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2300ff00%22%2F%3E%3Cstop%20offset%3D%220.08%22%20stop-color%3D%22%2300c600%22%2F%3E%3Cstop%20offset%3D%220.18%22%20stop-color%3D%22%23009a00%22%2F%3E%3Cstop%20offset%3D%220.3%22%20stop-color%3D%22%23008000%22%2F%3E%3Cstop%20offset%3D%220.7%22%20stop-color%3D%22%23008000%22%2F%3E%3Cstop%20offset%3D%220.82%22%20stop-color%3D%22%23006600%22%2F%3E%3Cstop%20offset%3D%220.92%22%20stop-color%3D%22%23003a00%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000000%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20fill%3D%22url%28%23x%29%22%2F%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20fill%3D%22url%28%23y%29%22%20style%3D%22mix-blend-mode%3Ascreen%22%2F%3E%3C%2Fsvg%3E" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map"/>
-    <feDisplacementMap in="SourceGraphic" in2="map" scale="0.14" xChannelSelector="R" yChannelSelector="G"/>
-  </filter>
-  <filter id="lg-refract-wide" x="0" y="0" width="1" height="1" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">
-    <feImage href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22x%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23880000%22%2F%3E%3Cstop%20offset%3D%220.03%22%20stop-color%3D%22%23800000%22%2F%3E%3Cstop%20offset%3D%220.97%22%20stop-color%3D%22%23800000%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23780000%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22y%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2300ff00%22%2F%3E%3Cstop%20offset%3D%220.08%22%20stop-color%3D%22%2300c600%22%2F%3E%3Cstop%20offset%3D%220.18%22%20stop-color%3D%22%23009a00%22%2F%3E%3Cstop%20offset%3D%220.3%22%20stop-color%3D%22%23008000%22%2F%3E%3Cstop%20offset%3D%220.7%22%20stop-color%3D%22%23008000%22%2F%3E%3Cstop%20offset%3D%220.82%22%20stop-color%3D%22%23006600%22%2F%3E%3Cstop%20offset%3D%220.92%22%20stop-color%3D%22%23003a00%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000000%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20fill%3D%22url%28%23x%29%22%2F%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20fill%3D%22url%28%23y%29%22%20style%3D%22mix-blend-mode%3Ascreen%22%2F%3E%3C%2Fsvg%3E" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map"/>
-    <feDisplacementMap in="SourceGraphic" in2="map" scale="0.3" xChannelSelector="R" yChannelSelector="G"/>
-  </filter>
-</defs></svg>
 <!-- CABEÇALHO: o logo da Osmo (desenhado em SVG, que é um desenho feito de
      números e por isso fica nítido em qualquer tamanho), o menu principal
      e o espaço para os botões de entrar, perfil etc. (topActions). -->

@@ -41,12 +41,6 @@
   // 3. o tamanho da tela, só como desempate.
   // É sempre automático. Só para testar, dá para abrir o site com ?tela=tv, ?tela=celular etc. (vale até fechar a aba).
   var ua = navigator.userAgent || "", mm = function (q) { return !!(window.matchMedia && matchMedia(q).matches); };
-
-  // REFRAÇÃO DO VIDRO: entortar o fundo nas bordas (filtros SVG do index.html) só funciona no
-  // Chrome/Edge de computador e Android. Safari, Firefox e o Chrome do iPhone ficam só com o desfoque.
-  try {
-    if (window.chrome && !/CriOS|FxiOS|EdgiOS/.test(ua) && window.CSS && CSS.supports("backdrop-filter", "url(#a)")) r.classList.add("refract");
-  } catch (e) {}
   var dev = "";
   try { var q = (location.search.match(/[?&]tela=(celular|tablet|computador|tv)\b/) || [])[1]; if (q) sessionStorage.setItem("osmo-tela", q); dev = q || sessionStorage.getItem("osmo-tela") || ""; localStorage.removeItem("osmo-device"); } catch (e) {} // apaga escolhas antigas feitas em Ajustes
   var MAP = { celular: "phone", tablet: "tablet", computador: "desktop", tv: "tv", phone: "phone", desktop: "desktop" };
