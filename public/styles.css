@@ -685,9 +685,20 @@ html.glass .psec-b>.panel{border:0; background:none; box-shadow:none; -webkit-ba
 }
 @keyframes sheet-up{from{transform:translateY(40px); opacity:.6}}
 
-/* ---------- blocos de carregamento (mesmas cores e cantos dos painéis; parados de propósito) ---------- */
-.sk-wrap{display:flex; flex-direction:column; gap:14px}
-.sk{background:var(--sunken); border:1px solid var(--line); border-radius:var(--r); max-width:100%}
+/* ---------- blocos de carregamento (chapados: mesmos cantos dos painéis, sem borda nem sombra; com um brilho suave que passa
+   da esquerda para a direita; quem pede "menos movimento" no sistema vê os blocos parados) ---------- */
+.sk-wrap{display:flex; flex-direction:column; gap:14px; animation:sk-in .2s ease-out}
+.sk{position:relative; overflow:hidden; background:var(--sunken); border:0; border-radius:var(--r); box-shadow:none; max-width:100%}
+.sk::after{content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg, transparent, rgb(255 255 255 / .55), transparent);
+  animation:sk-shine 1.4s ease-in-out infinite}
+.sk-wrap .sk:nth-child(2n)::after{animation-delay:.08s}
+.sk-wrap .sk:nth-child(3n)::after{animation-delay:.16s}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .sk::after{background:linear-gradient(90deg, transparent, rgb(255 255 255 / .1), transparent)}}
+:root[data-theme="dark"] .sk::after{background:linear-gradient(90deg, transparent, rgb(255 255 255 / .1), transparent)}
+@keyframes sk-shine{to{transform:translateX(100%)}}
+@keyframes sk-in{from{opacity:0}}
+@media (prefers-reduced-motion: reduce){.sk::after{display:none}}
 .sk-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px}
 .sk-row{display:flex; gap:18px; align-items:center}
 .sk-col{flex:1; display:flex; flex-direction:column; gap:10px}
@@ -964,6 +975,9 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 :is(.job,.talent,.cat):hover,html.glass :is(.job,.talent,.cat):hover{border-color:var(--hover-line)}
 :is(.panel,.job,.talent,.cat,.wcard,.msgs){box-shadow:inset 0 2px 0 var(--warm-edge)}
 html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){box-shadow:inset 0 2px 0 var(--warm-edge), var(--glass-hi), var(--glass-shadow)}
+html.glass .sk{background:rgb(90 20 50 / .1); border:0; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]).glass .sk{background:rgb(255 255 255 / .06)}}
+:root[data-theme="dark"].glass .sk{background:rgb(255 255 255 / .06)} /* bloco de carregamento: chapado (sem borda, sombra nem desfoque), num tom que aparece sobre o fundo */
 .psec-b>.panel,html.glass .psec-b>.panel{box-shadow:none}
 
 /* ---------- aviso de estatísticas (Google Analytics só com permissão) ----------

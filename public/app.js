@@ -350,7 +350,7 @@ async function route() {
   const [name, idStr] = h.split("-"); const id = Number(idStr) || null;
   const fn = V[name] || V.inicio;
   markNav();
-  // trocou de tela e a resposta demorou: mostra blocos no formato do conteúdo (parados, sem animação)
+  // trocou de tela e a resposta demorou: mostra blocos no formato do conteúdo
   const skT = h !== SHOWN ? setTimeout(() => { if (seq === renderSeq) { $("#view").innerHTML = skeleton(name); window.scrollTo(0, 0); } }, 150) : null;
   try {
     const html = await fn(id);
@@ -388,7 +388,7 @@ function setPageTitle(name) {
   if (!(typeof POMO !== "undefined" && POMO.on && POMO.running)) document.title = title;
 }
 // SKELETON: os "blocos cinza" que aparecem enquanto a tela carrega, com o formato aproximado
-// de cada tela. Ficam parados de propósito (sem piscar), para não incomodar.
+// de cada tela, com um brilho suave passando (some para quem pede "menos movimento" no sistema).
 // V é a caixa onde moram as funções de cada tela; "after" guarda o que fazer DEPOIS que uma
 // tela aparece (ex.: começar a atualizar as mensagens sozinho).
 let SHOWN = "";
@@ -403,7 +403,14 @@ function skeleton(name) {
     talento: `<div class="sk-row">${b(92, "92px", "; border-radius:50%; flex:none")}<div class="sk-col">${b(32, "70%")}${b(16, "45%")}</div></div>` + b(240),
     mensagens: b(28, "35%") + rows(5, 68), painel: b(28, "30%") + `<div class="sk-grid">${rows(4, 84)}</div>` + rows(2, 150),
     perfil: b(36, "50%") + rows(4, 76), publicar: b(36, "60%") + rows(3, 200),
+    projetos: b(36, "35%") + b(16, "55%") + `<div class="sk-grid">${rows(6, 110)}</div>`,
+    projeto: b(36, "45%") + `<div class="sk-grid">${rows(3, 320)}</div>`,
+    tarefas: b(36, "40%") + b(16, "60%") + rows(3, 160),
+    panorama: b(28, "30%") + `<div class="sk-grid">${rows(4, 84)}</div>` + rows(2, 180),
+    gestao: b(28, "30%") + b(44) + rows(6, 52),
+    avisos: b(16, "25%") + b(36, "60%") + b(260),
   };
+  shapes.contrato = shapes.projeto; // "contrato" só descobre o projeto e vai para ele
   return `<div class="sk-wrap" aria-hidden="true">${shapes[name] || rows(3, 120)}</div><p class="sr-only" role="status">Carregando…</p>`;
 }
 const after = {};
