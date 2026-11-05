@@ -1290,10 +1290,10 @@ body:has(#layer > *) .adm-bar-fixed{display:none}
 .mm-role:hover{background:var(--sunken)}
 .mm-role:focus-visible{outline:3px solid var(--orange); outline-offset:2px}
 .mm-role-ico{flex:none; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--accent); color:var(--accent-ink)}
-.mm-role-ico svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:transform .45s cubic-bezier(.3,1.4,.5,1)}
-.mm-role:hover .mm-role-ico svg, .mm-role:focus-visible .mm-role-ico svg{transform:rotate(180deg)}
-.mm-role[disabled] .mm-role-ico svg{animation:role-spin .7s linear infinite}
-@keyframes role-spin{to{transform:rotate(360deg)}}
+.role-anim{display:block; width:24px; height:24px}
+.role-anim svg{display:block; width:100% !important; height:100% !important}
+.role-anim .ico-static{fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+.role-anim.on path{stroke:currentColor} /* a animação Lottie usa a cor do tema, não a cor gravada no arquivo */
 .mm-role-txt{display:flex; flex-direction:column; min-width:0; line-height:1.25}
 .mm-role-k{font-size:.8rem; color:var(--muted)}
 .mm-role-txt b{font-size:1.08rem}
@@ -1303,5 +1303,3 @@ body:has(#layer > *) .adm-bar-fixed{display:none}
 .mm-role-seg span.on{background:var(--surface); color:var(--fg); box-shadow:0 1px 3px rgb(0 0 0 / .12)}
 @media (max-width:380px){ .mm-role-seg{display:none} }
 .empty .btn .ico{width:18px; height:18px; margin-right:6px; vertical-align:-3px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
-.calm .mm-role-ico svg{transition:none}
-@media (prefers-reduced-motion: reduce){ .mm-role-ico svg{transition:none} .mm-role[disabled] .mm-role-ico svg{animation:none} }

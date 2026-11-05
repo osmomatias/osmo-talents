@@ -261,11 +261,34 @@ function roleSwitch() {
   const o = otherRole(), both = hasBoth();
   const hint = both ? (o === "cliente" ? "Trocar para contratar" : "Trocar para trabalhar") : (o === "cliente" ? "Também quero contratar" : "Também quero trabalhar");
   return `<button type="button" class="mm-role" data-act="switch-role" data-role="${o}">
-    <span class="mm-role-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICONS.shuffle}</svg></span>
+    <span class="mm-role-ico" aria-hidden="true"><span class="role-anim"><svg class="ico-static" viewBox="0 0 24 24">${ICONS.shuffle}</svg></span></span>
     <span class="mm-role-txt"><span class="mm-role-k">Você está como</span><b>${ROLE_NAME[ME.role]}</b><span class="mm-role-h">${hint}</span></span>
     <span class="mm-role-seg" aria-hidden="true">${["cliente", "freela"].map(r => `<span class="${r === ME.role ? "on" : ""}">${ROLE_NAME[r]}</span>`).join("")}</span>
   </button>`;
 }
+// ANIMAÇÃO DO BOTÃO (Lottie): o arquivo /anim/trocar-papel.json desenha as duas setas; uma sobe
+// enquanto a outra desce e elas voltam a se cruzar. Quem toca é o lottie-web (versão leve, servida
+// pelo próprio site em /vendor), baixado só quando o menu abre. Com "movimento reduzido" ligado
+// (no aparelho ou em Ajustes) nada se mexe e fica o ícone parado.
+let LOTTIE_P = null;
+const loadLottie = () => LOTTIE_P || (LOTTIE_P = new Promise((ok, no) => {
+  if (window.lottie) return ok(window.lottie);
+  const sc = document.createElement("script"); sc.src = "/vendor/lottie_light.min.js"; sc.onload = () => ok(window.lottie); sc.onerror = no; document.head.appendChild(sc);
+}).catch(() => { LOTTIE_P = null; return null; }));
+const calmMotion = () => document.documentElement.classList.contains("calm") || matchMedia("(prefers-reduced-motion: reduce)").matches;
+async function prepRoleAnim() {
+  const box = $("#mmenu .role-anim");
+  if (!box || box._anim || calmMotion()) return box && box._anim;
+  const L = await loadLottie(); if (!L || !box.isConnected || box._anim) return box._anim || null;
+  const a = box._anim = L.loadAnimation({ container: box, renderer: "svg", loop: false, autoplay: false, path: "/anim/trocar-papel.json" });
+  a.addEventListener("DOMLoaded", () => { box.querySelector(".ico-static")?.remove(); box.classList.add("on"); });
+  return a;
+}
+const playRoleAnim = async () => { const a = await prepRoleAnim(); if (a && a.isLoaded) a.goToAndPlay(0, true); };
+document.addEventListener("pointerover", e => {
+  const b = e.target.closest && e.target.closest(".mm-role");
+  if (b && e.pointerType === "mouse" && !b.contains(e.relatedTarget)) playRoleAnim();
+});
 async function switchRole(to, back) {
   if (!hasBoth()) {
     const ok = await confirmSheet(to === "cliente"
@@ -273,7 +296,11 @@ async function switchRole(to, back) {
       : { title: "Usar a conta também para trabalhar?", text: "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.", ok: "Ativar papel de freelancer" });
     if (!ok) return;
   }
+  const t0 = Date.now(), anim = menuOpen && !calmMotion();
+  if (anim) playRoleAnim();
   const r = await api("POST", "/api/me/role", { role: to });
+  const left = 950 - (Date.now() - t0); // deixa a animação terminar antes de redesenhar o menu
+  if (anim && left > 0) await new Promise(res => setTimeout(res, left));
   await refreshMe();
   if (menuOpen) closeMenu(false);
   toast(r.role === "cliente" ? "Agora você está como cliente" : "Agora você está como freelancer");
@@ -2485,6 +2512,7 @@ function openMenu() {
   const m = $("#mmenu"), sc = $("#mmScrim"); clearTimeout(menuT); m.hidden = false; sc.hidden = false; menuOpen = true;
   requestAnimationFrame(() => { m.classList.add("open"); sc.classList.add("open"); });
   document.body.classList.add("menu-open"); $("#menuBtn").setAttribute("aria-expanded", "true");
+  if (ME) prepRoleAnim(); // já deixa a animação do botão de trocar papel pronta
   const cur = m.querySelector('[aria-current="page"]') || m.querySelector("button"); setTimeout(() => (cur || $("#mmClose")).focus(), 30);
 }
 function closeMenu(refocus) {
