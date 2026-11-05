@@ -245,6 +245,7 @@ const ICONS = {
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   entrar: '<path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6"/>',
   tarefas: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 12.5l3 3 6-7"/>',
+  buscar: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
 };
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
@@ -267,10 +268,13 @@ function renderChrome() {
       <button class="btn" id="mmA11y">Ajustes</button>
       ${ME ? `<button class="btn ghost" data-act="logout">Sair da conta</button>` : ""}
     </div>`;
-  // barra de navegação embaixo (só em telas pequenas; o CSS decide quando aparece)
+  // barra de navegação embaixo (só em telas pequenas; o CSS decide quando aparece): uma pílula
+  // flutuante com as abas e, ao lado, um botão redondo de busca (abre Vagas ou Talentos com o
+  // cursor já no campo de busca)
   const tabs = !ME ? [["inicio", "Início"], ["vagas", "Vagas"], ["talentos", "Talentos"], ["entrar", "Entrar"]]
     : [["inicio", "Início"], ME.role === "cliente" ? ["talentos", "Talentos"] : ["vagas", "Vagas"], ["mensagens", "Mensagens"], ["painel", "Painel"], ["perfil", "Perfil"]];
-  $("#tabbar").innerHTML = tabs.map(([k, label]) => `<button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}</span>${k === "mensagens" && unread ? `<span class="badge" aria-label="${unread} não lidas">${unread}</span>` : ""}</button>`).join("");
+  $("#tabbar").innerHTML = `<div class="tb-pill">${tabs.map(([k, label]) => `<button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}</span>${k === "mensagens" && unread ? `<span class="badge" aria-label="${unread} não lidas">${unread}</span>` : ""}</button>`).join("")}</div>
+    <button class="tb-search" id="tbSearch" aria-label="${ME && ME.role === "cliente" ? "Buscar talentos" : "Buscar vagas"}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.buscar}</svg></button>`;
   const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled ? `Pagamento protegido pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
   markNav();
 }
@@ -323,7 +327,7 @@ const url = h => hToPath(h); // para links: href="${url("vaga-" + id)}"
 function go(h) {
   const p = hToPath(h);
   if (p !== location.pathname + location.hash) history.pushState(null, "", p);
-  route();
+  return route();
 }
 // link antigo "osmo.com.br/#vaga-12" vira "osmo.com.br/vagas/12" (sem criar entrada nova no histórico)
 function fixLegacyHash() {
@@ -1721,6 +1725,13 @@ document.addEventListener("click", async e => {
   if (t.closest("#mmClose") || t.id === "mmScrim") return closeMenu(true);
   if (t.closest("#mmA11y")) { closeMenu(false); return openA11y(); }
   if (t.closest("#a11yBtn")) return openA11y();
+  if (t.closest("#tbSearch")) { // busca da barra de baixo: vai para a lista e põe o cursor no campo
+    const cli = ME && ME.role === "cliente", to = cli ? "talentos" : "vagas";
+    if (curH() !== to) await go(to);
+    const fb = !cli && $("#fbox"); if (fb) fb.open = true; // em Vagas a busca fica dentro dos filtros, recolhidos no celular
+    const q = $(cli ? "#tq" : "#fq"); if (q) { q.focus(); q.scrollIntoView({ block: "center" }); }
+    return;
+  }
   if (t.id === "scrim" || t.closest("#a11yClose")) return closeA11y();
   const g = t.closest("[data-go]"); if (g) { e.preventDefault(); if (menuOpen) closeMenu(false); return go(g.dataset.go); }
   const a = t.closest("[data-aud]"); if (a) { S.aud = a.dataset.aud; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", b === a)); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; return; }
