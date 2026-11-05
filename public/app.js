@@ -248,7 +248,7 @@ const ICONS = {
   buscar: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   panorama: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
   // setas cruzadas, como o botão de "aleatório" do iPod/iTunes: troca o papel (cliente ↔ freelancer)
-  shuffle: '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
+  shuffle: '<path d="M3 7h2.5c4 0 5.5 10 10 10H21"/><path d="M3 17h2.5c1.5 0 2.6-1.1 3.5-2.7"/><path d="M12 9.7c.9-1.6 2-2.7 3.5-2.7H21"/><path d="M18 4l3 3-3 3"/><path d="M18 14l3 3-3 3"/>',
 };
 // DOIS PAPÉIS: a mesma conta pode contratar (cliente) e trabalhar (freelancer). ME.role é o papel
 // ativo; ME.roles, os que a pessoa tem. O botão com o ícone de "aleatório" no menu troca o papel
