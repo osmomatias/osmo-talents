@@ -13,8 +13,10 @@
 // Fica na raiz do site (/sw.js) porque o ajudante só cuida da pasta onde mora
 // e das que estão abaixo dela.
 // Trocar VERSION apaga as cópias antigas de todo mundo na próxima visita.
+// Para um CSS ou JS novo aparecer JÁ na primeira visita, suba também o ?v= dele no index.html:
+// o HTML vem sempre da internet, e um endereço novo não está guardado, então é buscado na hora.
 
-const VERSION = "osmo-v1";
+const VERSION = "osmo-v2";
 const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png"];
 // endereços que nunca passam pelo cache: dados de conta, sessão e arquivos enviados pelas pessoas
 const PRIVATE = /^\/(api|auth|arquivo|avatar|portfolio)\//;
