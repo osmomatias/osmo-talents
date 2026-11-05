@@ -25,22 +25,25 @@
 <meta name="apple-mobile-web-app-title" content="Osmo">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="/theme.js"></script>
+<script src="/i18n-core.js"></script>
+<script src="/i18n.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
 <link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/styles.css">
-<style>.legal{max-width:720px;margin:0 auto;padding:32px 16px 64px}.legal h1{margin:8px 0 4px}.legal h2{margin:28px 0 8px;font-size:1.15em}.legal p,.legal li{line-height:1.6}.legal ul{padding-left:20px}</style>
+<style>.legal{max-width:720px;margin:0 auto;padding:32px 16px 64px}.legal h1{margin:8px 0 4px}.legal h2{margin:28px 0 8px;font-size:1.15em}.legal p,.legal li{line-height:1.6}.legal ul{padding-left:20px}.legal .legal-note{padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--accent,#E8650F) 12%,transparent)}</style>
 </head>
 <body>
 <main class="legal">
+<div data-doc="pt-BR" lang="pt-BR" translate="no" data-title="Política de Privacidade · Osmo Talents">
 <p><a href="/">← Voltar para o Osmo Talents</a></p>
 <h1>Política de Privacidade</h1>
 <p style="color:var(--muted)">Última atualização: 23 de outubro de 2026</p>
 <p>Esta política explica quais dados o Osmo Talents (osmo.com.br), mantido pela Osmo, coleta, por que coleta e o que você pode pedir sobre eles, conforme a Lei Geral de Proteção de Dados (LGPD, Lei 13.709/2018).</p>
 <h2>Dados que coletamos</h2>
 <ul>
-<li><strong>Conta:</strong> nome, e-mail, perfil (freelancer ou cliente) e senha. A senha é guardada apenas como hash, nunca em texto.</li>
+<li><strong>Conta:</strong> nome, e-mail, perfil (freelancer ou cliente), idioma preferido e senha. A senha é guardada apenas como hash, nunca em texto.</li>
 <li><strong>Login com Google, LinkedIn, Adobe ou GitHub:</strong> recebemos do provedor apenas seu nome, e-mail e um identificador da conta. Não recebemos nem guardamos sua senha do provedor.</li>
 <li><strong>Perfil e uso:</strong> o que você preencher (como "Como eu trabalho melhor", habilidades, valores), vagas, propostas, contratos, etapas e mensagens.</li>
 <li><strong>Pagamentos:</strong> CPF ou CNPJ e dados necessários para cobranças e repasses, processados pelo Asaas.</li>
@@ -71,7 +74,7 @@
 <p>O Google Analytics registra quais telas foram vistas, quando, o tipo de aparelho e navegador, e a cidade ou região aproximada da conexão. O endereço de cada tela é enviado sem números de identificação de links pessoais, como os de troca de senha. Não enviamos ao Google seu nome, e-mail, mensagens, propostas nem nenhum outro dado da sua conta, e não usamos esses cookies para publicidade.</p>
 <p>A base legal é o legítimo interesse da Osmo em melhorar o serviço (LGPD, art. 7º, IX). Você pode recusar a qualquer momento: clique em <strong>"Não quero"</strong> no aviso de cookies ou desligue <strong>"Cookies de estatística"</strong> em <strong>Ajustes → Privacidade</strong>. Ao recusar, a contagem para na hora, os cookies do Google Analytics são apagados do seu navegador e ele não é mais carregado. A escolha vale para o navegador e o aparelho em que você a fez.</p>
 <p>Os dados de estatística ficam guardados pelo Google por no máximo 14 meses e podem ser processados fora do Brasil, em servidores do Google, com as garantias previstas na LGPD (art. 33).</p>
-<p>Também guardamos no seu navegador, sem enviar para nós nem para terceiros, as suas preferências de Ajustes (tema, tamanho de texto, animações, relógio Pomodoro) e rascunhos de propostas e vagas, para você não perder o que estava fazendo.</p>
+<p>Também guardamos no seu navegador, sem enviar para nós nem para terceiros, as suas preferências de Ajustes (tema, tamanho de texto, animações, relógio Pomodoro, idioma) e rascunhos de propostas e vagas, para você não perder o que estava fazendo.</p>
 <h2>Por quanto tempo guardamos</h2>
 <p>Enquanto sua conta existir. Ao excluir a conta, apagamos seus dados, exceto o que a lei exigir que seja mantido (por exemplo, registros de pagamentos).</p>
 <h2>Seus direitos</h2>
@@ -79,6 +82,151 @@
 <h2>Contato</h2>
 <p>Dúvidas ou pedidos: <a href="mailto:matias@osmo.com.br">matias@osmo.com.br</a>.</p>
 <p style="margin-top:32px"><a href="/privacidade">Política de Privacidade</a> · <a href="/termos">Termos de Uso</a></p>
+</div>
+<div data-doc="en-US" lang="en-US" translate="no" hidden data-title="Privacy Policy · Osmo Talents" data-desc="Osmo Talents Privacy Policy: data protection under the LGPD.">
+<p><a href="/">← Back to Osmo Talents</a></p>
+<h1>Privacy Policy</h1>
+<p style="color:var(--muted)">Last updated: October 23, 2026</p>
+<p class="legal-note">This is a courtesy translation. If it differs from the <a href="/privacidade?lang=pt-BR">Portuguese version</a>, the Portuguese version prevails.</p>
+<p>This policy explains what data Osmo Talents (osmo.com.br), run by Osmo, collects, why it collects it, and what you can request about it, under Brazil's General Data Protection Law (LGPD, Law 13,709/2018).</p>
+<h2>Data we collect</h2>
+<ul>
+<li><strong>Account:</strong> name, email, profile type (freelancer or client), preferred language and password. The password is stored only as a hash, never as plain text.</li>
+<li><strong>Login with Google, LinkedIn, Adobe or GitHub:</strong> we receive from the provider only your name, email and an account identifier. We neither receive nor store your password with the provider.</li>
+<li><strong>Profile and usage:</strong> whatever you fill in (such as "How I work best", skills, rates), jobs, proposals, contracts, milestones and messages.</li>
+<li><strong>Payments:</strong> CPF or CNPJ and the data needed for invoices and payouts, processed by Asaas.</li>
+<li><strong>Neurodivergent identity:</strong> optional. Share it only if you want to; you can remove it at any time.</li>
+</ul>
+<h2>What we use it for</h2>
+<ul>
+<li>Creating and maintaining your account and letting you log in.</li>
+<li>Connecting freelancers and clients, showing profiles and jobs, and recording proposals, contracts and messages.</li>
+<li>Processing payments per milestone.</li>
+<li>Keeping the platform secure and meeting legal obligations.</li>
+</ul>
+<p>We don't sell your data and we don't use your data for advertising.</p>
+<h2>Who we share it with</h2>
+<ul>
+<li><strong>Asaas:</strong> to process payments.</li>
+<li><strong>The login provider</strong> you choose, only to confirm your identity.</li>
+<li><strong>Infrastructure:</strong> the hosting server and delivery network (Cloudflare) that run the site.</li>
+<li><strong>Google (Google Analytics):</strong> receives the usage statistics described in "Cookies and usage statistics", without your account data.</li>
+<li><strong>Other people on the platform:</strong> see your public profile and the messages you send them.</li>
+</ul>
+<h2>Cookies and usage statistics</h2>
+<p>Cookies are small files the site stores in your browser. We use two kinds:</p>
+<ul>
+<li><strong>Necessary:</strong> one cookie to keep you logged in and a temporary one during social login. The site doesn't work without them, so they can't be turned off.</li>
+<li><strong>Analytics (Google Analytics):</strong> they count visits so we can understand which screens help and which confuse, and improve the platform. They start working when you enter the site, and we show a notice on your first visit.</li>
+</ul>
+<p>Google Analytics records which screens were viewed, when, the type of device and browser, and the approximate city or region of the connection. Each screen's address is sent without the identifying numbers of personal links, such as password-reset links. We don't send Google your name, email, messages, proposals or any other account data, and we don't use these cookies for advertising.</p>
+<p>The legal basis is Osmo's legitimate interest in improving the service (LGPD, art. 7, IX). You can refuse at any time: click <strong>"No thanks"</strong> on the cookie notice or turn off <strong>"Analytics cookies"</strong> in <strong>Settings → Privacy</strong>. When you refuse, counting stops immediately, the Google Analytics cookies are deleted from your browser and it is no longer loaded. The choice applies to the browser and device where you made it.</p>
+<p>Analytics data is kept by Google for at most 14 months and may be processed outside Brazil, on Google's servers, with the safeguards provided by the LGPD (art. 33).</p>
+<p>We also store in your browser, without sending it to us or to third parties, your Settings preferences (theme, text size, animations, Pomodoro timer, language) and drafts of proposals and jobs, so you don't lose what you were doing.</p>
+<h2>How long we keep it</h2>
+<p>For as long as your account exists. When you delete your account, we erase your data, except what the law requires us to keep (for example, payment records).</p>
+<h2>Your rights</h2>
+<p>You can request access, correction, deletion or portability of your data, or withdraw consent, by writing to the email below. We reply within 15 days.</p>
+<h2>Contact</h2>
+<p>Questions or requests: <a href="mailto:matias@osmo.com.br">matias@osmo.com.br</a>.</p>
+<p style="margin-top:32px"><a href="/privacidade">Privacy Policy</a> · <a href="/termos">Terms of Use</a></p>
+</div>
+<div data-doc="es-419" lang="es-419" translate="no" hidden data-title="Política de Privacidad · Osmo Talents" data-desc="Política de Privacidad de Osmo Talents: protección de datos conforme a la LGPD.">
+<p><a href="/">← Volver a Osmo Talents</a></p>
+<h1>Política de Privacidad</h1>
+<p style="color:var(--muted)">Última actualización: 23 de octubre de 2026</p>
+<p class="legal-note">Esta es una traducción de cortesía. Si difiere de la <a href="/privacidade?lang=pt-BR">versión en portugués</a>, prevalece la versión en portugués.</p>
+<p>Esta política explica qué datos recopila Osmo Talents (osmo.com.br), mantenido por Osmo, por qué los recopila y qué puedes solicitar sobre ellos, conforme a la Ley General de Protección de Datos de Brasil (LGPD, Ley 13.709/2018).</p>
+<h2>Datos que recopilamos</h2>
+<ul>
+<li><strong>Cuenta:</strong> nombre, correo electrónico, tipo de perfil (freelancer o cliente), idioma preferido y contraseña. La contraseña se guarda solo como hash, nunca en texto.</li>
+<li><strong>Inicio de sesión con Google, LinkedIn, Adobe o GitHub:</strong> recibimos del proveedor solo tu nombre, correo y un identificador de la cuenta. No recibimos ni guardamos tu contraseña del proveedor.</li>
+<li><strong>Perfil y uso:</strong> lo que completes (como "Cómo trabajo mejor", habilidades, valores), vacantes, propuestas, contratos, etapas y mensajes.</li>
+<li><strong>Pagos:</strong> CPF o CNPJ y los datos necesarios para cobros y transferencias, procesados por Asaas.</li>
+<li><strong>Identificación neurodivergente:</strong> es opcional. Infórmala solo si quieres; puedes quitarla en cualquier momento.</li>
+</ul>
+<h2>Para qué los usamos</h2>
+<ul>
+<li>Crear y mantener tu cuenta y permitir el inicio de sesión.</li>
+<li>Conectar freelancers y clientes, mostrar perfiles y vacantes, y registrar propuestas, contratos y mensajes.</li>
+<li>Procesar pagos por etapa.</li>
+<li>Mantener la seguridad de la plataforma y cumplir obligaciones legales.</li>
+</ul>
+<p>No vendemos tus datos ni los usamos para publicidad.</p>
+<h2>Con quién los compartimos</h2>
+<ul>
+<li><strong>Asaas:</strong> para procesar pagos.</li>
+<li><strong>El proveedor de inicio de sesión</strong> que elijas, solo para confirmar tu identidad.</li>
+<li><strong>Infraestructura:</strong> el servidor de alojamiento y la red de entrega (Cloudflare), que operan el sitio.</li>
+<li><strong>Google (Google Analytics):</strong> recibe las estadísticas de uso descritas en "Cookies y estadísticas de uso", sin datos de tu cuenta.</li>
+<li><strong>Otras personas de la plataforma:</strong> ven tu perfil público y los mensajes que les envíes.</li>
+</ul>
+<h2>Cookies y estadísticas de uso</h2>
+<p>Las cookies son pequeños archivos que el sitio guarda en tu navegador. Usamos dos tipos:</p>
+<ul>
+<li><strong>Necesarias:</strong> una cookie para mantener tu sesión iniciada y una temporal durante el inicio de sesión social. Sin ellas el sitio no funciona, por eso no se pueden desactivar.</li>
+<li><strong>De estadística (Google Analytics):</strong> cuentan las visitas para entender qué pantallas ayudan y cuáles confunden, y así mejorar la plataforma. Empiezan a funcionar cuando entras al sitio, y mostramos un aviso en la primera visita.</li>
+</ul>
+<p>Google Analytics registra qué pantallas se vieron, cuándo, el tipo de dispositivo y navegador, y la ciudad o región aproximada de la conexión. La dirección de cada pantalla se envía sin los números de identificación de enlaces personales, como los de cambio de contraseña. No enviamos a Google tu nombre, correo, mensajes, propuestas ni ningún otro dato de tu cuenta, y no usamos estas cookies para publicidad.</p>
+<p>La base legal es el interés legítimo de Osmo en mejorar el servicio (LGPD, art. 7, IX). Puedes negarte en cualquier momento: haz clic en <strong>"No quiero"</strong> en el aviso de cookies o desactiva <strong>"Cookies de estadística"</strong> en <strong>Ajustes → Privacidad</strong>. Al negarte, el conteo se detiene al instante, las cookies de Google Analytics se borran de tu navegador y ya no se carga. La elección vale para el navegador y el dispositivo donde la hiciste.</p>
+<p>Google guarda los datos de estadística por un máximo de 14 meses y pueden procesarse fuera de Brasil, en servidores de Google, con las garantías previstas en la LGPD (art. 33).</p>
+<p>También guardamos en tu navegador, sin enviarlas a nosotros ni a terceros, tus preferencias de Ajustes (tema, tamaño de texto, animaciones, reloj Pomodoro, idioma) y los borradores de propuestas y vacantes, para que no pierdas lo que estabas haciendo.</p>
+<h2>Por cuánto tiempo los guardamos</h2>
+<p>Mientras exista tu cuenta. Al eliminar la cuenta, borramos tus datos, excepto lo que la ley exija conservar (por ejemplo, registros de pagos).</p>
+<h2>Tus derechos</h2>
+<p>Puedes solicitar acceso, corrección, eliminación o portabilidad de tus datos, o revocar consentimientos, escribiendo al correo de abajo. Respondemos en un plazo de hasta 15 días.</p>
+<h2>Contacto</h2>
+<p>Dudas o solicitudes: <a href="mailto:matias@osmo.com.br">matias@osmo.com.br</a>.</p>
+<p style="margin-top:32px"><a href="/privacidade">Política de Privacidad</a> · <a href="/termos">Términos de Uso</a></p>
+</div>
+<div data-doc="fr-CA" lang="fr-CA" translate="no" hidden data-title="Politique de confidentialité · Osmo Talents" data-desc="Politique de confidentialité d'Osmo Talents : protection des données selon la LGPD.">
+<p><a href="/">← Retour à Osmo Talents</a></p>
+<h1>Politique de confidentialité</h1>
+<p style="color:var(--muted)">Dernière mise à jour : 23 octobre 2026</p>
+<p class="legal-note">Ceci est une traduction de courtoisie. En cas de divergence avec la <a href="/privacidade?lang=pt-BR">version portugaise</a>, la version portugaise prévaut.</p>
+<p>Cette politique explique quelles données Osmo Talents (osmo.com.br), exploité par Osmo, recueille, pourquoi il les recueille et ce que vous pouvez demander à leur sujet, conformément à la Loi générale sur la protection des données du Brésil (LGPD, loi 13.709/2018).</p>
+<h2>Données que nous recueillons</h2>
+<ul>
+<li><strong>Compte :</strong> nom, courriel, type de profil (pigiste ou client), langue préférée et mot de passe. Le mot de passe est conservé uniquement sous forme de hachage, jamais en clair.</li>
+<li><strong>Connexion avec Google, LinkedIn, Adobe ou GitHub :</strong> nous recevons du fournisseur seulement votre nom, votre courriel et un identifiant de compte. Nous ne recevons ni ne conservons votre mot de passe chez le fournisseur.</li>
+<li><strong>Profil et utilisation :</strong> ce que vous remplissez (comme « Comment je travaille le mieux », compétences, tarifs), offres, propositions, contrats, étapes et messages.</li>
+<li><strong>Paiements :</strong> CPF ou CNPJ et les données nécessaires aux factures et aux versements, traités par Asaas.</li>
+<li><strong>Identification neurodivergente :</strong> facultative. Indiquez-la seulement si vous le voulez; vous pouvez la retirer en tout temps.</li>
+</ul>
+<h2>À quoi elles servent</h2>
+<ul>
+<li>Créer et maintenir votre compte et permettre la connexion.</li>
+<li>Mettre en relation pigistes et clients, afficher les profils et les offres, et enregistrer les propositions, contrats et messages.</li>
+<li>Traiter les paiements par étape.</li>
+<li>Assurer la sécurité de la plateforme et respecter les obligations légales.</li>
+</ul>
+<p>Nous ne vendons pas vos données et ne les utilisons pas à des fins publicitaires.</p>
+<h2>Avec qui nous les partageons</h2>
+<ul>
+<li><strong>Asaas :</strong> pour traiter les paiements.</li>
+<li><strong>Le fournisseur de connexion</strong> que vous choisissez, seulement pour confirmer votre identité.</li>
+<li><strong>Infrastructure :</strong> le serveur d'hébergement et le réseau de diffusion (Cloudflare) qui font fonctionner le site.</li>
+<li><strong>Google (Google Analytics) :</strong> reçoit les statistiques d'utilisation décrites à la section « Témoins et statistiques d'utilisation », sans les données de votre compte.</li>
+<li><strong>Les autres personnes de la plateforme :</strong> voient votre profil public et les messages que vous leur envoyez.</li>
+</ul>
+<h2>Témoins et statistiques d'utilisation</h2>
+<p>Les témoins (cookies) sont de petits fichiers que le site conserve dans votre navigateur. Nous en utilisons deux types :</p>
+<ul>
+<li><strong>Nécessaires :</strong> un témoin pour garder votre session ouverte et un témoin temporaire pendant la connexion sociale. Le site ne fonctionne pas sans eux; ils ne peuvent donc pas être désactivés.</li>
+<li><strong>Statistiques (Google Analytics) :</strong> ils comptent les visites pour que nous comprenions quels écrans aident et lesquels mêlent, afin d'améliorer la plateforme. Ils s'activent lorsque vous entrez sur le site, et nous affichons un avis lors de votre première visite.</li>
+</ul>
+<p>Google Analytics enregistre les écrans consultés, le moment, le type d'appareil et de navigateur, ainsi que la ville ou la région approximative de la connexion. L'adresse de chaque écran est envoyée sans les numéros d'identification des liens personnels, comme ceux de changement de mot de passe. Nous n'envoyons à Google ni votre nom, ni votre courriel, ni vos messages, ni vos propositions, ni aucune autre donnée de votre compte, et nous n'utilisons pas ces témoins à des fins publicitaires.</p>
+<p>La base légale est l'intérêt légitime d'Osmo à améliorer le service (LGPD, art. 7, IX). Vous pouvez refuser en tout temps : cliquez sur <strong>« Non merci »</strong> dans l'avis sur les témoins ou désactivez <strong>« Témoins statistiques »</strong> dans <strong>Paramètres → Confidentialité</strong>. Dès le refus, le décompte s'arrête, les témoins de Google Analytics sont supprimés de votre navigateur et l'outil n'est plus chargé. Ce choix s'applique au navigateur et à l'appareil où vous l'avez fait.</p>
+<p>Les données statistiques sont conservées par Google pendant au plus 14 mois et peuvent être traitées hors du Brésil, sur les serveurs de Google, avec les garanties prévues par la LGPD (art. 33).</p>
+<p>Nous conservons aussi dans votre navigateur, sans les transmettre à nous ni à des tiers, vos préférences de Paramètres (thème, taille du texte, animations, minuteur Pomodoro, langue) et les brouillons de propositions et d'offres, pour que vous ne perdiez pas ce que vous faisiez.</p>
+<h2>Durée de conservation</h2>
+<p>Tant que votre compte existe. Lorsque vous supprimez votre compte, nous effaçons vos données, sauf ce que la loi nous oblige à conserver (par exemple, les registres de paiements).</p>
+<h2>Vos droits</h2>
+<p>Vous pouvez demander l'accès, la rectification, la suppression ou la portabilité de vos données, ou retirer votre consentement, en écrivant à l'adresse ci-dessous. Nous répondons dans un délai de 15 jours.</p>
+<h2>Contact</h2>
+<p>Questions ou demandes : <a href="mailto:matias@osmo.com.br">matias@osmo.com.br</a>.</p>
+<p style="margin-top:32px"><a href="/privacidade">Politique de confidentialité</a> · <a href="/termos">Conditions d'utilisation</a></p>
+</div>
 </main>
 </body>
 </html>

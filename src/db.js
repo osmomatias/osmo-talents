@@ -165,6 +165,11 @@ addColumn("milestones", "invoice_url", "TEXT DEFAULT ''");
 addColumn("milestones", "delivered_at", "TEXT DEFAULT ''");
 db.exec("CREATE INDEX IF NOT EXISTS idx_ms_pay ON milestones(pay_id)");
 
+// Dois papéis na mesma conta: "roles" guarda os papéis que a pessoa tem (ex.: "freela,cliente")
+// e "role" continua sendo o papel ATIVO, o que ela está usando agora (troca pelo menu).
+addColumn("users", "roles", "TEXT DEFAULT ''");
+db.exec("UPDATE users SET roles = role WHERE roles IS NULL OR roles = ''");
+
 // Login com Google/GitHub: guardamos qual conta de fora pertence a qual pessoa (identities),
 // um "bilhete" temporário enquanto a pessoa vai e volta do Google (states) e um cadastro
 // que ficou pela metade esperando a pessoa escolher se é freela ou cliente (pending).
@@ -211,6 +216,8 @@ CREATE TABLE IF NOT EXISTS avatars (
 // --- migrações (versão 6: avisos por e-mail)
 addColumn("users", "notify_level", "TEXT NOT NULL DEFAULT 'tudo'"); // tudo | importante | nada
 addColumn("users", "notify_token", "TEXT NOT NULL DEFAULT ''");
+// --- idioma de cada pessoa (pt-BR, en-US, es-419, fr-CA): usado nos e-mails de aviso
+addColumn("users", "lang", "TEXT NOT NULL DEFAULT 'pt-BR'");
 db.exec(`
 CREATE TABLE IF NOT EXISTS notify_log (
   thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,

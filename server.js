@@ -30,6 +30,7 @@ const asaas = require("./src/asaas");
 const oauth = require("./src/oauth");
 const mail = require("./src/mail");
 const icp = require("./src/icp");
+const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -142,12 +143,20 @@ function appendCookie(res, c) {
   const prev = res.getHeader("Set-Cookie");
   res.setHeader("Set-Cookie", prev ? [].concat(prev, c) : c);
 }
+// PAPÉIS: uma conta pode ser de freelancer, de cliente ou das duas coisas. "role" é o papel ativo.
+const ROLES = ["freela", "cliente"];
+const rolesOf = u => ROLES.filter(r => u.role === r || ("," + (u.roles || "") + ",").includes("," + r + ","));
+// pedaço de SQL: "esta pessoa tem o papel r?" (vale para quem só tem um papel e para quem tem os dois)
+const HAS = (r, a = "u") => `(${a}.role = '${r}' OR instr(',' || ${a}.roles || ',', ',${r},') > 0)`;
 function currentUser(req) {
   const tok = readCookie(req, "osmo_sid");
   if (!tok) return null;
   const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
   if (!s || s.expires_at < new Date().toISOString()) return null;
-  return one("SELECT id, name, email, role, energy, notify_level notify FROM users WHERE id = ?", s.user_id) || null;
+  const u = one("SELECT id, name, email, role, roles, energy, notify_level notify, lang FROM users WHERE id = ?", s.user_id);
+  if (!u) return null;
+  u.roles = rolesOf(u);
+  return u;
 }
 function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("base64url");
@@ -191,12 +200,12 @@ function reviewsOf(userId) {
 const portfolioOf = userId => all("SELECT id, title, link, v FROM portfolio_items WHERE user_id = ? ORDER BY pos, id", userId)
   .map(p => ({ id: p.id, title: p.title, link: p.link, image: p.v ? `/portfolio/${p.id}?v=${p.v}` : "" }));
 function profileOf(userId) {
-  const u = one(`SELECT u.id, u.name, u.role, a.v avatar_v, vf.verified_at, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+  const u = one(`SELECT u.id, u.name, u.role, u.roles, a.v avatar_v, vf.verified_at, p.* FROM users u LEFT JOIN profiles p ON p.user_id = u.id
     LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN verifications vf ON vf.user_id = u.id WHERE u.id = ?`, userId);
   if (!u) return null;
   const stats = one("SELECT COUNT(*) n FROM contracts WHERE freela_id = ? AND status = 'concluido'", userId);
   return {
-    id: u.id, name: u.name, role: u.role, title: u.title || "", bio: u.bio || "", location: u.location || "",
+    id: u.id, name: u.name, role: u.role, roles: rolesOf(u), title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
     tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id), verified: u.verified_at || "",
@@ -319,28 +328,30 @@ function resetRow(token) {
   run("DELETE FROM password_resets WHERE expires_at < ?", new Date().toISOString());
   return one("SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id WHERE r.token_hash = ?", sha(t));
 }
-route("POST", "/api/auth/forgot", ({ body, ip }) => {
+route("POST", "/api/auth/forgot", ({ req, body, ip }) => {
   if (!mail.ENABLED) fail(503, "A recuperação de senha ainda não está ativa. Fale com a Osmo.");
   limit("forgot:" + ip, 5, 900_000);
   const email = str(body.email, 160).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
   // a resposta é sempre a mesma, para não revelar quais e-mails têm conta
-  const u = one("SELECT id, name, email FROM users WHERE email = ?", email);
+  const u = one("SELECT id, name, email, lang FROM users WHERE email = ?", email);
   if (!u) return { ok: true };
   try { limit("forgot-mail:" + u.id, 3, 3600_000); } catch { return { ok: true }; }
   const token = crypto.randomBytes(32).toString("hex");
   run("DELETE FROM password_resets WHERE user_id = ?", u.id);
   run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), u.id, new Date(Date.now() + RESET_MIN * 60e3).toISOString());
-  const link = `${PUBLIC_URL}/#recuperar-${token}`, first = u.name.split(" ")[0];
+  const link = `${PUBLIC_URL}/recuperar#${token}`, first = u.name.split(" ")[0];
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  // idioma do e-mail: o da tela de quem pediu (ou o último que a pessoa usou)
+  const lang = i18n.pick(req.headers["x-osmo-lang"]) || u.lang, T = (k, ...a) => i18n.T(lang, k, ...a);
   mail.send({
-    to: u.email, subject: "Criar uma senha nova na Osmo Talents",
-    text: `Olá, ${first}.\n\nRecebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.\n\nPara escolher a senha nova, abra este link (vale por ${RESET_MIN} minutos e funciona uma vez só):\n${link}\n\nSe não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.\n\nOsmo Talents`,
+    to: u.email, subject: T("Criar uma senha nova na Osmo Talents"),
+    text: `${T("Olá, {1}.", first)}\n\n${T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.")}\n\n${T("Para escolher a senha nova, abra este link (vale por {1} minutos e funciona uma vez só):", RESET_MIN)}\n${link}\n\n${T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.")}\n\nOsmo Talents`,
     html: `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>Olá, ${escHtml(first)}.</p>
-<p>Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.</p>
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Criar senha nova</a></p>
-<p style="color:#666">O link vale por ${RESET_MIN} minutos e funciona uma vez só.<br>Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.</p>
+<p>${escHtml(T("Olá, {1}.", first))}</p>
+<p>${escHtml(T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents."))}</p>
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Criar senha nova"))}</a></p>
+<p style="color:#666">${escHtml(T("O link vale por {1} minutos e funciona uma vez só.", RESET_MIN))}<br>${escHtml(T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma."))}</p>
 <p>Osmo Talents</p></div>`,
   }).catch(e => console.error(new Date().toISOString(), "mail", e.message));
   return { ok: true };
@@ -401,9 +412,19 @@ route("GET", "/api/me", ({ user }) => {
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
-  return { user: { ...user, profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
+  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
     ...pub };
 }, { auth: false });
+
+// TROCAR DE PAPEL: a mesma conta pode ser de freelancer e de cliente. Aqui a pessoa escolhe qual
+// papel está usando agora (o site inteiro se ajusta a ele). Se ainda não tinha o outro papel,
+// ele é ativado na hora: as vagas, propostas e contratos de cada lado continuam onde estavam.
+route("POST", "/api/me/role", ({ user, body }) => {
+  const role = ROLES.includes(body.role) ? body.role : user.roles.find(r => r !== user.role);
+  const roles = [...new Set([...user.roles, role])];
+  run("UPDATE users SET role = ?, roles = ? WHERE id = ?", role, roles.join(","), user.id);
+  return { ok: true, role, roles, added: !user.roles.includes(role) };
+});
 
 // SALVAR PERFIL: limpa e corta cada campo no tamanho certo (título até 100 letras, bio até
 // 1200, no máximo 12 habilidades...) e grava. Se veio CPF/CNPJ, confere se é válido antes.
@@ -538,7 +559,7 @@ route("PUT", "/api/me/energy", ({ user, body }) => {
 // --- talentos
 route("GET", "/api/talents", ({ query }) => {
   const q = str(query.get("q") || "", 80).toLowerCase();
-  const rows = all("SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200");
+  const rows = all(`SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200`);
   let out = rows.map(r => profileOf(r.id)).filter(Boolean);
   if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
   return { talents: out };
@@ -546,7 +567,7 @@ route("GET", "/api/talents", ({ query }) => {
 
 route("GET", "/api/talents/:id", ({ params }) => {
   const t = profileOf(params.id);
-  if (!t || t.role !== "freela") fail(404, "Perfil não encontrado.");
+  if (!t || !t.roles.includes("freela")) fail(404, "Perfil não encontrado.");
   return { talent: { ...t, reviews: reviewsOf(t.id) } };
 }, { auth: false });
 
@@ -681,8 +702,9 @@ function serveFile(req, res, id) {
 route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND client_id = ? AND status = 'aberta'", params.id, user.id);
   if (!j) fail(404, "Vaga aberta não encontrada.");
-  const t = one("SELECT id FROM users WHERE id = ? AND role = 'freela'", int(body.talentId));
+  const t = one(`SELECT id FROM users u WHERE id = ? AND ${HAS("freela")}`, int(body.talentId));
   if (!t) fail(404, "Talento não encontrado.");
+  if (t.id === user.id) fail(400, "Você não pode convidar a si mesmo.");
   const th = threadFor(j.id, user.id, t.id);
   postMessage(th, null, `${user.name} convidou você para a vaga "${j.title}". Leia o briefing e, se fizer sentido, envie uma proposta.`, user.id);
   return { thread: th };
@@ -699,6 +721,7 @@ route("POST", "/api/jobs/:id/invite", ({ user, params, body }) => {
 route("POST", "/api/jobs/:id/proposals", ({ user, params, body }) => {
   const j = one("SELECT * FROM jobs WHERE id = ? AND status = 'aberta'", params.id);
   if (!j) fail(404, "Essa vaga não está mais aberta.");
+  if (j.client_id === user.id) fail(400, "Esta vaga é sua: você não pode mandar proposta para ela.");
   if (one("SELECT 1 FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id)) fail(409, "Você já enviou uma proposta para esta vaga.");
   const prof = one("SELECT hours FROM profiles WHERE user_id = ?", user.id);
   const open = one("SELECT COUNT(*) n FROM proposals WHERE freela_id = ? AND status = 'enviada'", user.id).n;
@@ -1048,7 +1071,7 @@ route("GET", "/api/threads/:id", ({ user, params }) => {
   const job = t.job_id ? one("SELECT id, title FROM jobs WHERE id = ?", t.job_id) : null;
   const msgs = all("SELECT id, sender_id, body, created_at FROM messages WHERE thread_id = ? ORDER BY id LIMIT 500", t.id)
     .map(m => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null }));
-  return { thread: { id: t.id, pin: t.pin, job, with: other }, messages: msgs };
+  return { thread: { id: t.id, pin: t.pin, job, with: other && { ...other, role: t.client_id === user.id ? "freela" : "cliente" } }, messages: msgs };
 });
 route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
   limit("msg:" + user.id, 60, 60_000);
@@ -1066,8 +1089,9 @@ route("PUT", "/api/threads/:id/pin", ({ user, params, body }) => {
   return { ok: true };
 });
 route("POST", "/api/threads", ({ user, body }) => {
-  const other = one("SELECT id, role FROM users WHERE id = ?", int(body.withId));
-  if (!other || other.role === user.role) fail(400, "Conversas são entre quem contrata e quem trabalha.");
+  const other = one("SELECT id, role, roles FROM users WHERE id = ?", int(body.withId));
+  const want = user.role === "cliente" ? "freela" : "cliente"; // conversa direta: o outro lado precisa ter o papel oposto ao seu
+  if (!other || other.id === user.id || !rolesOf(other).includes(want)) fail(400, "Conversas são entre quem contrata e quem trabalha.");
   const th = user.role === "cliente" ? threadFor(null, user.id, other.id) : threadFor(null, other.id, user.id);
   return { thread: th };
 });
@@ -1101,13 +1125,14 @@ route("GET", "/api/admin/overview", ({ user }) => {
     generatedAt: new Date().toISOString(),
     config: { payments: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS, mail: mail.ENABLED, oauth: oauth.list(), version: appVersion() },
     people: {
-      freelas: count("SELECT COUNT(*) n FROM users WHERE role = 'freela'"), clientes: count("SELECT COUNT(*) n FROM users WHERE role = 'cliente'"),
+      freelas: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")}`), clientes: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("cliente")}`),
+      both: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")} AND ${HAS("cliente")}`),
       new7: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-7 days')"),
       new30: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-30 days')"),
       active7: count("SELECT COUNT(DISTINCT sender_id) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
       verified: count("SELECT COUNT(*) n FROM verifications"),
       withPayout: count("SELECT COUNT(*) n FROM payout_accounts"),
-      profilesReady: count("SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE u.role = 'freela' AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''"),
+      profilesReady: count(`SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''`),
     },
     jobs: { byStatus: byKey("SELECT status k, COUNT(*) n FROM jobs GROUP BY status"), total: jobsTotal,
       avgClarity: Math.round(one("SELECT AVG(clarity) n FROM jobs").n || 0),
@@ -1221,7 +1246,7 @@ const ADMIN_ENT = {
     cols: [["title", "Vaga"], ["client", "Cliente"], ["status", "Situação"], ["clarity", "Clareza %"], ["created_at", "Publicada"]],
     get: id => one("SELECT * FROM jobs WHERE id = ?", id),
     create: v => {
-      if (!one("SELECT 1 FROM users WHERE id = ? AND role = 'cliente'", v.client_id)) fail(400, "Esse id não é de uma conta de cliente.");
+      if (!one(`SELECT 1 FROM users u WHERE id = ? AND ${HAS("cliente")}`, v.client_id)) fail(400, "Esse id não é de uma conta de cliente.");
       const j = { title: v.title, cat: v.cat, obj: v.obj || "", ent: v.ent || [], fora: v.fora || [], com: v.com || "", fb: v.fb || "", budget: v.budget || 0, duration: v.duration || "" };
       const id = Number(run(`INSERT INTO jobs (client_id, title, cat, obj, ent, fora, com, fb, ref, budget_type, budget, duration, skills, is_async, is_flex, clarity, status)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.client_id, j.title, j.cat, j.obj, JSON.stringify(j.ent), JSON.stringify(j.fora), j.com, j.fb, v.ref || "",
@@ -1580,7 +1605,7 @@ function notifyToken(userId) {
   return t;
 }
 function notifySweep() {
-  const pairs = all(`SELECT t.id thread_id, u.id user_id, u.name, u.email, u.notify_level, j.title job_title, n.last_at,
+  const pairs = all(`SELECT t.id thread_id, u.id user_id, u.name, u.email, u.notify_level, u.lang, j.title job_title, n.last_at,
       CASE WHEN u.id = t.client_id THEN t.client_read_at ELSE t.freela_read_at END read_at
     FROM threads t JOIN users u ON u.id IN (t.client_id, t.freela_id) LEFT JOIN jobs j ON j.id = t.job_id
     LEFT JOIN notify_log n ON n.thread_id = t.id AND n.user_id = u.id
@@ -1598,19 +1623,23 @@ function notifySweep() {
 }
 async function sendNotice(p, msgs) {
   const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const link = `${PUBLIC_URL}/#mensagens-${p.thread_id}`, prefs = `${PUBLIC_URL}/#avisos-${notifyToken(p.user_id)}`;
+  const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
   const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
-  const about = p.job_title ? `"${p.job_title}"` : "sua conversa";
-  const subject = people.length && msgs.every(m => m.sender) ? `${people[0]} mandou mensagem sobre ${about}` : `Novidade em ${about}`;
+  // tudo no idioma de quem recebe; mensagens do sistema ("Proposta aceita...") também são traduzidas
+  const T = (k, ...a) => i18n.T(p.lang, k, ...a);
+  const about = p.job_title ? `"${p.job_title}"` : T("sua conversa");
+  const subject = people.length && msgs.every(m => m.sender) ? T("{1} mandou mensagem sobre {2}", people[0], about) : T("Novidade em {1}", about);
   const shown = msgs.slice(-5), more = msgs.length - shown.length;
-  const line = m => (m.sender ? `${m.sender}: ` : "") + (m.body.length > 400 ? m.body.slice(0, 400) + "…" : m.body);
+  const body = m => m.sender_id == null ? i18n.tx(p.lang, m.body) : m.body; // só as do sistema; o que as pessoas escrevem fica como está
+  const line = m => (m.sender ? `${m.sender}: ` : "") + (body(m).length > 400 ? body(m).slice(0, 400) + "…" : body(m));
   const first = p.name.split(" ")[0];
-  const text = `Olá, ${first}.\n\n${more ? `(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)\n` : ""}${shown.map(line).join("\n\n")}\n\nAbrir a conversa: ${link}\n\n--\nOsmo Talents. Para mudar ou desligar estes avisos: ${prefs}`;
+  const moreTxt = more ? T(more > 1 ? "(e mais {1} mensagens antes)" : "(e mais {1} mensagem antes)", more) : "";
+  const text = `${T("Olá, {1}.", first)}\n\n${more ? moreTxt + "\n" : ""}${shown.map(line).join("\n\n")}\n\n${T("Abrir a conversa:")} ${link}\n\n--\nOsmo Talents. ${T("Para mudar ou desligar estes avisos:")} ${prefs}`;
   const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>Olá, ${escHtml(first)}.</p>${more ? `<p style="color:#666">(e mais ${more} mensagem${more > 1 ? "s" : ""} antes)</p>` : ""}
+<p>${escHtml(T("Olá, {1}.", first))}</p>${more ? `<p style="color:#666">${escHtml(moreTxt)}</p>` : ""}
 ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1">${m.sender ? `<b>${escHtml(m.sender)}</b><br>` : ""}${escHtml(line({ ...m, sender: "" })).replace(/\n/g, "<br>")}</p>`).join("")}
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">Abrir conversa</a></p>
-<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">Mudar ou desligar estes avisos</a></p></div>`;
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Abrir conversa"))}</a></p>
+<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">${escHtml(T("Mudar ou desligar estes avisos"))}</a></p></div>`;
   await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
 }
 if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
@@ -1652,7 +1681,7 @@ function redirect(res, to) { res.writeHead(302, { ...SECURITY_HEADERS, Location:
 const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
 async function handleAuth(req, res, url, ip) {
   const m = url.pathname.match(/^\/auth\/(google|linkedin|adobe|github)(\/callback)?$/);
-  const fail2 = code => redirect(res, `/?oauth_error=${code}#entrar`);
+  const fail2 = code => redirect(res, `/entrar?oauth_error=${code}`);
   if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   const k = m[1];
   if (!oauth.enabled(k)) return fail2("indisponivel");
@@ -1688,13 +1717,13 @@ async function handleAuth(req, res, url, ip) {
   if (!uid) {
     if (!prof.email || !prof.emailVerified) return fail2("sem_email");
     const r = { provider: k, sub: prof.sub, email: prof.email, name: prof.name };
-    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/#perfil" : "/#publicar"); }
+    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/perfil" : "/publicar"); }
     const token = crypto.randomBytes(24).toString("hex");
     run("INSERT INTO oauth_pending (token, provider, sub, email, name) VALUES (?,?,?,?,?)", token, k, prof.sub, prof.email, prof.name);
-    return redirect(res, `/#escolher-${token}`);
+    return redirect(res, `/escolher#${token}`);
   }
   createSession(res, uid);
-  return redirect(res, "/#painel");
+  return redirect(res, "/painel");
 }
 
 // MIME: a "etiqueta" que diz ao navegador que tipo de arquivo está chegando (página, estilo,
@@ -1714,10 +1743,11 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google (e só eles)
+  // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google;
+  // o Cloudflare Web Analytics (static.cloudflareinsights.com / cloudflareinsights.com) vale nas duas versões
   "Content-Security-Policy": GA_ID
-    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 // Responde ao navegador: se for objeto, vira JSON; sempre com os capacetes de segurança.
@@ -1748,7 +1778,9 @@ function readBody(req, max = 200_000) {
 }
 
 // ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
-// - Endereços sem extensão (#vagas, /perfil...) recebem o index.html: o resto o app.js resolve;
+// - "/" e os endereços das telas do app (/vagas, /vagas/12, /painel...: lista APP_PATH, igual à do app.js)
+//   recebem o index.html; o app.js desenha a tela certa;
+//   endereço que não existe recebe a 404.html com código 404, para o Google não guardar página vazia;
 // - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
 // - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
 //   "304, nada mudou" e economizamos internet;
@@ -1756,16 +1788,30 @@ function readBody(req, max = 200_000) {
 //   muda, e o navegador baixa a versão nova em vez de usar a velha guardada.
 // carimbo de versão de cada arquivo (data de modificação): vai no endereço do arquivo e em /api/me,
 // para a página aberta perceber que saiu versão nova
-const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
+const stamp = name => {
+  try {
+    // o i18n.js leva junto a data dos dicionários (public/i18n/*.json): mudou uma tradução, muda o carimbo
+    const files = name === "i18n.js" ? ["i18n.js", ...fs.readdirSync(path.join(PUBLIC_DIR, "i18n")).map(f => "i18n/" + f)] : [name];
+    return Math.floor(Math.max(...files.map(f => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs))).toString(36);
+  } catch { return "0"; }
+};
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao|admin(?:\/dados)?)\/?$/;
+// endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
+function notFound(res) {
+  fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
+    ? send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" })
+    : send(res, 404, buf, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }));
+}
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
-  else if (rel === "/" || !path.extname(rel)) rel = "/index.html";
+  else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
+  else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
   fs.stat(file, (err, st) => {
-    if (err || !st.isFile()) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+    if (err || !st.isFile()) return notFound(res);
     const ext = path.extname(file);
     // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
@@ -1775,7 +1821,7 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
@@ -1799,7 +1845,7 @@ const server = http.createServer(async (req, res) => {
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
   const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
   if (url.pathname.startsWith("/auth/")) {
-    return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/?oauth_error=falhou#entrar"); });
+    return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
   const fm = url.pathname.match(/^\/arquivo\/(\d+)$/);
   if (fm && (req.method === "GET" || req.method === "HEAD")) return serveFile(req, res, Number(fm[1]));
@@ -1822,6 +1868,9 @@ const server = http.createServer(async (req, res) => {
     if (!r) fail(404, "Rota não encontrada.");
     const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
     const user = currentUser(req);
+    // o site manda o idioma da tela em cada pedido; guardamos para escrever os e-mails nesse idioma
+    const hl = i18n.pick(req.headers["x-osmo-lang"]);
+    if (user && hl && user.lang !== hl) { run("UPDATE users SET lang = ? WHERE id = ?", hl, user.id); user.lang = hl; }
     if (r.auth && !user) fail(401, "Entre na sua conta para continuar.");
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
     const body = req.method === "GET" ? {} : r.raw ? await readRaw(req, r.raw) : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);

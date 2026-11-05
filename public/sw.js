@@ -16,8 +16,8 @@
 // Para um CSS ou JS novo aparecer JÁ na primeira visita, suba também o ?v= dele no index.html:
 // o HTML vem sempre da internet, e um endereço novo não está guardado, então é buscado na hora.
 
-const VERSION = "osmo-v2";
-const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png"];
+const VERSION = "osmo-v3"; // v3: vidro líquido 2 (v2: idiomas)
+const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png", "/i18n-core.js", "/i18n.js"];
 // endereços que nunca passam pelo cache: dados de conta, sessão e arquivos enviados pelas pessoas
 const PRIVATE = /^\/(api|auth|arquivo|avatar|portfolio)\//;
 const ASSET = /\.(js|css|svg|png|jpg|ico|woff2|json|webmanifest)$/;
@@ -53,6 +53,7 @@ self.addEventListener("fetch", e => {
   if (ASSET.test(url.pathname)) {
     const net = fetch(req);
     e.waitUntil(net.then(res => res.ok ? keep(req, res.clone()) : null).catch(() => {}));
-    e.respondWith(caches.match(req).then(hit => hit || net));
+    // sem internet, um arquivo guardado com outro carimbo (?v=) serve: melhor que nada (ex.: dicionário de idioma)
+    e.respondWith(caches.match(req).then(hit => hit || net.catch(() => caches.match(req, { ignoreSearch: true }))));
   }
 });
