@@ -1761,6 +1761,32 @@ function readBody(req, max = 200_000) {
 // para a página aberta perceber que saiu versão nova
 const stamp = name => { try { return Math.floor(fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs).toString(36); } catch { return "0"; } };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+// IDIOMAS: o i18n.js leva o carimbo mais novo entre ele e os dicionários (public/i18n/*.js),
+// e repassa esse mesmo carimbo ao baixar o dicionário. Assim, traduções novas chegam na hora.
+const LANGS = ["en-US", "es-419", "fr-CA"];
+const i18nStamp = () => Math.max(...["i18n.js", ...LANGS.map(l => "i18n/" + l + ".js")].map(n => parseInt(stamp(n), 36))).toString(36);
+// o servidor também lê os dicionários para já mandar o HTML com o idioma certo (lang, título e
+// descrição): é o que o Google e as prévias de link (WhatsApp, LinkedIn) enxergam, sem rodar o JS
+const DICTS = {};
+function dictFor(lang) {
+  const file = path.join(PUBLIC_DIR, "i18n", lang + ".js");
+  try {
+    const m = fs.statSync(file).mtimeMs;
+    if (!DICTS[lang] || DICTS[lang].m !== m) {
+      let data = {}; require("vm").runInNewContext(fs.readFileSync(file, "utf8"), { OSMO_LANG: { load: d => { data = d; } } }, { timeout: 1000 });
+      DICTS[lang] = { m, dict: data.dict || {} };
+    }
+    return DICTS[lang].dict;
+  } catch { return {}; }
+}
+const pickLang = v => { v = String(v || "").toLowerCase(); return LANGS.find(l => l.toLowerCase() === v) || LANGS.find(l => l.slice(0, 2) === v.slice(0, 2) && v.length === 2) || ""; };
+function localizeHtml(html, lang) {
+  const d = dictFor(lang), tr = s => d[s.replace(/\s+/g, " ").trim()] || s;
+  const attr = s => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return html.replace(/<html lang="pt-BR">/, `<html lang="${lang}">`)
+    .replace(/<title>([^<]*)<\/title>/, (m, t) => `<title>${attr(tr(t))}</title>`)
+    .replace(/(<meta (?:name|property)="(?:description|og:title|og:description|twitter:title|twitter:description)" content=")([^"]*)(")/g, (m, a, c, b) => a + attr(tr(c)) + b);
+}
 const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
@@ -1768,7 +1794,7 @@ function notFound(res) {
     ? send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" })
     : send(res, 404, buf, { "Content-Type": MIME[".html"], "Cache-Control": "no-store" }));
 }
-function serveStatic(req, res, pathname) {
+function serveStatic(req, res, pathname, query) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
   else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
@@ -1786,7 +1812,9 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n\.js)"/g, (m, attr, name) => `${attr}="/${name}?v=${name === "i18n.js" ? i18nStamp() : stamp(name)}"`);
+        const lang = query && pickLang(query.get("lang"));
+        if (lang) html = localizeHtml(html, lang);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
@@ -1824,7 +1852,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
-    return serveStatic(req, res, url.pathname);
+    return serveStatic(req, res, url.pathname, url.searchParams);
   }
   try {
     // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)

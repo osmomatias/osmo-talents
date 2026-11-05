@@ -208,6 +208,30 @@ O PDF é conferido na memória e descartado. O banco guarda só a data, o CRM de
 - Atualizar as ACs da ICP-Brasil (quando o ITI publicar novas): `bash scripts/atualizar-icp.sh` e depois publicar.
 - Antes de divulgar o selo, vale passar o texto de consentimento por um advogado de proteção de dados (laudo é dado sensível na LGPD).
 
+## Idiomas (português, inglês, espanhol e francês)
+
+O site abre em português. Para os outros idiomas, use o endereço com `?lang=`:
+
+| Idioma | Endereço |
+|---|---|
+| Português (Brasil) | `https://osmo.com.br/` ou `?lang=pt-BR` |
+| Inglês (EUA) | `https://osmo.com.br/?lang=en-US` |
+| Espanhol (América Latina) | `https://osmo.com.br/?lang=es-419` |
+| Francês (Canadá) | `https://osmo.com.br/?lang=fr-CA` |
+
+O `?lang=` funciona em qualquer página (`/vagas/12?lang=en-US`, `/privacidade?lang=fr-CA`...). A escolha fica guardada no navegador, então as próximas telas e visitas continuam no mesmo idioma. Também dá para trocar em **Ajustes → Idioma** ou pelos links no rodapé.
+
+Como funciona:
+- `public/i18n.js` descobre o idioma e traduz tudo o que aparece na tela: textos, botões, dicas dos campos, rótulos de acessibilidade, mensagens de erro do servidor e as páginas de privacidade e termos.
+- Cada idioma tem um dicionário em `public/i18n/` (`en-US.js`, `es-419.js`, `fr-CA.js`). Cada linha diz "texto em português" → "tradução". `{0}`, `{1}`... marcam as partes que mudam (nome, número, data) e precisam aparecer também na tradução.
+- O que as pessoas escrevem (nomes, vagas, mensagens) não é traduzido.
+- Datas e números seguem o idioma escolhido. Os valores continuam em reais (R$), porque os pagamentos são no Brasil.
+- O servidor já manda o título, a descrição e o `lang` da página no idioma do `?lang=`. É isso que o Google e as prévias de link (WhatsApp, LinkedIn) mostram.
+
+Para mudar ou acrescentar uma tradução, edite o dicionário do idioma e publique. Um texto novo que ainda não esteja no dicionário aparece em português até ganhar sua linha. Depois de editar, rode `node scripts/conferir-traducoes.js`: ele avisa se alguma tradução perdeu um `{0}`.
+
+Ainda em português: os e-mails (avisos e troca de senha), porque o servidor ainda não guarda o idioma de cada pessoa.
+
 ## Mapa do projeto (explicado de um jeito simples)
 
 Cada arquivo de código tem comentários no começo e em cada parte explicando o que acontece, como se fosse para uma criança de 10 anos. Este mapa mostra onde fica cada coisa. Pense num restaurante: o site no navegador é o garçom, o servidor é a cozinha e o banco de dados é a despensa.
@@ -223,6 +247,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 **O site (o garçom, roda no navegador)**
 - `public/index.html`: o esqueleto da página (cabeçalho, espaço do meio, rodapé).
 - `public/app.js`: desenha cada tela, escuta cliques e digitação e leva os pedidos ao servidor.
+- `public/i18n.js` e `public/i18n/*.js`: o intérprete e os dicionários dos idiomas (veja "Idiomas" acima).
 - `public/theme.js`: liga o tema escuro e as preferências de Ajustes antes de a página aparecer, para não piscar.
 - `public/styles.css`: as roupas do site (cores, letras, tamanhos, celular, tablet e telas grandes).
 - `public/fonts.css`: onde entra a fonte oficial DIN Pro, quando os arquivos dela forem colocados no projeto.
@@ -240,6 +265,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `scripts/seed.js`: cria pessoas e vagas de exemplo.
 - `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
 - `scripts/conferir-laudo.js`: testa um laudo no computador, sem enviar ao site.
+- `scripts/conferir-traducoes.js`: confere os dicionários de idioma (marcadores `{0}` e frases faltando).
 - `scripts/atualizar-icp.sh`: baixa a lista oficial de autoridades da ICP-Brasil.
 - `certs/icp-brasil/`: os certificados oficiais das autoridades (raízes e intermediárias). São arquivos de "carimbo" em texto codificado, que não devem ser editados à mão.
 - `.env.example`: o molde do arquivo de segredos `.env` (que nunca vai para o GitHub).
@@ -266,6 +292,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - Mensagens com resumo fixo do combinado, respostas rápidas e convites
 - Painel com valores recebidos e protegidos
 - Ajustes de conforto, menu de celular e modo escuro
+- Site em português, inglês (`?lang=en-US`), espanhol (`?lang=es-419`) e francês (`?lang=fr-CA`)
 
 ## Ainda não faz (próximas versões)
 

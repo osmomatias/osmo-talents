@@ -24,7 +24,11 @@
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR");
+// IDIOMA: o i18n.js (carregado antes deste arquivo) traduz a tela; aqui só pegamos o idioma
+// escolhido para escrever datas e números do jeito de cada lugar, e T() para traduzir um texto na mão.
+const LOC = (window.OSMO_LANG && OSMO_LANG.lang) || "pt-BR";
+const T = s => (window.OSMO_LANG ? OSMO_LANG.t(s) : s);
+const brl = n => "R$ " + Number(n || 0).toLocaleString(LOC);
 const words = s => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 const isMobile = () => matchMedia("(max-width:700px)").matches;
 // CATEGORIAS E HABILIDADES: a lista vem do arquivo taxonomia.json (baseada no Upwork).
@@ -45,7 +49,7 @@ async function loadTaxonomy() {
     CATS = t.categorias.map(c => ({ id: c.id, n: c.nome, c: c.resumo }));
     const uniq = a => [...new Set(a)];
     t.categorias.forEach(c => { SKILLS.byCat[c.id] = uniq(c.especialidades.flatMap(e => e.habilidades)); });
-    SKILLS.all = uniq(Object.values(SKILLS.byCat).flat()).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    SKILLS.all = uniq(Object.values(SKILLS.byCat).flat()).sort((a, b) => T(a).localeCompare(T(b), LOC));
   } catch {}
 }
 const catName = id => (CATS.find(c => c.id === id) || {}).n || "";
@@ -65,10 +69,10 @@ const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const skillsOf = v => String(v || "").split(",").map(s => s.trim()).filter(Boolean);
 // começo do nome primeiro, depois começo de palavra, depois qualquer trecho; sem texto, as da área escolhida
 function matchSkills(term, cat, have, n = 8) {
-  const t = fold(term.trim()), own = new Set(have.map(fold));
+  const t = fold(term.trim()), own = new Set(have.map(fold)), key = k => LOC === "pt-BR" ? fold(k) : fold(k) + " | " + fold(T(k));
   const pool = t ? [...(SKILLS.byCat[cat] || []), ...SKILLS.all] : (SKILLS.byCat[cat] || []);
-  const rank = k => { const f = fold(k); return f.startsWith(t) ? 0 : (" " + f).includes(" " + t) ? 1 : 2; };
-  return [...new Set(pool)].filter(k => !own.has(fold(k)) && (!t || fold(k).includes(t)))
+  const rank = k => { const f = fold(k), g = fold(T(k)); return f.startsWith(t) || g.startsWith(t) ? 0 : (" " + f).includes(" " + t) || (" " + g).includes(" " + t) ? 1 : 2; };
+  return [...new Set(pool)].filter(k => !own.has(fold(k)) && (!t || key(k).includes(t)))
     .map((k, i) => [k, t ? rank(k) : 0, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(x => x[0]).slice(0, n);
 }
 const markTerm = (k, term) => { const t = term.trim(), i = fold(k).indexOf(fold(t)); return !t || i < 0 ? esc(k) : esc(k.slice(0, i)) + "<mark>" + esc(k.slice(i, i + t.length)) + "</mark>" + esc(k.slice(i + t.length)); };
@@ -104,7 +108,7 @@ function skillList(open = true) {
   const custom = open && typed && !SKB.opts.some(k => fold(k) === fold(typed)) && !have.some(k => fold(k) === fold(typed));
   if (custom) SKB.opts.push(typed);
   SKB.active = SKB.opts.length && typed ? 0 : -1;
-  ul.innerHTML = SKB.opts.map((k, i) => `<li role="option" id="sk-opt-${i}" data-skill-opt="${i}" aria-selected="${i === SKB.active}"><span>${custom && i === SKB.opts.length - 1 ? `Adicionar “${esc(k)}”` : markTerm(k, term)}</span></li>`).join("");
+  ul.innerHTML = SKB.opts.map((k, i) => `<li role="option" id="sk-opt-${i}" data-skill-opt="${i}" aria-selected="${i === SKB.active}"><span>${custom && i === SKB.opts.length - 1 ? `Adicionar “${esc(k)}”` : markTerm(T(k), term)}</span></li>`).join("");
   ul.hidden = !SKB.opts.length; inp.setAttribute("aria-expanded", String(!ul.hidden));
   SKB.active >= 0 ? inp.setAttribute("aria-activedescendant", "sk-opt-" + SKB.active) : inp.removeAttribute("aria-activedescendant");
 }
@@ -140,16 +144,18 @@ const store = {
   set(k, v) { try { v == null ? localStorage.removeItem("osmo." + k) : localStorage.setItem("osmo." + k, JSON.stringify(v)); } catch {} },
 };
 // Datas fáceis de ler: "agora", "há 5 min", "há 2 h", "ontem" ou "12 de out.".
-function when(iso) {
+// (a frase sai traduzida aqui mesmo, porque costuma ir no meio de outros textos: "Marina · há 8 min · R$ 4.200")
+function when(iso) { return T(whenPt(iso)); }
+function whenPt(iso) {
   if (!iso) return "";
   const d = new Date(iso.replace(" ", "T") + "Z"), s = (Date.now() - d) / 1000;
   if (s < 60) return "agora";
   if (s < 3600) return `há ${Math.floor(s / 60)} min`;
   if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
   if (s < 172800) return "ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  return d.toLocaleDateString(LOC, { day: "2-digit", month: "short" });
 }
-function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
+function hm(iso) { const d = new Date(iso.replace(" ", "T") + "Z"); return d.toLocaleString(LOC, { weekday: "short", hour: "2-digit", minute: "2-digit" }); }
 function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
 // O DESENHO DO SELO VERDE: uma "roseta" feita de 1 círculo grande + 12 bolinhas em volta
 // (calculadas com seno e cosseno, como os números num relógio) e um "✓" branco no meio.
@@ -370,6 +376,7 @@ document.addEventListener("click", e => {
   if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.hasAttribute("download")) return;
   const u = new URL(a.getAttribute("href"), location.href);
   if (u.origin !== location.origin || (u.pathname !== "/" && !APP_PATH.test(u.pathname))) return; // arquivos, /privacidade, /api... seguem normal
+  if (u.searchParams.has("lang")) return; // troca de idioma (?lang=) recarrega a página de verdade
   e.preventDefault(); go(pathToH(u.pathname, u.hash));
 }, true);
 // título da aba: o título da tela (ex.: "Identidade visual para cafeteria · Osmo Talents")
@@ -946,7 +953,7 @@ V.painel = async () => {
 // Enquanto está aberta, se atualiza sozinha a cada minuto.
 /* ---------- panorama (painel do dono) ---------- */
 const ADM_MS = { pendente: "A seguir", andamento: "Em andamento", entregue: "Entregue", ajustes: "Ajustes", aprovada: "Aprovada" };
-const num = n => Number(n || 0).toLocaleString("pt-BR");
+const num = n => Number(n || 0).toLocaleString(LOC);
 const pct = (a, b) => b ? Math.round(a / b * 100) + "%" : "–";
 // barras de uma série por semana, desenhadas à mão em SVG (sem bibliotecas); o texto escondido descreve o gráfico para leitores de tela
 function weekBars(title, rows, key, fmt = num) {
@@ -1216,11 +1223,11 @@ function calendarView() {
     const iso = `${m}-${String(d).padStart(2, "0")}`, ts = PJ.data.tasks.filter(t => t.due_date === iso);
     cells.push(`<div class="tk-day ${iso === today() ? "today" : ""}"><span class="tk-dnum">${d}</span>${ts.map(t => `<button class="tk-chip ${t.done ? "done" : dueCls(t)}" data-tk-open="${t.id}">${esc(t.title)}</button>`).join("")}</div>`);
   }
-  const label = first.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  const label = first.toLocaleDateString(LOC, { month: "long", year: "numeric", timeZone: "UTC" });
   const noDate = PJ.data.tasks.filter(t => !t.parent_id && !t.due_date && !t.done);
   return `<div class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h3>${label.charAt(0).toUpperCase() + label.slice(1)}</h3>
       <div class="row" style="gap:6px"><button class="btn sm" data-cal="-1">Anterior</button><button class="btn sm" data-cal="0">Hoje</button><button class="btn sm" data-cal="1">Próximo</button></div></div>
-    <div class="tk-cal">${["seg", "ter", "qua", "qui", "sex", "sáb", "dom"].map(d => `<div class="tk-wd">${d}</div>`).join("")}${cells.join("")}</div></div>
+    <div class="tk-cal">${[5, 6, 7, 8, 9, 10, 11].map(d => `<div class="tk-wd">${new Date(Date.UTC(2026, 0, d)).toLocaleDateString(LOC, { weekday: "short", timeZone: "UTC" }).replace(".", "")}</div>`).join("")}${cells.join("")}</div></div>
     <div class="panel stack" style="gap:8px"><h3>Sem prazo</h3>${noDate.length ? `<ul class="tk-list">${noDate.map(taskRow).join("")}</ul>` : ""}${PJ.data.sections.length ? addForm(PJ.data.sections[0].id) : ""}</div>`;
 }
 function projectBody() {
@@ -1381,7 +1388,7 @@ document.addEventListener("drop", async e => {
 /* ---------- selo de verificado ---------- */
 function verifyHTML(p) {
   if (p.verified) return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:10px">
-    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Perfil verificado</b><p class="hint">Desde ${new Date(p.verified.replace(" ", "T") + "Z").toLocaleDateString("pt-BR")}. O selo verde aparece ao lado do seu nome.</p></div></div>
+    <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Perfil verificado</b><p class="hint">Desde ${new Date(p.verified.replace(" ", "T") + "Z").toLocaleDateString(LOC)}. O selo verde aparece ao lado do seu nome.</p></div></div>
     <div><button type="button" class="btn sm ghost" data-act="verify-del">Remover selo</button></div></div>`;
   return `<div class="panel stack verify-box" style="margin-bottom:18px; gap:12px">
     <div class="row" style="gap:12px; flex-wrap:nowrap; align-items:flex-start"><span class="vbadge lg off">${VB_SVG}</span><div style="flex:1; min-width:0"><b>Selo de verificado <span class="muted" style="font-weight:400">(opcional)</span></b>
@@ -1711,6 +1718,7 @@ document.addEventListener("click", async e => {
   const fq = t.closest("[data-fchip]"); if (fq) { const k = fq.dataset.fchip; S[k] = !S[k]; const cb = $("#f_" + k); if (cb) cb.checked = S[k]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const au = t.closest("[data-auth]"); if (au) { authMode = au.dataset.auth; return route(); }
+  const ls = t.closest("[data-lang-set]"); if (ls) { if (ls.dataset.langSet !== LOC && window.OSMO_LANG) OSMO_LANG.set(ls.dataset.langSet); return; }
   const th = t.closest("[data-theme-set]"); if (th) {
     setTheme(th.dataset.themeSet);
     $$("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b === th)));
@@ -1718,10 +1726,10 @@ document.addEventListener("click", async e => {
   }
   if (t.classList.contains("skillbox") || t.classList.contains("sk-tags")) { const i = $("#p_skills_in"); if (i && !i.disabled) i.focus(); return; } // tocar no espaço vazio do campo foca a digitação
   const sd = t.closest("[data-skill-del]"); if (sd) { skillSet(skillsOf($("#p_skills").value).filter(k => k !== sd.dataset.skillDel)); const i = $("#p_skills_in"); if (i) i.focus(); return; }
-  const q = t.closest("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = q.dataset.quick; mi.focus(); } return; }
+  const q = t.closest("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = T(q.dataset.quick); mi.focus(); } return; }
   if (t.closest("#newMsg")) { const b = $("#bubbles"); if (b) b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
   if (t.closest("#pinText")) { $("#pinBox")?.classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
-  const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); if (ta) { ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W.qs = ta.value; saveDraft(); } return; }
+  const qs = t.closest("[data-q]"); if (qs) { const ta = $("#wqs"); if (ta) { ta.value = (ta.value ? ta.value + "\n" : "") + T(qs.dataset.q); W.qs = ta.value; saveDraft(); } return; }
   const en = t.closest("[data-energy]"); if (en) { try { await api("PUT", "/api/me/energy", { energy: en.dataset.energy }); ME.energy = en.dataset.energy; toast("Energia atualizada"); route(); } catch (err) { toast(err.message); } return; }
   const act = t.closest("[data-act]"); if (!act) return;
   const id = Number(act.dataset.id);
@@ -2319,6 +2327,7 @@ function openA11y() {
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
       ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
+    <section class="adj-group" aria-labelledby="adjLang"><h3 class="label" id="adjLang">Idioma</h3>${langHTML()}</section>
     <section class="adj-group" aria-labelledby="adjRead"><h3 class="label" id="adjRead">Leitura</h3>
       ${sw("big", "Texto maior", "Aumenta o tamanho da letra em toda a plataforma")}
       ${sw("airy", "Mais espaço entre linhas", "Ajuda a acompanhar textos longos")}</section>
@@ -2331,6 +2340,13 @@ function openA11y() {
   </div>`;
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);
+}
+// IDIOMA: um botão por idioma, cada um escrito no próprio idioma (por isso translate="no").
+// Trocar recarrega a tela atual com ?lang=, e a escolha fica guardada neste navegador.
+function langHTML() {
+  const L = (window.OSMO_LANG && OSMO_LANG.langs) || { "pt-BR": "Português" };
+  return `<div class="field"><div class="seg lang-seg" role="group" aria-labelledby="adjLang" translate="no">${Object.entries(L).map(([k, n]) => `<button type="button" data-lang-set="${k}" lang="${k}" aria-pressed="${LOC === k}">${n}</button>`).join("")}</div>
+  <span class="hint">Escolha em qual idioma a plataforma aparece. Fica salvo neste navegador.</span></div>`;
 }
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }
 

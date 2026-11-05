@@ -32,6 +32,14 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Osmo">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- IDIOMAS: o mesmo site em português, inglês, espanhol e francês (?lang=...). O i18n.js vem
+     primeiro de tudo: ele descobre o idioma e traz o dicionário antes de a tela aparecer. -->
+<link rel="alternate" hreflang="pt-BR" href="https://osmo.com.br/">
+<link rel="alternate" hreflang="en-US" href="https://osmo.com.br/?lang=en-US">
+<link rel="alternate" hreflang="es-419" href="https://osmo.com.br/?lang=es-419">
+<link rel="alternate" hreflang="fr-CA" href="https://osmo.com.br/?lang=fr-CA">
+<link rel="alternate" hreflang="x-default" href="https://osmo.com.br/">
+<script src="/i18n.js"></script>
 <!-- theme.js vem ANTES do CSS de propósito: ele liga o tema escuro e as
      preferências antes de qualquer coisa aparecer, para a tela não piscar. -->
 <script src="/theme.js"></script>
@@ -66,6 +74,7 @@
 <footer class="foot"><div class="wrap row" style="justify-content:space-between">
   <span>Osmo Talents · uma iniciativa <a href="https://osmo.com.br" style="color:inherit">Osmo</a> · <a href="/privacidade" style="color:inherit">Privacidade</a> · <a href="/termos" style="color:inherit">Termos</a></span>
   <span id="payNote">Pagamentos ainda simulados durante o período de testes.</span>
+  <span class="foot-langs" translate="no"><a href="?lang=pt-BR" lang="pt-BR" hreflang="pt-BR">Português</a> · <a href="?lang=en-US" lang="en-US" hreflang="en-US">English</a> · <a href="?lang=es-419" lang="es-419" hreflang="es-419">Español</a> · <a href="?lang=fr-CA" lang="fr-CA" hreflang="fr-CA">Français</a></span>
 </div></footer>
 <!-- MENU DE CELULAR: a cortina escura de fundo (scrim) e o menu que desliza
      da direita. Começam escondidos (hidden) até alguém apertar o botão. -->
