@@ -246,6 +246,7 @@ const ICONS = {
   entrar: '<path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6"/>',
   tarefas: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 12.5l3 3 6-7"/>',
   buscar: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  panorama: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
 };
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
@@ -254,6 +255,7 @@ function renderChrome() {
   const pub = !ME || ME.role === "cliente" ? `<button class="btn sm hl" data-go="publicar">Publicar<span class="only-d"> vaga</span></button>` : "";
   top.innerHTML = `<button class="btn sm" id="a11yBtn" aria-haspopup="dialog">Ajustes</button>
     ${ME ? `<button class="whoami" data-go="perfil" title="Meu perfil">${esc(ME.name.split(" ")[0])}</button>` : `<button class="btn sm" data-go="entrar">Entrar</button>`}
+    ${ME && ME.isAdmin ? `<button class="btn sm only-d" data-go="panorama">Admin</button>` : ""}
     ${pub}
     <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
   const item = (k, label, extra = "") => `<li><button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}${extra}</span><span class="chev" aria-hidden="true">›</span></button></li>`;
@@ -261,7 +263,7 @@ function renderChrome() {
     ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])} · ${ME.role === "cliente" ? "conta de cliente" : "conta de freelancer"}</p>` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
-      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("perfil", "Meu perfil") : item("entrar", "Entrar ou criar conta")}
+      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
@@ -282,7 +284,7 @@ function markNav() {
   const name = curH().split("-")[0];
   $$("#nav button, #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
-    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name));
+    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name)) || (g === "panorama" && name === "gestao");
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
   });
 }
@@ -303,10 +305,12 @@ function markNav() {
 const ID_PATHS = { vaga: "vagas", talento: "talentos", mensagens: "mensagens", contrato: "contratos", projeto: "projetos" };
 const SECRET = ["recuperar", "avisos", "escolher"];
 // endereços que são telas do app (o servidor usa a mesma lista para entregar o site em vez da 404)
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao|admin(?:\/dados)?)\/?$/;
 function hToPath(h) {
   const i = h.indexOf("-"), name = i < 0 ? h : h.slice(0, i), id = i < 0 ? "" : h.slice(i + 1);
   if (!name || name === "inicio") return "/";
+  if (name === "panorama") return "/admin";       // área do admin: visão geral
+  if (name === "gestao") return "/admin/dados";   // área do admin: dados
   if (SECRET.includes(name)) return `/${name}${id ? "#" + id : ""}`;
   if (name === "proposta") return `/vagas/${id}/proposta`;
   if (ID_PATHS[name] && id) return `/${ID_PATHS[name]}/${id}`;
@@ -315,6 +319,8 @@ function hToPath(h) {
 function pathToH(pathname, hash) {
   const p = pathname.replace(/\/+$/, "") || "/", code = (hash || "").slice(1);
   if (p === "/") return "inicio";
+  if (p === "/admin") return "panorama";
+  if (p === "/admin/dados") return "gestao";
   let m = p.match(/^\/vagas\/(\d+)\/proposta$/);
   if (m) return "proposta-" + m[1];
   m = p.match(/^\/(vagas|talentos|mensagens|contratos|projetos)\/(\d+)$/);
@@ -363,6 +369,7 @@ async function route() {
     $("#view").innerHTML = html; SHOWN = h;
     window.scrollTo(0, 0);
     after[name] && after[name](id);
+    admBar(name, id);
     setPageTitle(name);
     gaPage(name);
     tvFocusFirst();
@@ -985,6 +992,57 @@ function hBars(rows) {
 }
 const admList = (title, items, row, empty) => `<div class="panel stack" style="gap:10px"><div class="row" style="justify-content:space-between"><h3>${title}</h3><span class="badge ${items.length ? "" : "off"}">${items.length}</span></div>
   ${items.length ? `<ul class="adm-list">${items.map(row).join("")}</ul>` : `<p class="hint">${empty}</p>`}</div>`;
+// ÁREA DO ADMIN: a mesma barra no topo de todas as telas do dono, para pular entre elas
+// (Visão geral = /admin, Dados = /admin/dados, Registro = o que o dono mudou, Projetos internos).
+function admNav(active) {
+  const tabs = [["panorama", "Visão geral"], ["gestao", "Dados"], ["log", "Registro"], ["projetos", "Projetos"]];
+  return `<div class="adm-head stack" style="gap:10px"><span class="label">Área do admin · só para a Osmo</span>
+  <nav class="seg adm-tabs adm-nav" aria-label="Área do admin">${tabs.map(([k, l]) => `<button type="button" data-adm-nav="${k}" ${k === active ? 'aria-current="page"' : ""}>${l}</button>`).join("")}</nav>
+  ${admModeSwitch()}</div>`;
+}
+// MODO ADMIN NO SITE: um interruptor (guardado só neste navegador). Ligado, aparece uma barra fixa
+// embaixo das telas normais (vaga, perfil de talento, projeto de contrato) com Editar e Apagar
+// daquele registro, usando o mesmo formulário da área de Dados. Quem decide se pode é sempre o servidor.
+const admModeOn = () => !!(ME && ME.isAdmin && store.get("admMode", false));
+const admModeSwitch = () => `<label class="check adm-switch"><input type="checkbox" data-adm-mode ${admModeOn() ? "checked" : ""}><span>Modo admin no site: botões de Editar e Apagar nas páginas normais</span></label>`;
+// qual registro a tela atual mostra: [tabela da área de Dados, número, nome para mostrar, para onde ir depois de apagar]
+function admTarget(name, id) {
+  if (name === "vaga" && id) return ["jobs", id, "Vaga", "vagas"];
+  if (name === "talento" && id) return ["users", id, "Pessoa", "talentos"];
+  if (name === "projeto" && typeof PJ !== "undefined" && PJ.data && PJ.data.project && PJ.data.project.contract_id) return ["contracts", PJ.data.project.contract_id, "Contrato", "projetos"];
+  return null;
+}
+function admBar(name, id) {
+  let bar = $("#admBar");
+  if (!admModeOn() || name === "panorama" || name === "gestao") { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement("div"); bar.id = "admBar"; bar.className = "adm-bar-fixed"; bar.setAttribute("role", "region"); bar.setAttribute("aria-label", "Modo admin"); document.body.appendChild(bar); }
+  const t = admTarget(name, id);
+  bar.innerHTML = `<span class="label">Modo admin</span>${t ? `<span class="adm-bar-what">${t[2]} #${t[1]}</span>
+    <button class="btn sm" data-admq="edit" data-ent="${t[0]}" data-id="${t[1]}">Editar</button><button class="btn sm ghost" data-admq="del" data-ent="${t[0]}" data-id="${t[1]}" data-back="${t[3]}">Apagar</button>` : `<span class="adm-bar-what hint">Nada para editar nesta tela</span>`}
+    <button class="btn sm ghost" data-go="panorama">Área do admin</button><button class="btn sm ghost" data-adm-mode-off aria-label="Desligar o modo admin">Desligar</button>`;
+}
+document.addEventListener("change", e => {
+  if (!e.target.matches || !e.target.matches("[data-adm-mode]")) return;
+  store.set("admMode", e.target.checked || null);
+  toast(e.target.checked ? "Modo admin ligado" : "Modo admin desligado");
+});
+document.addEventListener("click", async e => {
+  if (e.target.closest && e.target.closest("[data-adm-mode-off]")) { store.set("admMode", null); admBar(""); toast("Modo admin desligado"); return; }
+  const b = e.target.closest && e.target.closest("[data-admq]"); if (!b) return;
+  try { if (!ADM.schema) ADM.schema = await api("GET", "/api/admin/schema"); } catch (err) { return toast(err.message); }
+  ADM.ent = b.dataset.ent; ADM.back = b.dataset.back || "";
+  const id = Number(b.dataset.id);
+  if (b.dataset.admq === "edit") return openAdmForm(id);
+  const fake = document.createElement("button"); fake.dataset.admDel = id; ADM.fromPage = true;
+  document.body.appendChild(fake); fake.click(); fake.remove(); // usa a mesma confirmação da área de Dados
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest && e.target.closest("[data-adm-nav]"); if (!b) return;
+  const k = b.dataset.admNav;
+  if (k === "log") { ADM.ent = "log"; ADM.q = ""; ADM.page = 0; return go("gestao"); }
+  if (k === "gestao" && ADM.ent === "log") { ADM.ent = "users"; ADM.q = ""; ADM.page = 0; }
+  go(k);
+});
 V.panorama = async () => {
   if (needLogin()) return;
   let d;
@@ -994,10 +1052,11 @@ V.panorama = async () => {
   const kpi = (label, value, note = "") => `<div class="panel adm-kpi"><span class="label">${label}</span><b class="mono">${value}</b>${note ? `<span class="hint">${note}</span>` : ""}</div>`;
   const chip = (on, yes, no) => `<span class="status ${on ? "ok" : "off"}">${on ? yes : no}</span>`;
   return `<div class="adm stack">
+  ${admNav("panorama")}
   <div class="row" style="justify-content:space-between; align-items:flex-end">
-    <div><span class="label">Só para a Osmo</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Panorama da plataforma</h1>
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Visão geral da plataforma</h1>
       <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
-    <div class="row" style="gap:6px"><a class="btn sm hl" href="/gestao">Gerenciar dados</a><a class="btn sm" href="/projetos">Projetos</a>${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+    <div class="row" style="gap:6px">${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
   </div>
 
   <div class="adm-kpis">
@@ -1105,8 +1164,9 @@ V.gestao = async () => {
   catch (e) { if (e.status === 404) return emptyBox("Página não encontrada.", "", "inicio", "Voltar ao início"); throw e; }
   const e = ADM.ent === "log" ? null : admEnt();
   return `<div class="adm stack">
+  ${admNav(ADM.ent === "log" ? "log" : "gestao")}
   <div class="row" style="justify-content:space-between; align-items:flex-end">
-    <div><a href="/panorama" class="back">← Panorama</a><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:6px">Gestão de dados</h1>
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">${ADM.ent === "log" ? "Registro de alterações" : "Dados da plataforma"}</h1>
       <p class="hint">Criar, ver, editar e apagar registros da plataforma. Tudo fica anotado no Registro.</p></div>
     ${e && e.canCreate ? `<button class="btn hl" data-adm-new="1">Novo: ${esc(e.label.replace(/s$/, "").toLowerCase())}</button>` : ""}
   </div>
@@ -1158,6 +1218,7 @@ document.addEventListener("click", async ev => {
     const extra = { users: "Apaga também o perfil, o portfólio e as vagas dessa pessoa.", jobs: "Apaga também as propostas e contratos dessa vaga.", contracts: "Apaga também as etapas e avaliações; a vaga volta a ficar aberta." }[e.k] || "";
     if (!await confirmSheet({ title: `Apagar ${e.label.toLowerCase().replace(/s$/, "")} #${id}?`, text: `Não dá para desfazer. ${extra}`, ok: "Apagar" })) return;
     try { await api("DELETE", `/api/admin/${e.k}/${id}`); toast("Apagado"); } catch (err) { return toast(err.message); }
+    if (!$("#admBox")) return go(ADM.back || "inicio"); // apagou pelo modo admin, numa tela normal
     return admRefresh();
   }
   const pw = t.closest("[data-adm-pass]"); if (pw) {
@@ -1181,7 +1242,7 @@ document.addEventListener("submit", async ev => {
   const btn = f.querySelector('[type="submit"]'); btn.disabled = true;
   try {
     const r = await api(id ? "PUT" : "POST", id ? `/api/admin/${e.k}/${id}` : `/api/admin/${e.k}`, body);
-    await admRefresh();
+    if ($("#admBox")) await admRefresh(); else setTimeout(route, 0); // modo admin: redesenha a tela normal com o que mudou
     if (r.tempPassword) showTempPassword(body.name || "a pessoa", r.tempPassword);
     else { $("#layer").innerHTML = ""; toast(id ? "Salvo" : "Criado"); }
   } catch (err) { const b = $("#admErr"); b.textContent = err.message; b.hidden = false; }

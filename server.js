@@ -404,7 +404,7 @@ route("GET", "/api/me", ({ user }) => {
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
-  return { user: { ...user, profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
+  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
     ...pub };
 }, { auth: false });
 
@@ -1774,7 +1774,7 @@ const stamp = name => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao|admin(?:\/dados)?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
   fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
