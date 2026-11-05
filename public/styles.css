@@ -1110,3 +1110,131 @@ html[data-device="tv"] .drawer{width:min(40vw,100%)}
   .consent .cookie-ico{width:40px; height:40px; align-self:start}
   .consent-actions{grid-column:1 / -1; justify-content:flex-end}
 }
+
+/* ---------- vidro líquido 2: contornos finos, brilho na borda e refração (estilo "Liquid Glass") ----------
+   EXPLICANDO COMO PARA UMA CRIANÇA: o vidro de antes era um "vidro fosco" com moldura grossa.
+   Um vidro de verdade tem três coisas que este bloco imita:
+   1. BORDA FINA QUE PEGA LUZ: em vez de uma linha de 1 a 1,5 px da mesma cor, um fio de meio pixel
+      (.5px: em tela de celular vira 1 pontinho) que brilha mais no canto de cima à esquerda e no de
+      baixo à direita, como a luz batendo na quina de um copo. Ele é desenhado no ::before com uma
+      máscara que só deixa aparecer a "moldura" (mask-composite).
+   2. REFRAÇÃO: perto das bordas o que está atrás aparece entortado, como numa lente. São os filtros
+      SVG #lg-refract (botões, abas, busca) e #lg-refract-wide (barra do topo), que só o Chrome/Edge
+      sabem aplicar no fundo; nos outros navegadores o theme.js não põe a classe "refract".
+   3. CAMADAS: como no sistema da Apple, o vidro "de verdade" (transparente e com refração) fica nos
+      CONTROLES que flutuam por cima (topo, barra de abas, botões, busca, avisos). Os cartões com texto
+      ficam mais encorpados, para ler bem: vidro é moldura, não fundo de parágrafo.
+   Desligar "Vidro líquido" em Ajustes, pedir "reduzir transparência" ou "mais contraste" no aparelho
+   volta para as linhas e cores sólidas. */
+:root{
+  --lg-hair:.5px;                                   /* espessura dos fios */
+  --lg-stroke:rgb(28 11 18 / .1);                   /* fio de base, quase invisível */
+  --lg-rim:linear-gradient(135deg, rgb(255 255 255 / .95) 0%, rgb(255 255 255 / .25) 22%, rgb(255 255 255 / 0) 45%, rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .3) 82%, rgb(255 255 255 / .8) 100%);
+  --lg-spec:inset 0 .5px 0 rgb(255 255 255 / .9), inset 0 -.5px 0 rgb(255 255 255 / .35);
+  --lg-content:rgb(255 252 249 / .74);              /* cartões com texto: mais encorpados */
+  --lg-control:rgb(255 255 255 / .42);              /* controles: vidro claro de verdade */
+  --lg-control-strong:rgb(255 252 249 / .7);
+  --lg-select:rgb(122 11 60 / .09);                 /* aba atual da barra de baixo */
+  --lg-float:0 10px 30px rgb(97 9 48 / .14), 0 2px 6px rgb(97 9 48 / .08);
+  --lg-brand:rgb(122 11 60 / .84);
+  --lg-blur:blur(14px) saturate(190%);
+  --lg-blur-bar:blur(18px) saturate(190%);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --lg-stroke:rgb(255 255 255 / .07);
+  --lg-rim:linear-gradient(135deg, rgb(255 255 255 / .5) 0%, rgb(255 255 255 / .12) 22%, rgb(255 255 255 / 0) 45%, rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .1) 82%, rgb(255 255 255 / .32) 100%);
+  --lg-spec:inset 0 .5px 0 rgb(255 255 255 / .22), inset 0 -.5px 0 rgb(255 255 255 / .06);
+  --lg-content:rgb(38 16 28 / .66); --lg-control:rgb(255 255 255 / .07); --lg-control-strong:rgb(40 18 30 / .72);
+  --lg-select:rgb(255 182 193 / .14);
+  --lg-float:0 12px 36px rgb(0 0 0 / .45), 0 2px 6px rgb(0 0 0 / .3);
+  --lg-brand:rgb(97 9 48 / .62)}}
+:root[data-theme="dark"]{
+  --lg-stroke:rgb(255 255 255 / .07);
+  --lg-rim:linear-gradient(135deg, rgb(255 255 255 / .5) 0%, rgb(255 255 255 / .12) 22%, rgb(255 255 255 / 0) 45%, rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .1) 82%, rgb(255 255 255 / .32) 100%);
+  --lg-spec:inset 0 .5px 0 rgb(255 255 255 / .22), inset 0 -.5px 0 rgb(255 255 255 / .06);
+  --lg-content:rgb(38 16 28 / .66); --lg-control:rgb(255 255 255 / .07); --lg-control-strong:rgb(40 18 30 / .72);
+  --lg-select:rgb(255 182 193 / .14);
+  --lg-float:0 12px 36px rgb(0 0 0 / .45), 0 2px 6px rgb(0 0 0 / .3);
+  --lg-brand:rgb(97 9 48 / .62)}
+
+/* 1. fios finos: molduras de .5px e controles de 1px (eram 1 e 1,5px) */
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk,.consent,.pomo-panel,.drawer,.mmenu){border:var(--lg-hair) solid var(--lg-stroke)}
+html.glass :is(.btn,.input,select.input,textarea.input,.icon-btn,.search,.skillbox,.energy button,.rate span,.chip-check,.menu-btn,.mm-close){border-width:1px}
+html.glass :is(.threads,.convo-head,.compose,.thread,.brief section,.review,.ms,.prop,.port-row,.tk-row,.adj-group+.adj-group,.toggle,.foot){border-color:var(--lg-stroke)}
+html.glass :is(.tabbar,.mm-list,.mmenu,.menu-btn,.mm-close) svg{stroke-width:1.6}
+
+/* 2. borda que pega luz (o fio brilhante do ::before) */
+.lg-defs{position:absolute; width:0; height:0; overflow:hidden}
+/* (as barras e avisos fixos na tela já têm posição; o resto vira "relative" para o fio se ancorar) */
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.search,.seg,.btn:not(.ghost),.icon-btn,.menu-btn){position:relative}
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.search,.tabbar,.mcta,.seg,.toast,.consent,.mmenu,.drawer,.btn:not(.ghost),.icon-btn,.menu-btn)::before{
+  content:""; position:absolute; inset:calc(-1 * var(--lg-hair)); border-radius:inherit; padding:var(--lg-hair); pointer-events:none;
+  background:var(--lg-rim); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor; mask-composite:exclude}
+html.glass :is(.btn,.icon-btn,.menu-btn)::before{inset:-1px; padding:1px}
+html.glass :is(.drawer,.mmenu,.tabbar,.mcta)::before{inset:0}
+.psec-b>.panel::before{display:none}
+
+/* 3. cartões com texto: vidro encorpado, brilho fino em cima, sombra macia */
+html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){background:var(--lg-content); box-shadow:var(--lg-spec), var(--glass-shadow)}
+html.glass :is(.job,.talent,.cat):hover{border-color:var(--hover-line); box-shadow:var(--lg-spec), var(--lg-float)}
+html.glass .psec-b>.panel{background:none; box-shadow:none; border:0}
+
+/* 4. controles: vidro claro (pouco desfoque) com brilho; os coloridos ganham reflexo em cima */
+html.glass :is(.btn:not(.primary):not(.hl):not(.ghost),.icon-btn,.input,select.input,textarea.input,.skillbox,.quick button,.energy button,.rate span){
+  background-color:var(--lg-control-strong); border-color:var(--lg-stroke); box-shadow:var(--lg-spec)}
+html.glass :is(.btn.primary,.btn.hl){border-color:transparent;
+  background-image:linear-gradient(180deg, rgb(255 255 255 / .26), rgb(255 255 255 / 0) 55%);
+  box-shadow:inset 0 .5px 0 rgb(255 255 255 / .55), inset 0 -.5px 0 rgb(0 0 0 / .18), 0 6px 18px rgb(97 9 48 / .22)}
+html.glass .seg{background:var(--lg-control); box-shadow:var(--lg-spec)}
+html.glass .seg button[aria-pressed="true"]{background:var(--lg-control-strong); box-shadow:var(--lg-spec), 0 3px 10px rgb(0 0 0 / .12)}
+html.glass .search{background:var(--lg-control-strong); box-shadow:var(--lg-spec), var(--lg-float)}
+html.glass .input:focus,html.glass .skillbox:focus-within{border-color:var(--accent)}
+
+/* 5. barra do topo: vinho translúcido; o que rola por baixo aparece desfocado e entortado na borda */
+html.glass .top,html.glass body::before{background-color:var(--lg-brand); -webkit-backdrop-filter:var(--lg-blur-bar); backdrop-filter:var(--lg-blur-bar)}
+html.glass .top{box-shadow:inset 0 -.5px 0 rgb(255 255 255 / .22), 0 8px 28px rgb(97 9 48 / .16)}
+html.glass .nav button[aria-current="page"]{background:rgb(255 255 255 / .14); outline:1.5px solid var(--orange); outline-offset:-1.5px; box-shadow:inset 0 .5px 0 rgb(255 255 255 / .35)}
+html.glass .top .btn:not(.primary):not(.hl){background:rgb(255 255 255 / .08); border-color:rgb(255 255 255 / .32); box-shadow:inset 0 .5px 0 rgb(255 255 255 / .3)}
+html.glass .menu-btn{background:rgb(255 255 255 / .08); border-color:rgb(255 255 255 / .32)}
+html.glass .hero .search{background:rgb(255 255 255 / .84)}
+html.glass .hero .seg{background:rgb(255 255 255 / .1)}
+
+/* 6. barra de abas do celular: uma cápsula de vidro solta da borda, como a da Apple */
+@media (max-width:980px){
+  html.glass .tabbar{left:max(12px,env(safe-area-inset-left,0px)); right:max(12px,env(safe-area-inset-right,0px)); bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    padding:5px; gap:2px; border:var(--lg-hair) solid var(--lg-stroke); border-radius:32px; background:var(--lg-control-strong);
+    -webkit-backdrop-filter:var(--lg-blur-bar); backdrop-filter:var(--lg-blur-bar); box-shadow:var(--lg-spec), var(--lg-float)}
+  html.glass .tabbar button{min-height:54px; border-radius:26px; transition:background .2s ease}
+  html.glass .tabbar button[aria-current="page"]{background:var(--lg-select); box-shadow:inset 0 .5px 0 rgb(255 255 255 / .35)}
+  html.glass .tabbar .badge{top:3px}
+  html.glass body:not(.chat-full){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  html.glass .mcta{left:max(12px,env(safe-area-inset-left,0px)); right:max(12px,env(safe-area-inset-right,0px)); bottom:calc(80px + env(safe-area-inset-bottom,0px));
+    border:var(--lg-hair) solid var(--lg-stroke); border-radius:24px; background:var(--lg-control-strong);
+    -webkit-backdrop-filter:var(--lg-blur-bar); backdrop-filter:var(--lg-blur-bar); box-shadow:var(--lg-spec), var(--lg-float)}
+  html.glass main:has(.mcta){padding-bottom:170px}
+  html.glass .toast{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+}
+html.glass .toast{box-shadow:inset 0 .5px 0 rgb(255 255 255 / .3), var(--lg-float)}
+html.glass :is(.drawer,.mmenu){background:var(--lg-control-strong); box-shadow:var(--lg-spec), -20px 0 50px rgb(0 0 0 / .18)}
+
+/* 7. refração (só Chrome/Edge, classe "refract" posta pelo theme.js): o desfoque fica mais leve
+      para a lente aparecer; bordas largas usam o mapa "wide", que entorta só em cima e embaixo */
+html.glass.refract :is(.btn:not(.primary):not(.hl):not(.ghost),.icon-btn,.menu-btn,.seg,.search,.toast,.mcta){
+  backdrop-filter:blur(6px) url(#lg-refract) saturate(190%)}
+html.glass.refract .top,html.glass.refract .tabbar{backdrop-filter:blur(10px) url(#lg-refract-wide) saturate(190%)}
+html.glass.refract body::before{backdrop-filter:blur(10px) saturate(190%)}
+/* sobre o vinho e o degradê do topo a saturação forte deixaria tudo vermelho-vivo: ali ela é suave */
+html.glass.refract :is(.hero,.top) :is(.seg,.search,.btn:not(.primary):not(.hl):not(.ghost),.menu-btn){backdrop-filter:blur(6px) url(#lg-refract) saturate(115%)}
+html.glass .menu-btn{-webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px)}
+
+/* quem pede mais contraste ou menos transparência volta para linhas sólidas e visíveis */
+@media (prefers-contrast: more){
+  html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.search,.tabbar,.mcta,.seg,.toast,.btn,.icon-btn,.menu-btn)::before{display:none}
+  html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.tabbar,.mcta){border:1px solid var(--line); background:var(--surface)}
+  html.glass :is(.btn:not(.primary):not(.hl):not(.ghost),.input,select.input,textarea.input,.icon-btn,.search){border:1.5px solid var(--line); background:var(--surface)}
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  html.glass :is(.tabbar,.mcta,.search,.seg){background:var(--surface)}
+  html.glass .top,html.glass body::before{background-color:var(--brand)}
+}
