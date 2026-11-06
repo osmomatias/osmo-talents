@@ -400,7 +400,7 @@ function markNav() {
 const ID_PATHS = { vaga: "vagas", talento: "talentos", mensagens: "mensagens", contrato: "contratos", projeto: "projetos" };
 const SECRET = ["recuperar", "avisos", "escolher"];
 // endereços que são telas do app (o servidor usa a mesma lista para entregar o site em vez da 404)
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
 function hToPath(h) {
   const i = h.indexOf("-"), name = i < 0 ? h : h.slice(0, i), id = i < 0 ? "" : h.slice(i + 1);
   if (!name || name === "inicio") return "/";
@@ -522,6 +522,7 @@ function skeleton(name) {
     panorama: b(28, "30%") + `<div class="sk-grid">${rows(4, 84)}</div>` + rows(2, 180),
     gestao: b(28, "30%") + b(44) + rows(6, 52),
     avisos: b(16, "25%") + b(36, "60%") + b(260),
+    top10: b(16, "15%") + b(44, "25%") + b(28, "12%") + `<div class="sk-row">${rows(5, 300)}</div>` + b(28, "12%") + `<div class="sk-row">${rows(5, 300)}</div>`,
   };
   shapes.contrato = shapes.projeto; // "contrato" só descobre o projeto e vai para ele
   return `<div class="sk-wrap" aria-hidden="true">${shapes[name] || rows(3, 120)}</div><p class="sr-only" role="status">Carregando…</p>`;
@@ -968,6 +969,38 @@ V.talento = async id => {
 //   - no celular ou no teclado: toque nas pessoas para marcar e depois toque no círculo.
 // Soltar no círculo tracejado "Novo squad" cria o squad já com essas pessoas dentro.
 // Tocar num círculo sem ninguém marcado abre os detalhes: nome, cor, quem está e o botão de apagar.
+// TOP 10: os 10 filmes e as 10 séries do momento (dados do TMDB, pedidos pelo nosso servidor).
+// Duas listas: "Em alta na semana" e "Mais bem avaliados". Cada linha anda para os lados;
+// na TV, as setas passam de cartaz em cartaz e o cartaz com foco cresce um pouco.
+// Sem cartaz, aparece o símbolo da Osmo (o mesmo desenho do logo do topo, recortado no "O").
+/* ---------- top 10 ---------- */
+const TOP10_TABS = [["em-alta", "Em alta", "O que mais se viu nesta semana"], ["melhores", "Mais bem avaliados", "As melhores notas de todos os tempos"]];
+const osmoMark = () => { const d = $(".brand svg path"); return d ? `<svg class="t10-mark" viewBox="0 0 30 30" aria-hidden="true"><path d="${esc(d.getAttribute("d"))}"/></svg>` : ""; };
+function top10Row(title, items) {
+  return `<section class="t10-sec" aria-label="${esc(title)}"><h2>${esc(title)}</h2>
+  <ol class="t10-row">${items.map(x => `<li><article class="t10-card" tabindex="0" aria-label="${x.rank}º lugar: ${esc(x.title)}${x.year ? ", " + esc(x.year) : ""}, nota ${x.rating.toFixed(1)}">
+    <div class="t10-art"><span class="t10-rank" aria-hidden="true">${x.rank}</span>
+    <div class="t10-poster">${x.poster ? `<img src="${esc(x.poster)}" alt="" loading="lazy" width="342" height="513">` : osmoMark()}</div></div>
+    <div class="t10-info"><b>${esc(x.title)}</b><span class="muted">${esc(x.year)}${x.year ? " · " : ""}<span class="t10-star" aria-hidden="true">★</span> ${x.rating.toFixed(1)}</span></div>
+  </article></li>`).join("")}</ol></section>`;
+}
+V.top10 = async () => {
+  const lista = S.top10 || "em-alta";
+  let d;
+  try { d = await api("GET", "/api/top10?lista=" + lista); }
+  catch (e) { return `<div class="t10">${top10Head(lista)}${emptyBox(e.status === 503 ? "O Top 10 ainda não está ligado." : "Não deu para carregar o Top 10.", e.status === 503 ? "Falta colocar a chave do TMDB (TMDB_TOKEN) no .env do servidor." : e.message)}</div>`; }
+  const when = new Date(d.updatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return `<div class="t10">${top10Head(lista)}
+    ${top10Row("Filmes", d.filmes)}${top10Row("Séries", d.series)}
+    <p class="t10-credit muted">Atualizado em ${esc(when)}. Dados e cartazes do <a href="https://www.themoviedb.org" rel="noopener">TMDB</a>. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</p></div>`;
+};
+const top10Head = lista => `<header class="t10-head"><span class="label">Filmes e séries · ${esc((TOP10_TABS.find(t => t[0] === lista) || TOP10_TABS[0])[2])}</span><h1>Top 10</h1>
+  <div class="seg" role="group" aria-label="Qual lista">${TOP10_TABS.map(([k, n]) => `<button type="button" data-top10="${k}" aria-pressed="${lista === k}">${n}</button>`).join("")}</div></header>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-top10]"); if (!b || b.getAttribute("aria-pressed") === "true") return;
+  S.top10 = b.dataset.top10; route().then(() => { const n = $(`[data-top10="${S.top10}"]`); if (n && DEVICE === "tv") n.focus({ preventScroll: true }); });
+});
+
 /* ---------- squads ---------- */
 let SQ = { data: null, sel: new Set(), open: null, q: "", found: null, creating: false, bump: null };
 const SQ_COLORS = ["Vinho", "Ameixa", "Mostarda", "Coral", "Verde", "Laranja"];

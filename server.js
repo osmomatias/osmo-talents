@@ -2059,8 +2059,8 @@ const SECURITY_HEADERS = {
   // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google;
   // o Cloudflare Web Analytics (static.cloudflareinsights.com / cloudflareinsights.com) vale nas duas versões
   "Content-Security-Policy": GA_ID
-    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    ? "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://image.tmdb.org https://*.google-analytics.com https://*.googletagmanager.com; script-src 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    : "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://image.tmdb.org; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 
 // Responde ao navegador: se for objeto, vira JSON; sempre com os capacetes de segurança.
@@ -2093,6 +2093,46 @@ function readBody(req, max = 200_000) {
 // ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
 // - "/" e os endereços das telas do app (/vagas, /vagas/12, /painel...: lista APP_PATH, igual à do app.js)
 //   recebem o index.html; o app.js desenha a tela certa;
+// TOP 10 DE FILMES E SÉRIES: os dados vêm do TMDB (themoviedb.org), que tem API oficial e gratuita.
+// - lista "em-alta": o que mais está sendo visto na semana; "melhores": os mais bem avaliados;
+// - pedimos filmes e séries ao mesmo tempo e guardamos a resposta por 6 horas (TOP10_TTL),
+//   para a página abrir rápido e não gastar o limite de pedidos do TMDB;
+// - a chave fica só aqui no servidor (TMDB_TOKEN no .env), nunca vai para o navegador.
+const TMDB_TOKEN = process.env.TMDB_TOKEN || "";
+const TOP10_TTL = 6 * 3600e3;
+const TOP10_LISTS = { "em-alta": ["trending/movie/week", "trending/tv/week"], melhores: ["movie/top_rated", "tv/top_rated"] };
+const top10Cache = new Map();
+async function tmdb(pathname) {
+  const r = await fetch(`https://api.themoviedb.org/3/${pathname}?language=pt-BR&region=BR`, {
+    headers: { Authorization: `Bearer ${TMDB_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`TMDB ${r.status}`);
+  return r.json();
+}
+const top10Item = (x, i) => ({
+  rank: i + 1, id: x.id,
+  title: x.title || x.name || "",
+  year: String(x.release_date || x.first_air_date || "").slice(0, 4),
+  rating: Math.round((x.vote_average || 0) * 10) / 10,
+  poster: x.poster_path ? `https://image.tmdb.org/t/p/w342${x.poster_path}` : "",
+  overview: String(x.overview || "").slice(0, 280),
+});
+route("GET", "/api/top10", async ({ query }) => {
+  if (!TMDB_TOKEN) fail(503, "O Top 10 ainda não está ligado: falta a chave do TMDB no servidor.");
+  const lista = TOP10_LISTS[query.get("lista")] ? query.get("lista") : "em-alta";
+  const hit = top10Cache.get(lista);
+  if (hit && Date.now() - hit.at < TOP10_TTL) return hit.data;
+  try {
+    const [movies, tv] = await Promise.all(TOP10_LISTS[lista].map(tmdb));
+    const data = { lista, updatedAt: new Date().toISOString(), filmes: movies.results.slice(0, 10).map(top10Item), series: tv.results.slice(0, 10).map(top10Item) };
+    top10Cache.set(lista, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    console.error(new Date().toISOString(), "top10", e.message);
+    if (hit) return hit.data; // o TMDB caiu: mostra a última lista boa que temos
+    fail(502, "Não deu para buscar o Top 10 agora. Tente de novo em instantes.");
+  }
+}, { auth: false });
+
 //   endereço que não existe recebe a 404.html com código 404, para o Google não guardar página vazia;
 // - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
 // - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
@@ -2109,7 +2149,7 @@ const stamp = name => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
   fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err

@@ -1316,3 +1316,35 @@ html:not([data-theme]) .menu-btn{color:var(--brand); border-color:rgb(122 11 60 
   --glass-line:rgb(133 11 66 / .2); --glass-edge:rgb(133 11 66 / .14); --glass-sunken:rgb(133 11 66 / .07);
   --glass-shadow:0 10px 30px -6px rgb(97 9 48 / .14), 0 2px 6px -2px rgb(97 9 48 / .08);
   --glass-glow-1:rgb(249 115 22 / .24); --glass-glow-2:rgb(180 16 92 / .18); --glass-glow-3:rgb(255 82 144 / .26)}}
+
+/* ---------- top 10 de filmes e séries (dados do TMDB) ----------
+   Cada linha é uma fileira de cartazes que anda para os lados (com o dedo, o mouse ou as setas da TV).
+   O número grande da posição fica atrás do canto do cartaz, em rosa da Osmo. */
+.t10{display:flex; flex-direction:column; gap:36px; padding-block:8px 24px}
+.t10-head{background:var(--brand); background-image:radial-gradient(ellipse at center, transparent 0%, rgb(0 0 0 / .4) 100%); color:var(--on-brand); border-radius:var(--r); padding:40px 48px}
+.t10-head .label{color:var(--pink)}
+.t10-head h1{margin-top:6px}
+.t10-head .seg{background:rgb(255 255 255 / .12)}
+.t10-head .seg button{color:rgb(255 255 255 / .8)}
+.t10-head .seg button[aria-pressed="true"],html.glass .t10-head .seg button[aria-pressed="true"]{background:#fff; color:var(--brand-deep); box-shadow:none}
+html.glass .t10-head .seg{background:rgb(255 255 255 / .12); box-shadow:inset 0 0 0 1px rgb(255 255 255 / .18)}
+.t10-sec{display:flex; flex-direction:column; gap:14px; min-width:0}
+.t10-row{list-style:none; margin:0; padding:8px 4px 16px; display:grid; grid-auto-flow:column; grid-auto-columns:minmax(150px,190px); gap:22px;
+  overflow-x:auto; scroll-snap-type:x proximity; scrollbar-width:thin; scroll-padding-inline:4px}
+.t10-row>li{scroll-snap-align:start; min-width:0}
+.t10-card{display:flex; flex-direction:column; gap:10px; border-radius:var(--r); outline-offset:6px; cursor:default}
+.t10-art{position:relative; padding-left:28px}
+.t10-rank{position:absolute; left:-6px; bottom:-10px; z-index:1; font-family:var(--f-display); font-weight:700; font-size:5.2rem; line-height:1;
+  color:var(--bg); -webkit-text-stroke:2px var(--pink); paint-order:stroke fill; letter-spacing:-.06em; pointer-events:none}
+.t10-poster{aspect-ratio:2/3; border-radius:var(--r); overflow:hidden; background:var(--sunken); border:1px solid var(--line); display:grid; place-items:center}
+.t10-poster img{width:100%; height:100%; object-fit:cover; display:block}
+.t10-mark{width:46%; fill:var(--muted); opacity:.5}
+.t10-info{display:flex; flex-direction:column; gap:2px; min-width:0; padding-left:28px}
+.t10-info b{font-size:.98rem; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.t10-info .muted{font-size:.86rem}
+.t10-star{color:var(--sun)}
+.t10-credit{font-size:.82rem; max-width:70ch}
+@media (max-width:600px){ .t10-head{padding:28px 22px} .t10-head .seg button{padding:8px 10px; font-size:.95rem} .t10-row{grid-auto-columns:minmax(128px,150px); gap:16px} .t10-rank{font-size:4.2rem} }
+html[data-device="tv"] .t10-row{grid-auto-columns:15vw; padding:18px 14px 22px; scrollbar-width:none}
+html[data-device="tv"] .t10-card:focus{transform:scale(1.06); transition:transform .15s ease}
+html.calm[data-device="tv"] .t10-card:focus{transform:none}
