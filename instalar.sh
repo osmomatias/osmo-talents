@@ -170,7 +170,11 @@ $PASS
 $PASS
     }
     location / {
-        return 301 $TO://$APP_HOST\$request_uri;
+        # atrás da Cloudflare sem certificado de origem, o pedido chega aqui em http:
+        # o X-Forwarded-Proto diz se a pessoa usou https, para não redirecionar em dois saltos
+        set \$to $TO;
+        if (\$http_x_forwarded_proto = \"https\") { set \$to https; }
+        return 301 \$to://$APP_HOST\$request_uri;
     }")
 else
   NAMES="$DOMAIN www.$DOMAIN"; [ -n "$APP_DNS" ] && [ "$APP_HOST" != "$DOMAIN" ] && NAMES="$APP_HOST $NAMES"

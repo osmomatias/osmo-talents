@@ -23,12 +23,12 @@
    fundo, do texto, das linhas, cores de aviso, as fontes e alguns tamanhos
    (--fs = tamanho da letra, --lh = altura da linha, --r = arredondado dos cantos). */
 :root{
-  --brand:#7A0B3C; --brand-deep:#610930; --pink:#FFB6C1; --on-brand:#FFFFFF;
-  --orange:#E8650F; --orange-ink:#2B0714; --orange-soft:#FDE6D6; --hi:#B44708;
-  --bg:#FAF6F7; --surface:#FFFFFF; --sunken:#F4EAEE; --line:#E8D7DE;
-  --fg:#1C0B12; --muted:#6F5862; --accent:#7A0B3C; --accent-ink:#FFFFFF; --accent-soft:#FBE3EA;
-  --sun:#B7791F; --sun-soft:#F8EBD3; --plum:#610930; --plum-soft:#F6DDE6; --coral:#A14838; --coral-soft:#F5DDD6;
-  --ok:#2F7D4A; --warn:#935E11; /* coral e aviso levemente mais escuros: contraste mínimo de 4,5:1 (WCAG AA) */
+  --brand:#7A0B3C; --brand-deep:#610930; --pink:#FF7597; --on-brand:#FFFFFF;
+  --orange:#EA580C; --orange-ink:#2B0714; --orange-soft:#FFEDD5; --hi:#C2410C;
+  --bg:#F8F6F9; --surface:#FFFFFF; --sunken:#F2EBF0; --line:#D8BDCF;
+  --fg:#14050D; --muted:#523A47; --accent:#850B42; --accent-ink:#FFFFFF; --accent-soft:#FCE7F1;
+  --sun:#D97706; --sun-soft:#FEF3C7; --plum:#6B0A38; --plum-soft:#FCE4EC; --coral:#BE123C; --coral-soft:#FFE4E6;
+  --ok:#15803D; --warn:#92400E; /* contraste nítido e acessível: mínimo de 4,5:1 (WCAG AA/AAA) */
   --f-display:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
   --f-body:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
   --f-mono:"DIN Pro", "Barlow", "DIN Alternate", system-ui, sans-serif;
@@ -374,7 +374,7 @@ body::before{background:var(--brand)}
 .hero .seg{background:rgb(255 255 255 / .12)}
 .hero .seg button{color:rgb(255 255 255 / .8)}
 .hero .seg button[aria-pressed="true"]{background:#fff; color:var(--brand-deep); box-shadow:none}
-.hero .search{background:#fff; border-color:#fff; color:#1C0B12}
+.hero .search{background:#fff; border-color:#fff; color:var(--fg)}
 .hero .search .btn.primary{background:var(--brand); color:#fff; border-color:var(--brand)}
 .hero .wcard{color:var(--fg)}
 .hero .wcard .label{color:var(--muted)}
@@ -737,13 +737,13 @@ html.glass .psec-b>.panel{border:0; background:none; box-shadow:none; -webkit-ba
      texto continuar fácil de ler. */
 /* ---------- vidro líquido: superfícies translúcidas sobre um fundo com luz da marca (desliga em Ajustes) ---------- */
 :root{
-  --glass-bg:rgb(255 255 255 / .58); --glass-bg-strong:rgb(255 255 255 / .78); --glass-sunken:rgb(122 11 60 / .06);
-  --glass-line:rgb(255 255 255 / .7); --glass-edge:rgb(122 11 60 / .1);
-  --glass-hi:inset 0 1px 0 rgb(255 255 255 / .9), inset 0 -1px 0 rgb(255 255 255 / .25);
-  --glass-shadow:0 8px 32px rgb(97 9 48 / .1), 0 1px 3px rgb(97 9 48 / .06);
-  --glass-blur:blur(22px) saturate(180%);
-  --glass-brand:rgb(122 11 60 / .78);
-  --glass-glow-1:rgb(232 101 15 / .16); --glass-glow-2:rgb(122 11 60 / .14); --glass-glow-3:rgb(255 182 193 / .32);
+  --glass-bg:rgb(255 255 255 / .84); --glass-bg-strong:rgb(255 255 255 / .95); --glass-sunken:rgb(133 11 66 / .05);
+  --glass-line:rgb(255 255 255 / .85); --glass-edge:rgb(133 11 66 / .09);
+  --glass-hi:inset 0 1px 0 rgb(255 255 255 / 1), inset 0 0 0 1px rgb(255 255 255 / .45), inset 0 -1px 0 rgb(133 11 66 / .07);
+  --glass-shadow:0 10px 32px -4px rgb(97 9 48 / .11), 0 2px 8px -2px rgb(0 0 0 / .05), 0 1px 2px rgb(0 0 0 / .04);
+  --glass-blur:blur(22px) saturate(190%);
+  --glass-brand:rgb(122 11 60 / .92);
+  --glass-glow-1:rgb(249 115 22 / .18); --glass-glow-2:rgb(180 16 92 / .14); --glass-glow-3:rgb(255 82 144 / .20);
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --glass-bg:rgb(40 16 28 / .52); --glass-bg-strong:rgb(34 16 26 / .82); --glass-sunken:rgb(255 255 255 / .05);
@@ -971,34 +971,35 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 .adm-drawer{width:min(520px,100%)}
 @media (max-width:700px){ .adm-tabs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none} .adm-tabs::-webkit-scrollbar{display:none} }
 
-/* ---------- modo claro mais quente: topo quase sólido e nuances sutis de laranja ----------
+/* ---------- modo claro vívido: cores ricas, contraste nítido e luzes da marca ----------
    Só mexe nos "potes de tinta" do tema claro (o escuro tem os seus próprios e não muda).
    O claro vale quando a pessoa escolhe "Claro" ou "Sistema" com o aparelho no claro. */
 :root{--label:var(--muted); --hover-line:var(--accent); --top-line:0px; --warm-edge:transparent}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
-  --bg:#FBF5F1; --sunken:#F7EAE2; --line:#EBD8CE; --muted:#6E5560; --accent-soft:#FBE4E3;
-  --label:#A3460E; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(232 101 15 / .16);
-  --glass-bg:rgb(255 251 247 / .72); --glass-bg-strong:rgb(255 250 246 / .9); --glass-sunken:rgb(232 101 15 / .07);
-  --glass-line:rgb(232 101 15 / .16); --glass-edge:rgb(232 101 15 / .14); --glass-brand:rgb(122 11 60 / .96);
-  --glass-shadow:0 8px 30px rgb(160 60 20 / .09), 0 1px 3px rgb(160 60 20 / .06);
-  --glass-glow-1:rgb(232 101 15 / .26); --glass-glow-2:rgb(122 11 60 / .1); --glass-glow-3:rgb(253 200 170 / .55)}}
+  --bg:#F8F6F9; --sunken:#F2EBF0; --line:#D8BDCF; --muted:#523A47; --accent-soft:#FCE7F1;
+  --label:#C2410C; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(234 88 12 / .45);
+  --glass-bg:rgb(255 255 255 / .84); --glass-bg-strong:rgb(255 255 255 / .95); --glass-sunken:rgb(133 11 66 / .05);
+  --glass-line:rgb(255 255 255 / .85); --glass-edge:rgb(133 11 66 / .09); --glass-brand:rgb(122 11 60 / .95);
+  --glass-shadow:0 10px 32px -4px rgb(97 9 48 / .11), 0 2px 8px -2px rgb(0 0 0 / .05), 0 1px 2px rgb(0 0 0 / .04);
+  --glass-glow-1:rgb(249 115 22 / .18); --glass-glow-2:rgb(180 16 92 / .14); --glass-glow-3:rgb(255 82 144 / .20)}}
 :root[data-theme="light"]{
-  --bg:#FBF5F1; --sunken:#F7EAE2; --line:#EBD8CE; --muted:#6E5560; --accent-soft:#FBE4E3;
-  --label:#A3460E; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(232 101 15 / .16);
-  --glass-bg:rgb(255 251 247 / .72); --glass-bg-strong:rgb(255 250 246 / .9); --glass-sunken:rgb(232 101 15 / .07);
-  --glass-line:rgb(232 101 15 / .16); --glass-edge:rgb(232 101 15 / .14); --glass-brand:rgb(122 11 60 / .96);
-  --glass-shadow:0 8px 30px rgb(160 60 20 / .09), 0 1px 3px rgb(160 60 20 / .06);
-  --glass-glow-1:rgb(232 101 15 / .26); --glass-glow-2:rgb(122 11 60 / .1); --glass-glow-3:rgb(253 200 170 / .55)}
-/* rótulos pequenos em laranja queimado (no escuro continuam como antes) */
+  --bg:#F8F6F9; --sunken:#F2EBF0; --line:#D8BDCF; --muted:#523A47; --accent-soft:#FCE7F1;
+  --label:#C2410C; --hover-line:var(--orange); --top-line:3px; --warm-edge:rgb(234 88 12 / .45);
+  --glass-bg:rgb(255 255 255 / .84); --glass-bg-strong:rgb(255 255 255 / .95); --glass-sunken:rgb(133 11 66 / .05);
+  --glass-line:rgb(255 255 255 / .85); --glass-edge:rgb(133 11 66 / .09); --glass-brand:rgb(122 11 60 / .95);
+  --glass-shadow:0 10px 32px -4px rgb(97 9 48 / .11), 0 2px 8px -2px rgb(0 0 0 / .05), 0 1px 2px rgb(0 0 0 / .04);
+  --glass-glow-1:rgb(249 115 22 / .18); --glass-glow-2:rgb(180 16 92 / .14); --glass-glow-3:rgb(255 82 144 / .20)}
+/* rótulos pequenos em laranja vivo (no escuro continuam como antes) */
 .label{color:var(--label)}
-/* fio laranja embaixo do topo, que se apaga para a direita (só aparece no claro) */
+/* fio degradê laranja-rosa embaixo do topo, que se apaga para a direita (só aparece no claro) */
 .top::after{content:""; position:absolute; left:0; right:0; bottom:0; height:var(--top-line); pointer-events:none;
-  background:linear-gradient(90deg, var(--orange) 0%, #FFB37A 45%, rgb(255 179 122 / 0) 100%)}
+  background:linear-gradient(90deg, var(--orange) 0%, #FF7597 45%, rgb(255 117 151 / 0) 100%)}
 /* cartões ganham contorno laranja ao passar o mouse e um brilho quente no topo */
-:is(.job,.talent,.cat):hover,html.glass :is(.job,.talent,.cat):hover{border-color:var(--hover-line)}
-:is(.panel,.job,.talent,.cat,.wcard,.msgs){box-shadow:inset 0 2px 0 var(--warm-edge)}
+:is(.job,.talent,.cat):hover{border-color:var(--hover-line); box-shadow:0 12px 30px -4px rgb(234 88 12 / .15), 0 2px 6px rgb(0 0 0 / .05), inset 0 2px 0 var(--hover-line)}
+html.glass :is(.job,.talent,.cat):hover{border-color:var(--hover-line); box-shadow:inset 0 2px 0 var(--hover-line), var(--glass-hi), 0 14px 40px -4px rgb(234 88 12 / .18), 0 4px 12px rgb(97 9 48 / .1)}
+:is(.panel,.job,.talent,.cat,.wcard,.msgs){box-shadow:0 4px 18px -2px rgb(97 9 48 / .06), 0 1px 3px rgb(0 0 0 / .04), inset 0 2px 0 var(--warm-edge)}
 html.glass :is(.panel,.job,.talent,.cat,.wcard,.msgs,.empty,.file-row,.sk){box-shadow:inset 0 2px 0 var(--warm-edge), var(--glass-hi), var(--glass-shadow)}
-html.glass .sk{background:rgb(90 20 50 / .1); border:0; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none}
+html.glass .sk{background:rgb(90 20 50 / .08); border:0; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]).glass .sk{background:rgb(255 255 255 / .06)}}
 :root[data-theme="dark"].glass .sk{background:rgb(255 255 255 / .06)} /* bloco de carregamento: chapado (sem borda, sombra nem desfoque), num tom que aparece sobre o fundo */
 .psec-b>.panel,html.glass .psec-b>.panel{box-shadow:none}
