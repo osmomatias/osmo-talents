@@ -1847,7 +1847,7 @@ async function refreshPushBox() {
     off: `<p class="hint">Receba no celular ou no computador os mesmos avisos do e-mail, mesmo com o site fechado.</p><div class="row">${btn("push-on", "Ativar notificações neste aparelho", "hl")}</div>${same}`,
     denied: `<p><span class="status wait">Bloqueadas no navegador</span></p><p class="hint">Para receber, libere as notificações deste site nas configurações do navegador e volte aqui.</p>`,
     unsupported: `<p class="hint">Este navegador não recebe notificações. Tente o Chrome, o Edge, o Firefox ou o Safari atualizado.</p>`,
-    ios: `<p class="hint">No iPhone e no iPad, as notificações só funcionam com a Osmo instalada na tela de início. Toque em Compartilhar e depois em “Adicionar à Tela de Início”. Depois abra a Osmo pelo ícone novo e ative aqui.</p><p class="hint">Já tinha o ícone da Osmo? Se ele foi adicionado antes da mudança para ${esc(location.host)}, aponta para o endereço antigo e abre fora do app. Apague esse ícone, abra ${esc(location.host)} no Safari e adicione de novo.</p>`,
+    ios: `<p class="hint">No iPhone e no iPad, as notificações só funcionam com a Osmo instalada na tela de início. Toque em Compartilhar e depois em “Adicionar à Tela de Início”. Depois abra a Osmo pelo ícone novo e ative aqui.</p>`,
   }[st.s];
   // já inscrito: reenvia a inscrição em silêncio (o servidor pode ter apagado, ou outra conta usou este navegador)
   if (st.s === "on") api("POST", "/api/push/subscribe", { subscription: st.sub.toJSON(), device: deviceName() }).catch(() => {});
