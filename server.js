@@ -1198,12 +1198,15 @@ route("POST", "/api/threads", ({ user, body }) => {
   return { thread: th };
 });
 
-// PAINEL DO DONO (panorama da plataforma): só quem entrou com um e-mail da lista ADMIN_EMAILS do .env vê.
-// Para todo mundo, inclusive quem está logado, a rota responde "não encontrada", como se não existisse.
+// PAINEL DO DONO (panorama da plataforma): só UMA pessoa em todo o site é administradora, e ela está fixada
+// aqui no código — não vem do .env, então ninguém ganha acesso editando variáveis no servidor. O antigo
+// ADMIN_EMAILS é ignorado. Para todo mundo, inclusive quem está logado, as rotas de admin respondem "não encontrada".
 // Junta numa resposta só os números gerais, a evolução das últimas 12 semanas, o funil de contratação,
 // o dinheiro que passou pela plataforma, os pontos que precisam de atenção e as últimas novidades.
-const ADMINS = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
-const isAdmin = user => !!user && ADMINS.includes(String(user.email).toLowerCase());
+const ADMIN_EMAIL = "matias@osmo.com.br";
+const ADMINS = [ADMIN_EMAIL];
+if (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL) console.warn(`[admin] ADMIN_EMAILS/ADMIN_EMAIL no .env é ignorado: o único administrador é ${ADMIN_EMAIL}.`);
+const isAdmin = user => !!user && String(user.email || "").trim().toLowerCase() === ADMIN_EMAIL;
 route("GET", "/api/admin/overview", ({ user }) => {
   if (!isAdmin(user)) fail(404, "Rota não encontrada.");
   const count = (sql, ...p) => one(sql, ...p).n;
@@ -1280,7 +1283,7 @@ route("GET", "/api/admin/overview", ({ user }) => {
   };
 }, { auth: false }); // auth:false para quem não entrou também receber "não encontrada" (e não "entre na sua conta")
 
-// GESTÃO PELO DONO (CRUD = criar, ler, editar e apagar): o dono (ADMIN_EMAILS) mexe direto nos registros da
+// GESTÃO PELO DONO (CRUD = criar, ler, editar e apagar): o dono (ADMIN_EMAIL, único) mexe direto nos registros da
 // plataforma. Cada "entidade" abaixo diz qual tabela usa, quais campos podem ser vistos e editados, como
 // listar e buscar, e o que precisa ser conferido antes de apagar. Tudo o que o dono faz vai para o admin_log.
 // As conversas (mensagens) ficam de fora de propósito: são privadas entre cliente e freela (LGPD).
@@ -1499,7 +1502,7 @@ route("POST", "/api/admin/users/:id/password", ({ user, params }) => {
 
 // PROJETOS E TAREFAS (no estilo Asana): cada contrato ganha um projeto, criado sozinho na primeira vez que
 // alguém do contrato abre as tarefas, já com as seções "A fazer / Fazendo / Feito" e uma tarefa por etapa.
-// Projetos internos são só da equipe da Osmo (ADMIN_EMAILS). Regra de ouro: só os membros do projeto
+// Projetos internos são só da equipe da Osmo (o admin único, ADMIN_EMAIL). Regra de ouro: só os membros do projeto
 // enxergam e mexem nele; para qualquer outra pessoa ele "não existe" (404). O dono vê tudo.
 // As tarefas organizam o trabalho, mas não mexem em dinheiro: pagamento continua nas etapas do contrato.
 const SECTIONS0 = ["A fazer", "Fazendo", "Feito"];

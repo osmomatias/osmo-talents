@@ -1302,7 +1302,7 @@ V.painel = async () => {
 
 // PAINEL DO DONO (#panorama): uma tela que não aparece em nenhum menu. Mostra o panorama da plataforma inteira:
 // números gerais, evolução por semana, funil de contratação, dinheiro, o que está parado e as últimas novidades.
-// Quem decide quem pode ver é o servidor (lista ADMIN_EMAILS); para qualquer outra pessoa a página "não existe".
+// Quem decide quem pode ver é o servidor (admin único, fixado em server.js); para qualquer outra pessoa a página "não existe".
 // Enquanto está aberta, se atualiza sozinha a cada minuto.
 /* ---------- panorama (painel do dono) ---------- */
 const ADM_MS = { pendente: "A seguir", andamento: "Em andamento", entregue: "Entregue", ajustes: "Ajustes", aprovada: "Aprovada" };
