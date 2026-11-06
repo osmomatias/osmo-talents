@@ -569,17 +569,17 @@ V.entrar = async () => {
   return `<div class="auth stack">
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
-  <form class="panel stack" id="authForm" novalidate>
-    ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>
-    <div class="field"><span class="flabel">Eu quero</span>
+  ${reg ? `<div class="field"><span class="flabel">Eu quero</span>
       <label class="check"><input type="radio" name="role" value="freela" checked><span>Trabalhar como freelancer</span></label>
       <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label></div>` : ""}
+  ${socialHTML(reg)}
+  <form class="panel stack" id="authForm" novalidate>
+    ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>` : ""}
     <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" placeholder="voce@email.com" required></div>
     <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" placeholder="${reg ? "Mínimo de 8 caracteres" : "Sua senha"}" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
-  </form>
-  ${socialHTML(reg)}</div>`;
+  </form></div>`;
 };
 
 const SOCIAL = {
@@ -591,10 +591,10 @@ const SOCIAL = {
 };
 function socialHTML(reg) {
   if (!OAUTH.length) return "";
-  const role = reg ? (document.querySelector('input[name="role"]:checked') || {}).value || "freela" : "";
+  const role = reg ? "freela" : ""; // a tela nasce com "freelancer" marcado; trocar o perfil atualiza os links (ouvinte de "change")
   return `<div class="stack" style="gap:10px" id="socialBox">
-    <div class="divider"><span>${reg ? "ou crie a conta com" : "ou entre com"}</span></div>
-    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}</div>`;
+    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
+    <div class="divider"><span>${reg ? "ou crie a conta com e-mail" : "ou entre com e-mail"}</span></div></div>`;
 }
 const OAUTH_ERR = {
   cancelado: "Você cancelou a entrada. Tente de novo quando quiser.",
@@ -2426,7 +2426,7 @@ document.addEventListener("submit", async e => {
   try {
     if (f.id === "authForm") {
       const body = { email: $("#a_email").value, password: $("#a_pass").value };
-      if (authMode === "criar") { body.name = $("#a_name").value; body.role = (f.querySelector('input[name="role"]:checked') || {}).value; }
+      if (authMode === "criar") { body.name = $("#a_name").value; body.role = ($('input[name="role"]:checked') || {}).value; }
       try { await api("POST", authMode === "criar" ? "/api/auth/register" : "/api/auth/login", body); }
       catch (err) { return showErr("#authErr", err.message); }
       await refreshMe();

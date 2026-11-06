@@ -38,7 +38,7 @@ const P = {
   adobe: {
     name: "Adobe", issuer: ["https://ims-na1.adobelogin.com"],
     auth: "https://ims-na1.adobelogin.com/ims/authorize/v2", token: "https://ims-na1.adobelogin.com/ims/token/v3",
-    userinfo: "https://ims-na1.adobelogin.com/ims/userinfo/v2", scope: "openid,AdobeID,email,profile",
+    userinfo: "https://ims-na1.adobelogin.com/ims/userinfo/v2", scope: "openid,email,profile",
     id: process.env.ADOBE_CLIENT_ID, secret: process.env.ADOBE_CLIENT_SECRET, pkce: true, nonce: true, basicAuth: true,
   },
   // Microsoft: contas pessoais (Outlook, Hotmail, Xbox) e de trabalho/escola, pelo endpoint "common".
