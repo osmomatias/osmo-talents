@@ -1304,14 +1304,14 @@ const ADMIN_ENT = {
   users: {
     label: "Pessoas", table: "users", canCreate: true,
     fields: [
-      { k: "name", label: "Nome", type: "text", max: 80, req: true }, { k: "email", label: "E-mail", type: "email", req: true },
+      { k: "name", label: "Nome", type: "text", max: 80, req: true, ph: "Nome e sobrenome" }, { k: "email", label: "E-mail", type: "email", req: true, ph: "pessoa@email.com" },
       { k: "role", label: "Perfil", type: "select", options: opt(["freela", "Freelancer"], ["cliente", "Cliente"]), req: true },
       { k: "energy", label: "Energia", type: "select", options: opt(["baixa", "Baixa"], ["media", "Média"], ["alta", "Alta"]) },
-      { k: "title", label: "O que faz", type: "text", max: 100, tbl: "profiles" }, { k: "company", label: "Empresa", type: "text", max: 100, tbl: "profiles" },
-      { k: "location", label: "Cidade", type: "text", max: 80, tbl: "profiles" },
-      { k: "rate", label: "Valor por hora (R$)", type: "int", min: 0, max: 100000, tbl: "profiles" }, { k: "hours", label: "Horas por semana", type: "int", min: 1, max: 60, tbl: "profiles" },
-      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 12, len: 40, tbl: "profiles", json: true },
-      { k: "tag", label: "Identificação", type: "text", max: 80, tbl: "profiles" }, { k: "bio", label: "Sobre", type: "textarea", max: 1200, tbl: "profiles" },
+      { k: "title", label: "O que faz", type: "text", max: 100, tbl: "profiles", ph: "Ex.: Designer de marca e embalagem" }, { k: "company", label: "Empresa", type: "text", max: 100, tbl: "profiles", ph: "Ex.: Padaria Trigal" },
+      { k: "location", label: "Cidade", type: "text", max: 80, tbl: "profiles", ph: "Ex.: Recife, PE" },
+      { k: "rate", label: "Valor por hora (R$)", type: "int", min: 0, max: 100000, tbl: "profiles", ph: "Ex.: 80" }, { k: "hours", label: "Horas por semana", type: "int", min: 1, max: 60, tbl: "profiles", ph: "De 1 a 60" },
+      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 12, len: 40, tbl: "profiles", json: true, ph: "Logotipo\nIdentidade visual\nFigma" },
+      { k: "tag", label: "Identificação", type: "text", max: 80, tbl: "profiles", ph: "Ex.: TDAH · entregas curtas" }, { k: "bio", label: "Sobre", type: "textarea", max: 1200, tbl: "profiles", ph: "O que a pessoa faz, para quem e um trabalho de destaque" },
     ],
     list: (q, off) => all(`SELECT u.id, u.name, u.email, u.role, u.created_at, p.title, p.company FROM users u LEFT JOIN profiles p ON p.user_id = u.id
       WHERE ? = '' OR u.name LIKE ? OR u.email LIKE ? OR p.title LIKE ? ORDER BY u.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
@@ -1333,14 +1333,14 @@ const ADMIN_ENT = {
   jobs: {
     label: "Vagas", table: "jobs", canCreate: true,
     fields: [
-      { k: "client_id", label: "Id do cliente dono da vaga", type: "int", min: 1, req: true, create: true },
-      { k: "title", label: "Título", type: "text", max: 120, req: true }, { k: "cat", label: "Área", type: "select", options: () => CATS.map(c => ({ v: c, l: c })), req: true },
-      { k: "status", label: "Situação", type: "select", options: ST_JOB }, { k: "obj", label: "Objetivo", type: "textarea", max: 1200 },
-      { k: "ent", label: "Entregas (uma por linha)", type: "list", max: 15, len: 200, json: true }, { k: "fora", label: "Fora do escopo (uma por linha)", type: "list", max: 10, len: 200, json: true },
-      { k: "com", label: "Comunicação", type: "text", max: 200 }, { k: "fb", label: "Feedback", type: "text", max: 300 }, { k: "ref", label: "Referências", type: "text", max: 500 },
+      { k: "client_id", label: "Id do cliente dono da vaga", type: "int", min: 1, req: true, create: true, ph: "Número que aparece na aba Pessoas" },
+      { k: "title", label: "Título", type: "text", max: 120, req: true, ph: "Ex.: Identidade visual para cafeteria de bairro" }, { k: "cat", label: "Área", type: "select", options: () => CATS.map(c => ({ v: c, l: c })), req: true },
+      { k: "status", label: "Situação", type: "select", options: ST_JOB }, { k: "obj", label: "Objetivo", type: "textarea", max: 1200, ph: "O que o cliente quer alcançar, em 1 ou 2 frases" },
+      { k: "ent", label: "Entregas (uma por linha)", type: "list", max: 15, len: 200, json: true, ph: "Logotipo principal\nPaleta de cores" }, { k: "fora", label: "Fora do escopo (uma por linha)", type: "list", max: 10, len: 200, json: true, ph: "Não precisa de site" },
+      { k: "com", label: "Comunicação", type: "text", max: 200, ph: "Ex.: Somente texto, pelo chat da plataforma." }, { k: "fb", label: "Feedback", type: "text", max: 300, ph: "Ex.: Duas rodadas de ajustes por escrito" }, { k: "ref", label: "Referências", type: "text", max: 500, ph: "Ex.: Painel de referências enviado após contratar" },
       { k: "budget_type", label: "Tipo de valor", type: "select", options: opt(["fixo", "Valor fixo"], ["hora", "Por hora"]) },
-      { k: "budget", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 }, { k: "duration", label: "Prazo", type: "text", max: 60 },
-      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 8, len: 40, json: true },
+      { k: "budget", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000, ph: "Ex.: 4200" }, { k: "duration", label: "Prazo", type: "text", max: 60, ph: "Ex.: 3 semanas" },
+      { k: "skills", label: "Habilidades (uma por linha)", type: "list", max: 8, len: 40, json: true, ph: "Logotipo\nIdentidade visual" },
       { k: "is_async", label: "Sem reuniões obrigatórias", type: "bool" }, { k: "is_flex", label: "Prazo flexível", type: "bool" },
     ],
     list: (q, off) => all(`SELECT j.id, j.title, j.status, j.clarity, j.cat, j.created_at, u.name client FROM jobs j JOIN users u ON u.id = j.client_id
@@ -1363,7 +1363,7 @@ const ADMIN_ENT = {
   proposals: {
     label: "Propostas", table: "proposals",
     fields: [{ k: "status", label: "Situação", type: "select", options: ST_PROP }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
-      { k: "days", label: "Prazo (dias úteis)", type: "int", min: 0, max: 365 }, { k: "text", label: "Texto da proposta", type: "textarea", max: 4000 },
+      { k: "days", label: "Prazo (dias úteis)", type: "int", min: 0, max: 365, ph: "Ex.: 15" }, { k: "text", label: "Texto da proposta", type: "textarea", max: 4000 },
       { k: "questions", label: "Perguntas", type: "textarea", max: 2000 }],
     list: (q, off) => all(`SELECT pr.id, j.title job, u.name freela, pr.value, pr.status, pr.created_at FROM proposals pr JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = pr.freela_id
       WHERE ? = '' OR j.title LIKE ? OR u.name LIKE ? ORDER BY pr.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
@@ -1384,7 +1384,7 @@ const ADMIN_ENT = {
   },
   milestones: {
     label: "Etapas", table: "milestones",
-    fields: [{ k: "title", label: "Etapa", type: "text", max: 120, req: true }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
+    fields: [{ k: "title", label: "Etapa", type: "text", max: 120, req: true, ph: "Ex.: Primeiras propostas de logotipo" }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
       { k: "status", label: "Situação", type: "select", options: ST_MS },
       // com o Asaas ligado, a situação do pagamento só muda pelo próprio Asaas (o banco não pode mentir sobre dinheiro)
       { k: "pay_status", label: "Pagamento", type: "select", options: ST_PAY, locked: () => asaas.ENABLED }],
@@ -1396,7 +1396,7 @@ const ADMIN_ENT = {
   },
   reviews: {
     label: "Avaliações", table: "reviews",
-    fields: [{ k: "rating", label: "Nota (1 a 5)", type: "int", min: 1, max: 5, req: true }, { k: "comment", label: "Comentário", type: "textarea", max: 600 }],
+    fields: [{ k: "rating", label: "Nota (1 a 5)", type: "int", min: 1, max: 5, req: true, ph: "De 1 a 5" }, { k: "comment", label: "Comentário", type: "textarea", max: 600 }],
     list: (q, off) => all(`SELECT r.id, a.name author, t.name target, r.rating, r.comment, r.created_at FROM reviews r JOIN users a ON a.id = r.author_id JOIN users t ON t.id = r.target_id
       WHERE ? = '' OR a.name LIKE ? OR t.name LIKE ? OR r.comment LIKE ? ORDER BY r.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
     cols: [["author", "Quem avaliou"], ["target", "Avaliado"], ["rating", "Nota"], ["comment", "Comentário"], ["created_at", "Quando"]],
@@ -1419,7 +1419,7 @@ const adminFields = (ent, mode) => ent.fields.filter(f => mode === "create" ? tr
 route("GET", "/api/admin/schema", ({ user }) => {
   needAdmin(user);
   return { entities: Object.entries(ADMIN_ENT).map(([k, e]) => ({ k, label: e.label, canCreate: !!e.canCreate, cols: e.cols,
-    fields: e.fields.map(f => ({ k: f.k, label: f.label, type: f.type, req: !!f.req, create: !!f.create, locked: !!(f.locked && f.locked()),
+    fields: e.fields.map(f => ({ k: f.k, label: f.label, type: f.type, ph: f.ph || "", req: !!f.req, create: !!f.create, locked: !!(f.locked && f.locked()),
       options: f.options ? (typeof f.options === "function" ? f.options() : f.options) : undefined })) })) };
 }, { auth: false });
 route("GET", "/api/admin/log", ({ user }) => {

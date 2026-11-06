@@ -570,12 +570,12 @@ V.entrar = async () => {
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
   <form class="panel stack" id="authForm" novalidate>
-    ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" required></div>
+    ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>
     <div class="field"><span class="flabel">Eu quero</span>
       <label class="check"><input type="radio" name="role" value="freela" checked><span>Trabalhar como freelancer</span></label>
       <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label></div>` : ""}
-    <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" required></div>
-    <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
+    <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" placeholder="voce@email.com" required></div>
+    <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" placeholder="${reg ? "Mínimo de 8 caracteres" : "Sua senha"}" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
   </form>
@@ -611,7 +611,7 @@ V.esqueci = async () => `<div class="auth stack">
   <div><span class="label">Recuperar senha</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">Esqueci minha senha</h1>
   <p class="muted" style="margin-top:8px">Escreva o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova.</p></div>
   <form class="panel stack" id="forgotForm" novalidate>
-    <div class="field"><label for="f_email">E-mail</label><input class="input" id="f_email" type="email" autocomplete="email" required value="${esc(S.forgotEmail || "")}"></div>
+    <div class="field"><label for="f_email">E-mail</label><input class="input" id="f_email" type="email" autocomplete="email" placeholder="O e-mail da sua conta" required value="${esc(S.forgotEmail || "")}"></div>
     <div id="forgotErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">Enviar link</button>
   </form>
@@ -627,7 +627,7 @@ V.recuperar = async () => {
   <p class="muted" style="margin-top:8px">Conta: ${esc(d.email)}</p></div>
   <form class="panel stack" id="resetForm" novalidate data-token="${esc(token)}">
     <input type="email" autocomplete="username" value="${esc(d.email)}" hidden>
-    <div class="field"><label for="a_pass">Senha nova</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="new-password" minlength="8" required>${eyeBtn()}</div><span class="hint">Pelo menos 8 caracteres. Ao salvar, sua conta sai dos outros aparelhos.</span></div>
+    <div class="field"><label for="a_pass">Senha nova</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo de 8 caracteres" required>${eyeBtn()}</div><span class="hint">Pelo menos 8 caracteres. Ao salvar, sua conta sai dos outros aparelhos.</span></div>
     <div id="resetErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">Salvar senha nova</button>
   </form></div>`;
@@ -810,7 +810,7 @@ function wizHTML() {
   const steps = [
     `<div class="stack"><h2>Como você faria este trabalho?</h2>
       <div class="prompt muted">Responda em poucas linhas. Pode usar tópicos.<br>1. O que você entendeu do pedido.<br>2. Como você dividiria em etapas.<br>3. Um trabalho parecido que já fez.</div>
-      <div class="field"><label for="wtext">Sua abordagem</label><textarea class="input" id="wtext" rows="8">${esc(w.text)}</textarea><span class="hint" id="wcount">${words(w.text)} palavras · de 40 a 150 é um bom tamanho</span></div></div>`,
+      <div class="field"><label for="wtext">Sua abordagem</label><textarea class="input" id="wtext" rows="8" placeholder="1. Entendi que vocês precisam de…&#10;2. Eu dividiria assim: primeiro…, depois…&#10;3. Já fiz algo parecido para…">${esc(w.text)}</textarea><span class="hint" id="wcount">${words(w.text)} palavras · de 40 a 150 é um bom tamanho</span></div></div>`,
     `<div class="stack"><h2>Valor, prazo e etapas</h2>
       <p class="muted">O cliente indicou ${j.budget_type === "hora" ? brl(j.budget) + " por hora" : brl(j.budget) + " no total"}${j.duration ? " e " + esc(j.duration) : ""}.</p>
       <div class="row" style="align-items:flex-start">
@@ -824,7 +824,7 @@ function wizHTML() {
     `<div class="stack"><h2>Quer tirar alguma dúvida antes?</h2>
       <p class="muted">Opcional. As perguntas vão para a conversa com o cliente junto com a proposta.</p>
       <div class="quick">${["Quantas rodadas de ajuste estão incluídas?", "Quem aprova as entregas?", "Existe algum prazo que não pode mudar?", "Em que dia da semana prefere receber atualizações?"].map(q => `<button type="button" data-q="${esc(q)}">+ ${q}</button>`).join("")}</div>
-      <div class="field"><label for="wqs">Suas perguntas</label><textarea class="input" id="wqs" rows="5">${esc(w.qs)}</textarea></div></div>`,
+      <div class="field"><label for="wqs">Suas perguntas</label><textarea class="input" id="wqs" rows="5" placeholder="Uma pergunta por linha. Use os atalhos acima ou escreva a sua.">${esc(w.qs)}</textarea></div></div>`,
     `<div class="stack"><h2>Revise antes de enviar</h2>
       <div class="panel brief">
         <section><span class="label">Vaga</span><p>${esc(j.title)}</p></section>
@@ -1482,12 +1482,12 @@ V.gestao = async () => {
 };
 // um campo do formulário, desenhado conforme o tipo que o servidor informou
 function admField(f, v) {
-  const id = "adm_" + f.k, lock = f.locked ? "disabled" : "", req = f.req ? "required" : "";
+  const id = "adm_" + f.k, lock = f.locked ? "disabled" : "", req = f.req ? "required" : "", ph = f.ph ? `placeholder="${esc(f.ph)}"` : "";
   const label = `<label for="${id}">${esc(f.label)}${f.locked ? ' <span class="hint">(muda só pelo Asaas)</span>' : ""}</label>`;
   if (f.type === "bool") return `<label class="check"><input type="checkbox" id="${id}" name="${f.k}" ${v ? "checked" : ""} ${lock}><span>${esc(f.label)}</span></label>`;
   if (f.type === "select") return `<div class="field">${label}<select class="input" id="${id}" name="${f.k}" ${lock} ${req}>${f.req ? "" : `<option value="">–</option>`}${f.options.map(o => `<option value="${esc(o.v)}" ${o.v === v ? "selected" : ""}>${esc(o.l)}</option>`).join("")}</select></div>`;
-  if (f.type === "textarea" || f.type === "list") return `<div class="field">${label}<textarea class="input" id="${id}" name="${f.k}" rows="${f.type === "list" ? 4 : 5}" ${lock}>${esc(Array.isArray(v) ? v.join("\n") : v ?? "")}</textarea></div>`;
-  return `<div class="field">${label}<input class="input" id="${id}" name="${f.k}" type="${f.type === "int" ? "number" : f.type === "email" ? "email" : "text"}" value="${esc(v ?? "")}" ${lock} ${req}></div>`;
+  if (f.type === "textarea" || f.type === "list") return `<div class="field">${label}<textarea class="input" id="${id}" name="${f.k}" rows="${f.type === "list" ? 4 : 5}" ${ph} ${lock}>${esc(Array.isArray(v) ? v.join("\n") : v ?? "")}</textarea></div>`;
+  return `<div class="field">${label}<input class="input" id="${id}" name="${f.k}" type="${f.type === "int" ? "number" : f.type === "email" ? "email" : "text"}" value="${esc(v ?? "")}" ${ph} ${lock} ${req}></div>`;
 }
 async function openAdmForm(id) {
   const e = admEnt(); let values = {};
@@ -2005,7 +2005,7 @@ V.perfil = async () => {
   PE = null;
   const p = ME.profile, isF = ME.role === "freela", m = profMeta(p);
   const f = (id, label, val, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" value="${esc(val)}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
-  const ta = (id, label, val, rows = 4, hint = "") => `<div class="field"><label for="${id}">${label}</label><textarea class="input" id="${id}" rows="${rows}">${esc(val)}</textarea>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
+  const ta = (id, label, val, rows = 4, hint = "", ph = "") => `<div class="field"><label for="${id}">${label}</label><textarea class="input" id="${id}" rows="${rows}"${ph ? ` placeholder="${esc(ph)}"` : ""}>${esc(val)}</textarea>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   const open = id => !isMobile() || PSEC_OPEN.has(id) ? "open" : "";
   const sec = (id, title, body, intro = "") => `<details class="panel psec" data-sec="${id}" ${open(id)}>
     <summary><span class="psec-h"><h2>${title}</h2><span class="hint" data-sum="${id}">${esc(m.sum[id])}</span></span></summary>
@@ -2020,11 +2020,11 @@ V.perfil = async () => {
       ${p.avatar ? `<button type="button" class="btn sm ghost" data-act="avatar-del">Remover</button>` : ""}</div>
       <div id="avatarErr" class="err" role="alert" hidden></div></div></div>
   <form class="stack" id="profForm">
-    ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", "Nome", ME.name, 'autocomplete="name"')
+    ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", isF ? "Nome" : "Seu nome", ME.name, 'autocomplete="name" placeholder="Nome e sobrenome"')
       + (isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
-        + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono"')}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric"', "Define quantas propostas você pode ter abertas.")}</div>`
-        + f("p_loc", "Cidade", p.location) + ta("p_bio", "Sobre você", p.bio, 4)
-        : f("p_company", "Empresa ou projeto", p.company)
+        + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono" placeholder="Ex.: 80"', "Só números. Dá para negociar em cada proposta.")}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric" placeholder="Ex.: 20"', "Define quantas propostas você pode ter abertas.")}</div>`
+        + f("p_loc", "Cidade", p.location, 'autocomplete="address-level2" placeholder="Ex.: Recife, PE"') + ta("p_bio", "Sobre você", p.bio, 4, "", "Em 2 ou 3 frases: o que você faz, para quem e um trabalho de que se orgulha.")
+        : f("p_company", "Empresa ou projeto", p.company, 'autocomplete="organization" placeholder="Ex.: Padaria Trigal"', "Se contrata como pessoa física, pode deixar em branco.")
           + f("p_doc", "CPF ou CNPJ", "", 'inputmode="numeric" placeholder="' + (ME.hasDoc ? "Já informado. Preencha só para trocar." : "Só números") + '"', "Usado apenas para emitir as cobranças das etapas."))
       + save)}
     ${isF ? sec("habil", "Habilidades", `<div class="field"><span class="flabel" id="p_skills_lbl">O que você sabe fazer</span>${skillBoxHTML({ value: p.skills.join(", "), max: 12 })}</div>` + save,
@@ -2051,28 +2051,35 @@ document.addEventListener("toggle", e => {
   d.open ? PSEC_OPEN.add(d.dataset.sec) : PSEC_OPEN.delete(d.dataset.sec);
 }, true);
 
+// CPF ou CNPJ: pelo número de dígitos já dá para saber qual é, então mostramos só o campo que
+// vale para aquele caso (nascimento para CPF, tipo de empresa para CNPJ). Enquanto não dá para
+// saber, os dois ficam à vista.
+function payoutDocKind() {
+  const n = ($("#po_doc")?.value || "").replace(/\D/g, "").length, b = $("#poBirthBox"), t = $("#poTypeBox");
+  if (b) b.hidden = n > 11; if (t) t.hidden = n > 0 && n <= 11;
+}
 function payoutHTML() {
   if (ME.payout) return `<div class="panel stack" style="gap:8px"><h2>Receber pagamentos</h2><p><span class="status ok">Conta de recebimento ativa</span></p>
     <p class="muted">Os valores das etapas chegam na sua conta Asaas e ficam protegidos até a aprovação. Para sacar, entre no Asaas pelo e-mail de ativação que você recebeu.</p></div>`;
   const i = (id, label, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   return `<div class="panel stack" id="payoutBox"><div><h2>Receber pagamentos</h2><p class="muted">Para receber, criamos uma conta no Asaas em seu nome. Depois o Asaas manda um e-mail para você enviar um documento com foto. É feito uma vez só.</p></div>
-    ${i("po_doc", "CPF ou CNPJ", 'inputmode="numeric" autocomplete="off"', "Só números.")}
+    ${i("po_doc", "CPF ou CNPJ", 'inputmode="numeric" autocomplete="off" maxlength="18" placeholder="11 dígitos (CPF) ou 14 (CNPJ)"', "Só números.")}
     <div class="row" style="align-items:flex-start">
-      <div style="flex:1; min-width:160px">${i("po_birth", "Data de nascimento", 'type="date"', "Só para CPF.")}</div>
-      <div style="flex:1; min-width:160px"><div class="field"><label for="po_type">Tipo de empresa</label><select class="input" id="po_type"><option value="MEI">MEI</option><option value="INDIVIDUAL">Empresário individual</option><option value="LIMITED">Limitada</option></select><span class="hint">Só para CNPJ.</span></div></div>
+      <div style="flex:1; min-width:160px" id="poBirthBox">${i("po_birth", "Data de nascimento", 'type="date"', "Só para CPF.")}</div>
+      <div style="flex:1; min-width:160px" id="poTypeBox"><div class="field"><label for="po_type">Tipo de empresa</label><select class="input" id="po_type"><option value="MEI">MEI</option><option value="INDIVIDUAL">Empresário individual</option><option value="LIMITED">Limitada</option></select><span class="hint">Só para CNPJ.</span></div></div>
     </div>
     <div class="row" style="align-items:flex-start">
-      <div style="flex:1; min-width:160px">${i("po_phone", "Celular com DDD", 'inputmode="tel" autocomplete="tel"')}</div>
-      <div style="flex:1; min-width:160px">${i("po_income", "Renda ou faturamento mensal (R$)", 'inputmode="numeric"', "Exigido pelo Banco Central.")}</div>
+      <div style="flex:1; min-width:160px">${i("po_phone", "Celular com DDD", 'inputmode="tel" autocomplete="tel" placeholder="Ex.: 11 91234-5678"')}</div>
+      <div style="flex:1; min-width:160px">${i("po_income", "Renda ou faturamento mensal (R$)", 'inputmode="numeric" placeholder="Ex.: 5000"', "Exigido pelo Banco Central.")}</div>
     </div>
     <div class="row" style="align-items:flex-start">
-      <div style="flex:1; min-width:140px">${i("po_cep", "CEP", 'inputmode="numeric" autocomplete="postal-code"')}</div>
-      <div style="flex:2; min-width:200px">${i("po_addr", "Rua", 'autocomplete="address-line1"')}</div>
+      <div style="flex:1; min-width:140px">${i("po_cep", "CEP", 'inputmode="numeric" autocomplete="postal-code" placeholder="Ex.: 01310-100"')}</div>
+      <div style="flex:2; min-width:200px">${i("po_addr", "Rua", 'autocomplete="address-line1" placeholder="Ex.: Avenida Paulista"')}</div>
     </div>
     <div class="row" style="align-items:flex-start">
-      <div style="flex:1; min-width:120px">${i("po_num", "Número")}</div>
-      <div style="flex:1; min-width:160px">${i("po_comp", "Complemento")}</div>
-      <div style="flex:2; min-width:160px">${i("po_prov", "Bairro")}</div>
+      <div style="flex:1; min-width:120px">${i("po_num", "Número", 'placeholder="Ex.: 1000 ou s/n"')}</div>
+      <div style="flex:1; min-width:160px">${i("po_comp", "Complemento", 'autocomplete="address-line2" placeholder="Ex.: Apto 42 (opcional)"')}</div>
+      <div style="flex:2; min-width:160px">${i("po_prov", "Bairro", 'placeholder="Ex.: Bela Vista"')}</div>
     </div>
     <div id="poErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="button" data-act="payout">Ativar recebimentos</button></div>`;
@@ -2148,6 +2155,25 @@ function pfilesHTML() {
 /* ---------- publicar vaga ---------- */
 const POST0 = { title: "", cat: "", obj: "", ent: "", fora: "", com: "", fb: "", ref: "", budget_type: "fixo", budget: "", duration: "", skills: "", async: true, flex: false };
 let P = Object.assign({}, POST0, store.get("post-draft", {}));
+// EXEMPLOS QUE SE ADAPTAM: os textos de exemplo (placeholder) dos campos da vaga mudam conforme a
+// Área escolhida, para a pessoa ver um caso parecido com o dela. Sem área, vale o exemplo de design.
+// O valor de exemplo também muda se o pagamento for por hora.
+const POST_PH = {
+  design: { title: "Ex.: Identidade visual para cafeteria de bairro", obj: "Ex.: Ter uma marca reconhecível na fachada, no cardápio e no Instagram", ent: "Logotipo principal\nPaleta de cores", fora: "Não precisa de site", fixo: "4200", hora: "90", dur: "3 semanas" },
+  ia: { title: "Ex.: Chatbot de atendimento no WhatsApp para clínica", obj: "Ex.: Responder as dúvidas frequentes sozinho e passar para a equipe só o que precisar", ent: "Fluxo do chatbot desenhado\nIntegração com o WhatsApp\nManual curto de uso", fora: "Não inclui a assinatura das ferramentas", fixo: "3500", hora: "150", dur: "4 semanas" },
+  dev: { title: "Ex.: Loja virtual em Shopify para marca de roupas", obj: "Ex.: Começar a vender pela internet com frete e Pix funcionando", ent: "Loja configurada com até 30 produtos\nPagamento e frete ativos\nVídeo explicando como cadastrar produtos", fora: "Não inclui fotos dos produtos", fixo: "6000", hora: "120", dur: "6 semanas" },
+  marketing: { title: "Ex.: Gestão do Instagram de uma loja de cosméticos", obj: "Ex.: Postar com frequência e receber mais pedidos pelo direct", ent: "12 posts por mês\nCalendário de conteúdo\nRelatório mensal com os números", fora: "Não inclui a verba dos anúncios", fixo: "2500", hora: "80", dur: "3 meses, renovável" },
+  dados: { title: "Ex.: Painel de vendas no Power BI", obj: "Ex.: Ver as vendas por loja e por mês sem montar planilha na mão", ent: "Painel com 3 páginas\nConexão com a planilha de vendas\nExplicação de cada indicador", fora: "Não inclui limpar dados de anos anteriores", fixo: "3000", hora: "110", dur: "3 semanas" },
+  admin: { title: "Ex.: Assistente virtual para organizar agenda e e-mails", obj: "Ex.: Ganhar 10 horas por semana para focar no que importa", ent: "Agenda organizada toda semana\nE-mails respondidos em até 1 dia\nResumo semanal do que foi feito", fora: "Não inclui atendimento por telefone", fixo: "1800", hora: "45", dur: "3 meses, 10 h por semana" },
+  texto: { title: "Ex.: Textos do site de um escritório de advocacia", obj: "Ex.: Explicar os serviços em linguagem simples e aparecer melhor no Google", ent: "Texto da página inicial\nTextos de 4 páginas de serviço\nUma rodada de revisão", fora: "Não inclui montar as páginas no site", fixo: "2200", hora: "70", dur: "2 semanas" },
+  eng: { title: "Ex.: Projeto de reforma de apartamento de 60 m²", obj: "Ex.: Ter planta e imagens para orçar a obra com segurança", ent: "Planta baixa com layout\nImagens 3D de 3 ambientes\nLista de materiais", fora: "Não inclui acompanhar a obra", fixo: "5000", hora: "130", dur: "5 semanas" },
+};
+const postPH = k => { const c = POST_PH[P.cat] || POST_PH.design; return k === "budget" ? c[P.budget_type === "hora" ? "hora" : "fixo"] : c[k]; };
+const POST_PH_IDS = [["p_title", "title"], ["p_obj", "obj"], ["p_ent", "ent"], ["p_fora", "fora"], ["p_budget", "budget"], ["p_dur", "dur"]];
+function applyPostPH() {
+  for (const [id, k] of POST_PH_IDS) { const el = $("#" + id); if (el) el.placeholder = postPH(k); }
+  const lb = $('label[for="p_budget"]'); if (lb) lb.textContent = P.budget_type === "hora" ? "Valor por hora (R$)" : "Valor total (R$)";
+}
 function postScore() {
   const lines = s => String(s).split("\n").map(x => x.trim()).filter(Boolean);
   const items = [["Título", P.title.trim().length > 8], ["Área", !!P.cat], ["Objetivo", P.obj.trim().length > 20], ["Duas entregas ou mais", lines(P.ent).length >= 2], ["Fora do escopo", lines(P.fora).length >= 1], ["Comunicação", P.com.trim().length > 3], ["Feedback", P.fb.trim().length > 3], ["Valor", Number(P.budget) > 0], ["Prazo", P.duration.trim().length > 1]];
@@ -2161,11 +2187,11 @@ V.publicar = async () => {
   <form class="stack" id="postForm" novalidate>
     <div><span class="label">Nova vaga</span><h1 style="font-size:clamp(1.8rem,4vw,2.5rem); margin-top:8px">Publicar uma vaga clara</h1><p class="muted" style="margin-top:8px">Quanto mais claro o briefing, menos idas e vindas. O rascunho fica salvo neste navegador.</p></div>
     <div class="panel stack">
-      ${fld("p_title", "Título", `<input class="input" id="p_title" data-p="title" value="${esc(P.title)}" placeholder="Ex.: Identidade visual para cafeteria de bairro">`)}
+      ${fld("p_title", "Título", `<input class="input" id="p_title" data-p="title" value="${esc(P.title)}" placeholder="${esc(postPH("title"))}">`)}
       ${fld("p_cat", "Área", `<select class="input" id="p_cat" data-p="cat"><option value="">Escolha</option>${CATS.map(c => `<option value="${c.id}" ${P.cat === c.id ? "selected" : ""}>${c.n}</option>`).join("")}</select>`)}
-      ${fld("p_obj", "Objetivo", `<textarea class="input" id="p_obj" data-p="obj" rows="3" placeholder="O que você quer alcançar, em 1 ou 2 frases">${esc(P.obj)}</textarea>`)}
-      ${fld("p_ent", "Entregas", `<textarea class="input" id="p_ent" data-p="ent" rows="4" placeholder="Logotipo principal&#10;Paleta de cores">${esc(P.ent)}</textarea>`, "Uma entrega por linha.")}
-      ${fld("p_fora", "Fora do escopo", `<textarea class="input" id="p_fora" data-p="fora" rows="2" placeholder="Não precisa de site">${esc(P.fora)}</textarea>`, "Um item por linha. Evita mal-entendidos.")}
+      ${fld("p_obj", "Objetivo", `<textarea class="input" id="p_obj" data-p="obj" rows="3" placeholder="${esc(postPH("obj"))}">${esc(P.obj)}</textarea>`)}
+      ${fld("p_ent", "Entregas", `<textarea class="input" id="p_ent" data-p="ent" rows="4" placeholder="${esc(postPH("ent"))}">${esc(P.ent)}</textarea>`, "Uma entrega por linha.")}
+      ${fld("p_fora", "Fora do escopo", `<textarea class="input" id="p_fora" data-p="fora" rows="2" placeholder="${esc(postPH("fora"))}">${esc(P.fora)}</textarea>`, "Um item por linha. Evita mal-entendidos.")}
     </div>
     <div class="panel stack">
       ${fld("p_com", "Como prefere se comunicar", `<select class="input" id="p_com" data-p="com"><option value="">Escolha</option>${["Somente texto, pelo chat da plataforma.", "Texto e uma chamada inicial curta.", "Chamada semanal de 30 min."].map(o => `<option ${P.com === o ? "selected" : ""}>${o}</option>`).join("")}</select>`)}
@@ -2181,8 +2207,8 @@ V.publicar = async () => {
     <div class="panel stack">
       ${fld("p_bt", "Tipo de valor", `<select class="input" id="p_bt" data-p="budget_type"><option value="fixo" ${P.budget_type === "fixo" ? "selected" : ""}>Valor fixo pelo projeto</option><option value="hora" ${P.budget_type === "hora" ? "selected" : ""}>Por hora</option></select>`)}
       <div class="row" style="align-items:flex-start">
-        <div style="flex:1; min-width:160px">${fld("p_budget", "Valor (R$)", `<input class="input mono" id="p_budget" data-p="budget" inputmode="numeric" value="${esc(P.budget)}" placeholder="4200">`)}</div>
-        <div style="flex:1; min-width:160px">${fld("p_dur", "Prazo", `<input class="input" id="p_dur" data-p="duration" value="${esc(P.duration)}" placeholder="3 semanas">`)}</div>
+        <div style="flex:1; min-width:160px">${fld("p_budget", P.budget_type === "hora" ? "Valor por hora (R$)" : "Valor total (R$)", `<input class="input mono" id="p_budget" data-p="budget" inputmode="numeric" value="${esc(P.budget)}" placeholder="${postPH("budget")}">`)}</div>
+        <div style="flex:1; min-width:160px">${fld("p_dur", "Prazo", `<input class="input" id="p_dur" data-p="duration" value="${esc(P.duration)}" placeholder="${esc(postPH("dur"))}">`)}</div>
       </div>
     </div>
     <div id="postErr" class="err" role="alert" hidden></div>
@@ -2324,7 +2350,7 @@ document.addEventListener("click", async e => {
     case "ms": return busy(async () => { await api("POST", `/api/milestones/${id}/${act.dataset.a}`, {}); toast({ start: "Etapa iniciada", deliver: "Entrega registrada", approve: "Etapa aprovada e valor liberado" }[act.dataset.a]); route(); })();
     case "ms-changes": { const box = $("#msa-" + id); if (!box) return; box.innerHTML = `<input class="input" id="chg-${id}" placeholder="O que precisa ajustar?" style="flex:1; min-width:180px"><button class="btn sm hl" data-act="ms-changes-send" data-id="${id}">Enviar pedido</button>`; const chg = $("#chg-" + id); if (chg) chg.focus(); return; }
     case "ms-changes-send": return busy(async () => { const inp = $("#chg-" + id); const note = inp ? inp.value.trim() : ""; if (!note) return toast("Escreva o que precisa ajustar."); await api("POST", `/api/milestones/${id}/changes`, { note }); toast("Pedido de ajustes enviado"); route(); })();
-    case "pin-edit": { const box = $("#pinBox"); if (!box) return; box.innerHTML = `<b>Combinado até agora:</b><div class="pin-edit"><input class="input" id="pinIn" maxlength="600" value="${esc(TH.thread.pin)}"><button class="btn sm primary" data-act="pin-save">Salvar</button></div>`; const pin = $("#pinIn"); if (pin) pin.focus(); return; }
+    case "pin-edit": { const box = $("#pinBox"); if (!box) return; box.innerHTML = `<b>Combinado até agora:</b><div class="pin-edit"><input class="input" id="pinIn" maxlength="600" placeholder="Ex.: Entrega final dia 20 · 2 rodadas de ajuste · R$ 3.000 em 2 etapas" value="${esc(TH.thread.pin)}"><button class="btn sm primary" data-act="pin-save">Salvar</button></div>`; const pin = $("#pinIn"); if (pin) pin.focus(); return; }
     case "pin-save": return busy(async () => { const pinIn = $("#pinIn"); if (!pinIn) return; await api("PUT", `/api/threads/${TH.thread.id}/pin`, { pin: pinIn.value }); toast("Resumo atualizado"); route(); })();
   }
 });
@@ -2353,6 +2379,7 @@ document.addEventListener("input", e => {
   if (id === "wqs") { W.qs = t.value; saveDraft(); }
   if (t.dataset.ms !== undefined) { const i = Number(t.dataset.ms), k = t.dataset.k; let v = t.value; if (k === "value") { v = v.replace(/\D/g, ""); if (t.value !== v) t.value = v; } W.ms[i][k] = v; saveDraft(); const d = (Number(W.value) || 0) - msSum(); $("#msDiff").textContent = d === 0 ? "As etapas somam o valor total." : d > 0 ? `Faltam ${brl(d)} para fechar o total.` : `As etapas passam ${brl(-d)} do total.`; }
   if (t.dataset.p && t.type !== "checkbox") { P[t.dataset.p] = t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
+  if (id === "po_doc") payoutDocKind();
   if (id === "p_cat" && $(".skillbox")) $(".skillbox").dataset.area = t.value; // a lista de sugestões passa a priorizar a área escolhida
 });
 document.addEventListener("change", e => {
@@ -2383,6 +2410,7 @@ document.addEventListener("change", e => {
   if (id === "peImg" && t.files[0]) { syncPE(); shrinkImage(t.files[0], 1600, false).then(d => { PE.newImage = PE.image = d; PE.removeImage = false; renderPort(); })
     .catch(e2 => { const b = $("#peErr"); b.textContent = e2.message; b.hidden = false; }); }
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
+  if (id === "p_cat" || id === "p_bt") applyPostPH(); // exemplos da área escolhida
 });
 // OUVIDO DE FORMULÁRIOS: quando você aperta "Enviar/Salvar/Entrar", o navegador iria recarregar
 // a página; preventDefault impede isso e o garçom manda os dados pelo api(). Cada formulário
