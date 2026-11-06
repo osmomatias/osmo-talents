@@ -1191,3 +1191,62 @@ body:has(#layer > *) .adm-bar-fixed{display:none}
 .mm-role-seg span.on{background:var(--surface); color:var(--fg); box-shadow:0 1px 3px rgb(0 0 0 / .12)}
 @media (max-width:380px){ .mm-role-seg{display:none} }
 .empty .btn .ico{width:18px; height:18px; margin-right:6px; vertical-align:-3px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+
+/* SQUADS (círculos como no Google+): em cima as pessoas, embaixo um círculo por squad.
+   Cada cor de squad vira a variável --sq; as fotos de quem está dentro ficam em volta da
+   borda (--a é o ângulo de cada foto, calculado no app.js). Ao arrastar alguém, os círculos
+   se destacam; o círculo embaixo do dedo/mouse cresce ("over") e, ao receber gente, dá um
+   pulinho ("bump"). Com "menos movimento" ligado, nada disso se mexe. */
+.sq-c0{--sq:var(--accent); --sq-soft:var(--accent-soft)} .sq-c1{--sq:var(--plum); --sq-soft:var(--plum-soft)}
+.sq-c2{--sq:var(--sun); --sq-soft:var(--sun-soft)} .sq-c3{--sq:var(--coral); --sq-soft:var(--coral-soft)}
+.sq-c4{--sq:var(--ok); --sq-soft:color-mix(in srgb, var(--ok) 16%, var(--surface))} .sq-c5{--sq:var(--hi); --sq-soft:var(--orange-soft)}
+.av.xs{width:30px; height:30px; font-size:.7rem; border:2px solid var(--surface)}
+.sq-people{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px}
+.sq-person{display:flex; align-items:center; gap:10px; padding:8px 10px; border:1.5px solid var(--line); border-radius:12px; background:var(--surface); color:var(--fg); font:inherit; text-align:left; cursor:grab; position:relative; min-width:0}
+.sq-person:hover{border-color:var(--muted)}
+.sq-person.on{border-color:var(--accent); background:var(--accent-soft)}
+.sq-person.on::after{content:"✓"; position:absolute; top:-7px; left:-7px; width:20px; height:20px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-size:.72rem; font-weight:800}
+.sq-person:active{cursor:grabbing}
+.sq-person .tx{display:flex; flex-direction:column; min-width:0; line-height:1.3}
+.sq-person .tx b,.sq-person .tx small{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.sq-person .tx small{color:var(--muted); font-size:.8rem}
+.sq-in{margin-left:auto; flex:none; min-width:22px; height:22px; padding:0 6px; border-radius:999px; background:var(--sunken); color:var(--muted); font-size:.75rem; font-weight:800; display:grid; place-items:center}
+.sq-circles{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px}
+.sq-cell{display:grid; place-items:center; padding:6px}
+.sq-circle{--d:176px; position:relative; width:var(--d); aspect-ratio:1; border-radius:50%; background:var(--sq-soft); border:2px solid var(--sq); transition:transform .2s ease, box-shadow .2s ease}
+.sq-circle.open{box-shadow:0 0 0 5px var(--surface), 0 0 0 8px var(--sq)}
+.sq-newc{background:none; border:2px dashed var(--line); --sq:var(--muted)}
+.sq-newc:hover{border-color:var(--muted)}
+#sq.dragging .sq-circle{box-shadow:0 0 0 4px color-mix(in srgb, var(--sq) 22%, transparent)}
+.sq-circle.over{transform:scale(1.08); box-shadow:0 0 0 7px color-mix(in srgb, var(--sq) 35%, transparent)!important}
+.sq-circle.bump{animation:sq-bump .6s ease}
+@keyframes sq-bump{30%{transform:scale(1.1) rotate(-6deg)} 60%{transform:scale(.97) rotate(3deg)} 100%{transform:none}}
+.sq-ring{all:unset; box-sizing:border-box; position:absolute; inset:0; border-radius:50%; cursor:pointer; display:grid; place-items:center}
+.sq-ring:focus-visible{outline:3px solid var(--fg); outline-offset:4px}
+.sq-mid{display:flex; flex-direction:column; align-items:center; gap:2px; max-width:62%; text-align:center; line-height:1.2}
+.sq-mid b{font-family:var(--f-display); font-size:1.02rem; overflow-wrap:anywhere}
+.sq-mid .mono{font-size:1.5rem; font-weight:800; color:var(--sq)}
+.sq-mid small{font-weight:800; color:var(--sq)}
+.sq-newc .sq-mid b{font-size:2rem; color:var(--muted); line-height:1}
+.sq-newc .sq-mid span{color:var(--muted); font-weight:700}
+/* cada foto: gira até o ângulo dela, anda até a borda e desgira, para ficar em pé */
+.sq-dot{position:absolute; left:50%; top:50%; width:30px; height:30px; margin:-15px 0 0 -15px; transform:rotate(var(--a)) translate(calc(var(--d) / 2 - 2px)) rotate(calc(-1 * var(--a))); pointer-events:none}
+.sq-new-form{position:absolute; inset:14%; display:flex; flex-direction:column; justify-content:center; gap:6px; text-align:center}
+.sq-new-form .input{padding:6px 10px; font-size:.9rem; text-align:center}
+.sq-new-form .row{justify-content:center}
+.sq-detail{border-top:4px solid var(--sq)}
+.sq-swatch{width:30px; height:30px; border-radius:50%; background:var(--sq); border:3px solid var(--surface); box-shadow:0 0 0 1.5px var(--line); cursor:pointer; padding:0; flex:none}
+.sq-swatch[aria-checked="true"]{box-shadow:0 0 0 3px var(--fg)}
+span.sq-swatch{cursor:default; width:22px; height:22px}
+.sq-members{list-style:none; margin:0; padding:0; display:flex; flex-direction:column}
+.sq-members li{display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line)}
+.sq-members li:first-child{border-top:0}
+.sq-members .tx{display:flex; flex-direction:column; min-width:0; flex:1; color:inherit; text-decoration:none; line-height:1.3}
+.sq-members .tx small{color:var(--muted); font-size:.82rem}
+.btn.danger{color:var(--coral)}
+.sq-ghost{position:fixed; top:-100px; left:0; padding:6px 12px; border-radius:999px; background:var(--accent); color:var(--accent-ink); font-weight:800; font-size:.85rem}
+@media (max-width:700px){
+  .sq-circles{grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px} .sq-circle{--d:142px}
+  .sq-people{grid-template-columns:1fr}
+  .av.xs,.sq-dot{width:24px; height:24px} .sq-dot{margin:-12px 0 0 -12px}
+}

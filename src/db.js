@@ -359,6 +359,28 @@ CREATE INDEX IF NOT EXISTS idx_att_message ON attachments(message_id);
 CREATE INDEX IF NOT EXISTS idx_att_milestone ON attachments(milestone_id);
 `);
 
+// --- migrações (versão 14: squads, os "círculos" de pessoas, como no Google+)
+// Cada pessoa monta os próprios squads: um nome, uma cor e quem está dentro. A mesma pessoa pode
+// estar em vários squads (como um amigo em vários círculos). Quem está num squad consegue ver que
+// está nele; o resto dos squads de cada um é só dele.
+// squad_members tem a dupla (squad, pessoa) como chave: ninguém entra duas vezes no mesmo squad.
+db.exec(`
+CREATE TABLE IF NOT EXISTS squads (
+  id INTEGER PRIMARY KEY,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, color INTEGER NOT NULL DEFAULT 0, pos INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS squad_members (
+  squad_id INTEGER NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (squad_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_squads_owner ON squads(owner_id, pos);
+CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id);
+`);
+
 // Antes, o portfólio era só uma lista de textos dentro do perfil. Este laço passa cada texto
 // antigo para a página nova de portfólio (no máximo 12) e depois esvazia a lista antiga,
 // para não copiar de novo da próxima vez que o programa ligar.

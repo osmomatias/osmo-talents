@@ -244,6 +244,8 @@ const ICONS = {
   painel: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/>',
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   entrar: '<path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6"/>',
+  // três círculos que se cruzam: os squads (como os círculos do Google+)
+  squads: '<circle cx="9" cy="9" r="5.5"/><circle cx="15" cy="9" r="5.5"/><circle cx="12" cy="15" r="5.5"/>',
   tarefas: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 12.5l3 3 6-7"/>',
   buscar: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   panorama: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
@@ -322,7 +324,7 @@ function renderChrome() {
     ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])}</p>${roleSwitch()}` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
-      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
+      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("squads", "Squads") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
@@ -364,7 +366,7 @@ function markNav() {
 const ID_PATHS = { vaga: "vagas", talento: "talentos", mensagens: "mensagens", contrato: "contratos", projeto: "projetos" };
 const SECRET = ["recuperar", "avisos", "escolher"];
 // endereços que são telas do app (o servidor usa a mesma lista para entregar o site em vez da 404)
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|admin(?:\/dados)?)\/?$/;
 function hToPath(h) {
   const i = h.indexOf("-"), name = i < 0 ? h : h.slice(0, i), id = i < 0 ? "" : h.slice(i + 1);
   if (!name || name === "inicio") return "/";
@@ -920,6 +922,190 @@ V.talento = async id => {
   </aside>
 </div>`;
 };
+
+// SQUADS: os "círculos" do Google+ para montar equipes. Em cima ficam as pessoas (seus contatos ou
+// o resultado da busca); embaixo, um círculo para cada squad, com as fotos de quem está dentro em
+// volta da borda. Para colocar alguém num squad:
+//   - no computador: arraste a pessoa (ou várias já marcadas) até o círculo;
+//   - no celular ou no teclado: toque nas pessoas para marcar e depois toque no círculo.
+// Soltar no círculo tracejado "Novo squad" cria o squad já com essas pessoas dentro.
+// Tocar num círculo sem ninguém marcado abre os detalhes: nome, cor, quem está e o botão de apagar.
+/* ---------- squads ---------- */
+let SQ = { data: null, sel: new Set(), open: null, q: "", found: null, creating: false, bump: null };
+const SQ_COLORS = ["Vinho", "Ameixa", "Mostarda", "Coral", "Verde", "Laranja"];
+// sem busca: primeiro seus contatos, depois os outros talentos da plataforma (sem repetir ninguém)
+const sqPeopleList = () => { const seen = new Set(), base = SQ.q ? SQ.found || [] : [...SQ.data.contacts, ...(SQ.found || [])];
+  return base.filter(p => p.id !== ME.id && !seen.has(p.id) && seen.add(p.id)); };
+const sqCount = id => SQ.data.squads.filter(s => s.members.some(m => m.id === id)).length;
+const sqPeopleOf = ids => ids.map(id => sqPeopleList().find(p => p.id === id) || SQ.data.squads.flatMap(s => s.members).find(p => p.id === id)).filter(Boolean);
+function sqPeopleHTML() {
+  const list = sqPeopleList();
+  const head = SQ.q ? `Resultado da busca` : SQ.data.contacts.length ? "Seus contatos e talentos da Osmo" : "Talentos na Osmo";
+  const n = SQ.sel.size;
+  return `<div class="row" style="justify-content:space-between"><h3>${head}</h3>
+    <span class="row" style="gap:8px"><span class="hint" aria-live="polite">${n ? `${n} ${n === 1 ? "pessoa marcada" : "pessoas marcadas"}: toque num círculo ou arraste até ele` : "Toque para marcar ou arraste até um círculo"}</span>
+    ${n ? `<button class="btn sm ghost" data-sq="clear">Desmarcar</button>` : ""}</span></div>
+  ${list.length ? `<div class="sq-people">${list.map(p => { const c = sqCount(p.id), on = SQ.sel.has(p.id);
+    return `<button class="sq-person ${on ? "on" : ""}" draggable="true" data-sq-person="${p.id}" aria-pressed="${on}">
+      ${av(p.name, p.id, "sm", p.avatar)}<span class="tx"><b translate="no">${esc(p.name)}${vbadge(p.verified)}</b><small>${esc(p.title || "Perfil em construção")}</small></span>
+      ${c ? `<span class="sq-in" title="Está em ${c} ${c === 1 ? "squad seu" : "squads seus"}">${c}</span>` : ""}</button>`; }).join("")}</div>`
+    : emptyBox(SQ.q ? "Ninguém encontrado." : "Ainda não há ninguém por aqui.", SQ.q ? "Tente outro nome ou habilidade." : "Busque talentos pelo campo acima.")}`;
+}
+// as fotos em volta do círculo: até 10, espalhadas igualmente pela borda (a conta é um relógio: 360° divididos por quantas fotos)
+function sqRing(s) {
+  const show = s.members.slice(0, 10), k = Math.max(show.length, 1);
+  return show.map((m, i) => `<span class="sq-dot" style="--a:${-90 + i * 360 / k}deg">${av(m.name, m.id, "xs", m.avatar)}</span>`).join("");
+}
+function sqCirclesHTML() {
+  const n = SQ.sel.size, cta = n ? `Adicionar ${n === 1 ? "a pessoa marcada" : `as ${n} pessoas marcadas`}` : "";
+  const circles = SQ.data.squads.map(s => `<div class="sq-cell"><div class="sq-circle sq-c${s.color} ${SQ.open === s.id ? "open" : ""} ${SQ.bump === s.id ? "bump" : ""}" data-sq-drop="${s.id}">
+      <button class="sq-ring" data-sq-hit="${s.id}" aria-label="${esc(s.name)}, ${s.members.length} ${s.members.length === 1 ? "pessoa" : "pessoas"}. ${n ? cta + " a este squad" : "Abrir detalhes"}" aria-expanded="${SQ.open === s.id}">
+        ${sqRing(s)}<span class="sq-mid"><b translate="no">${esc(s.name)}</b><span class="mono">${s.members.length}</span>${n ? `<small>+ ${n}</small>` : ""}</span></button></div></div>`).join("");
+  const add = SQ.creating ? `<form class="sq-new-form" id="sqNewForm"><label for="sqNewName" class="hint">Nome do squad${n ? ` (entram ${n} ${n === 1 ? "pessoa" : "pessoas"})` : ""}</label>
+      <input class="input" id="sqNewName" maxlength="40" placeholder="Ex.: Identidade visual" required><div class="row" style="gap:6px"><button class="btn sm hl">Criar</button><button type="button" class="btn sm ghost" data-sq="cancel-new">Cancelar</button></div></form>`
+    : `<button class="sq-ring" data-sq-hit="new" aria-label="Novo squad${n ? ", com as pessoas marcadas" : ""}"><span class="sq-mid"><b aria-hidden="true">+</b><span>Novo squad</span></span></button>`;
+  return `<div class="sq-circles">${circles}<div class="sq-cell"><div class="sq-circle sq-newc" data-sq-drop="new">${add}</div></div></div>`;
+}
+function sqDetailHTML() {
+  const s = SQ.data.squads.find(x => x.id === SQ.open); if (!s) return "";
+  return `<div class="panel stack sq-detail sq-c${s.color}" style="gap:14px">
+    <div class="row" style="justify-content:space-between; align-items:flex-end; gap:12px">
+      <div class="field" style="flex:1; min-width:200px"><label for="sqName">Nome do squad</label><input class="input" id="sqName" maxlength="40" value="${esc(s.name)}" translate="no" data-sq-rename="${s.id}"></div>
+      <button class="btn sm ghost" data-sq="close">Fechar</button></div>
+    <div class="field"><span class="flabel" id="sqColorL">Cor</span><div class="row" role="radiogroup" aria-labelledby="sqColorL" style="gap:8px">
+      ${SQ_COLORS.map((c, i) => `<button class="sq-swatch sq-c${i}" role="radio" aria-checked="${s.color === i}" aria-label="${c}" data-sq-color="${i}"></button>`).join("")}</div></div>
+    <div class="stack" style="gap:8px"><span class="flabel">Quem está no squad (${s.members.length})</span>
+      ${s.members.length ? `<ul class="sq-members">${s.members.map(m => `<li>${av(m.name, m.id, "sm", m.avatar)}<a href="${url("talento-" + m.id)}" class="tx"><b translate="no">${esc(m.name)}${vbadge(m.verified)}</b><small>${esc(m.title || "")}</small></a>
+        <button class="btn sm ghost" data-sq-remove="${m.id}" aria-label="Tirar ${esc(m.name)} do squad">Tirar</button></li>`).join("")}</ul>`
+        : `<p class="hint">Ninguém ainda. Marque pessoas lá em cima e toque no círculo, ou arraste até ele.</p>`}</div>
+    <div><button class="btn sm ghost danger" data-sq="delete">Apagar squad</button></div></div>`;
+}
+const sqMemberOfHTML = () => SQ.data.memberOf.length ? `<section class="stack" style="gap:12px"><h3>Squads em que você está</h3>
+  <ul class="sq-members">${SQ.data.memberOf.map(s => `<li><span class="sq-swatch sq-c${s.color}" aria-hidden="true"></span><span class="tx"><b translate="no">${esc(s.name)}</b><small>Squad de <span translate="no">${esc(s.owner)}</span></small></span>
+    <button class="btn sm ghost" data-sq-leave="${s.id}">Sair</button></li>`).join("")}</ul></section>` : "";
+function sqRender(only) {
+  const put = (id, html) => { const el = $("#" + id); if (el) el.innerHTML = html; };
+  if (!only || only.includes("people")) put("sqPeople", sqPeopleHTML());
+  if (!only || only.includes("circles")) put("sqCircles", sqCirclesHTML());
+  if (!only || only.includes("detail")) put("sqDetail", sqDetailHTML());
+  if (!only || only.includes("member")) put("sqMemberOf", sqMemberOfHTML());
+  TR.flush();
+}
+async function sqReload(only) { SQ.data = await api("GET", "/api/squads"); sqRender(only); }
+const toPerson = t => ({ id: t.id, name: t.name, title: t.title, avatar: t.avatar, verified: t.verified });
+async function sqSearch(q) {
+  SQ.q = q; // busca vazia volta para contatos + talentos
+  const { talents } = await api("GET", "/api/talents?q=" + encodeURIComponent(q));
+  if (SQ.q !== q) return; // chegou resposta de uma busca antiga
+  SQ.found = talents.slice(0, 40).map(toPerson);
+  sqRender(["people"]);
+}
+// coloca gente no squad (ou cria um squad novo com elas) e faz o círculo "pular", como no Google+
+async function sqAdd(target, ids, name) {
+  if (target === "new") { const r = await api("POST", "/api/squads", { name }); target = r.id; SQ.creating = false; }
+  if (ids.length) await api("POST", `/api/squads/${target}/members`, { user_ids: ids });
+  SQ.sel.clear(); SQ.bump = target;
+  await sqReload();
+  const s = SQ.data.squads.find(x => x.id === target);
+  if (s) toast(ids.length ? `${ids.length === 1 ? sqPeopleOf(ids)[0]?.name || "1 pessoa" : ids.length + " pessoas"} no squad ${s.name}` : `Squad ${s.name} criado`);
+  setTimeout(() => { SQ.bump = null; $$(".sq-circle.bump").forEach(c => c.classList.remove("bump")); }, 700);
+}
+V.squads = async () => {
+  if (needLogin()) return;
+  SQ.data = await api("GET", "/api/squads");
+  SQ.sel.clear(); SQ.creating = false;
+  if (SQ.open && !SQ.data.squads.some(s => s.id === SQ.open)) SQ.open = null;
+  SQ.found = (await api("GET", "/api/talents?q=" + encodeURIComponent(SQ.q))).talents.slice(0, 40).map(toPerson);
+  return `<div id="sq" class="stack" style="gap:24px">
+  <div class="listhead"><div><h2>Squads</h2><p class="muted">Junte pessoas em círculos para montar equipes. Arraste alguém até um círculo, ou toque na pessoa e depois no círculo. Só você vê os seus squads.</p></div>
+    <div class="field" style="min-width:240px"><label for="sqq" class="hint">Buscar pessoas</label><input class="input" id="sqq" placeholder="Nome ou habilidade" value="${esc(SQ.q)}" autocomplete="off"></div></div>
+  <section class="panel stack" id="sqPeople" style="gap:14px">${sqPeopleHTML()}</section>
+  <section class="stack" style="gap:12px"><h3>Seus squads</h3><div id="sqCircles">${sqCirclesHTML()}</div></section>
+  <div id="sqDetail">${sqDetailHTML()}</div>
+  <div id="sqMemberOf">${sqMemberOfHTML()}</div>
+</div>`;
+};
+// os eventos dos squads ficam num lugar só (vale para qualquer coisa dentro de #sq, mesmo depois de redesenhar)
+(() => {
+  const inSq = e => e.target.closest && e.target.closest("#sq");
+  const fail = err => toast(err.message);
+  let dragIds = null;
+  document.addEventListener("click", async e => {
+    if (!inSq(e)) return;
+    const t = e.target;
+    const p = t.closest("[data-sq-person]");
+    if (p) { const id = Number(p.dataset.sqPerson); SQ.sel.has(id) ? SQ.sel.delete(id) : SQ.sel.add(id); sqRender(["people", "circles"]);
+      const b = $(`[data-sq-person="${id}"]`); if (b) b.focus(); return; }
+    const hit = t.closest("[data-sq-hit]");
+    if (hit) {
+      const k = hit.dataset.sqHit;
+      if (k === "new") { SQ.creating = true; sqRender(["circles"]); const i = $("#sqNewName"); if (i) i.focus(); return; }
+      const id = Number(k);
+      if (SQ.sel.size) return sqAdd(id, [...SQ.sel]).catch(fail);
+      SQ.open = SQ.open === id ? null : id; sqRender(["circles", "detail"]);
+      if (SQ.open) $("#sqDetail").scrollIntoView({ block: "nearest", behavior: calmMotion() ? "auto" : "smooth" });
+      return;
+    }
+    const sw = t.closest("[data-sq-color]");
+    if (sw) { const color = Number(sw.dataset.sqColor); try { await api("PUT", "/api/squads/" + SQ.open, { color }); await sqReload(["circles", "detail", "member"]); $(`[data-sq-color="${color}"]`)?.focus(); } catch (err) { fail(err); } return; }
+    const rm = t.closest("[data-sq-remove]");
+    if (rm) { try { await api("DELETE", `/api/squads/${SQ.open}/members/${rm.dataset.sqRemove}`); await sqReload(); toast("Pessoa tirada do squad"); } catch (err) { fail(err); } return; }
+    const lv = t.closest("[data-sq-leave]");
+    if (lv) { if (!await confirmSheet({ title: "Sair deste squad?", text: "A pessoa que criou o squad pode te colocar de novo depois.", ok: "Sair" })) return;
+      try { await api("DELETE", `/api/squads/${lv.dataset.sqLeave}/leave`); await sqReload(); toast("Você saiu do squad"); } catch (err) { fail(err); } return; }
+    const a = t.closest("[data-sq]"); if (!a) return;
+    switch (a.dataset.sq) {
+      case "clear": SQ.sel.clear(); return sqRender(["people", "circles"]);
+      case "cancel-new": SQ.creating = false; return sqRender(["circles"]);
+      case "close": SQ.open = null; return sqRender(["circles", "detail"]);
+      case "delete": {
+        const s = SQ.data.squads.find(x => x.id === SQ.open); if (!s) return;
+        if (!await confirmSheet({ title: `Apagar o squad ${s.name}?`, text: "As pessoas não são avisadas e continuam na plataforma. Só o círculo some.", ok: "Apagar" })) return;
+        try { await api("DELETE", "/api/squads/" + s.id); SQ.open = null; await sqReload(); toast("Squad apagado"); } catch (err) { fail(err); }
+      }
+    }
+  });
+  document.addEventListener("submit", e => {
+    if (e.target.id !== "sqNewForm") return;
+    e.preventDefault();
+    const name = $("#sqNewName").value.trim(); if (!name) return;
+    sqAdd("new", [...SQ.sel], name).catch(fail);
+  });
+  // renomear: salva quando a pessoa sai do campo ou aperta Enter
+  document.addEventListener("change", async e => {
+    const el = e.target.closest && e.target.closest("[data-sq-rename]"); if (!el) return;
+    try { await api("PUT", "/api/squads/" + el.dataset.sqRename, { name: el.value }); await sqReload(["circles", "member"]); toast("Nome salvo"); } catch (err) { fail(err); }
+  });
+  let qt;
+  document.addEventListener("input", e => {
+    if (e.target.id !== "sqq") return;
+    clearTimeout(qt); const q = e.target.value.trim();
+    qt = setTimeout(() => sqSearch(q).catch(fail), 250);
+  });
+  // ARRASTAR: pegar uma pessoa marcada leva junto todas as marcadas; pegar uma desmarcada leva só ela
+  document.addEventListener("dragstart", e => {
+    const p = e.target.closest && e.target.closest("#sq [data-sq-person]"); if (!p) return;
+    const id = Number(p.dataset.sqPerson);
+    dragIds = SQ.sel.has(id) ? [...SQ.sel] : [id];
+    e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("text/plain", dragIds.join(","));
+    if (dragIds.length > 1) { const g = document.createElement("div"); g.className = "sq-ghost"; g.textContent = `${dragIds.length} pessoas`; document.body.appendChild(g); e.dataTransfer.setDragImage(g, 20, 20); setTimeout(() => g.remove()); }
+    $("#sq").classList.add("dragging");
+  });
+  document.addEventListener("dragend", () => { dragIds = null; $("#sq")?.classList.remove("dragging"); $$(".sq-circle.over").forEach(c => c.classList.remove("over")); });
+  document.addEventListener("dragover", e => {
+    const c = dragIds && e.target.closest && e.target.closest("#sq [data-sq-drop]"); if (!c) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "copy";
+    $$(".sq-circle.over").forEach(x => x !== c && x.classList.remove("over")); c.classList.add("over");
+  });
+  document.addEventListener("dragleave", e => { const c = e.target.closest && e.target.closest("#sq [data-sq-drop]"); if (c && !c.contains(e.relatedTarget)) c.classList.remove("over"); });
+  document.addEventListener("drop", e => {
+    const c = dragIds && e.target.closest && e.target.closest("#sq [data-sq-drop]"); if (!c) return;
+    e.preventDefault(); c.classList.remove("over");
+    const ids = dragIds; dragIds = null;
+    if (c.dataset.sqDrop === "new") { SQ.sel = new Set(ids); SQ.creating = true; sqRender(["people", "circles"]); $("#sqNewName")?.focus(); return; }
+    sqAdd(Number(c.dataset.sqDrop), ids).catch(fail);
+  });
+})();
 
 // MENSAGENS: à esquerda a lista de conversas, à direita a conversa aberta. Enquanto a conversa
 // está aberta, o garçom pergunta ao servidor de tempos em tempos se chegou mensagem nova.

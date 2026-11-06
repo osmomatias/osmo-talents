@@ -1683,6 +1683,80 @@ route("GET", "/api/me/tasks", ({ user }) => {
   return { tasks: rows.map(t => ({ ...taskOut(t), project: t.project })) };
 });
 
+// SQUADS (os "círculos" do Google+): cada pessoa junta outras pessoas em squads com nome e cor, para
+// montar equipes. Só o dono vê e mexe nos squads dele; quem está dentro só vê que está naquele squad.
+// Quem pode entrar num squad: qualquer freelancer (o perfil já é público) ou alguém com quem você já
+// conversou ou fechou contrato. Assim ninguém descobre clientes desconhecidos pelo número da conta.
+/* ---------------- squads ---------------- */
+const SQUAD_MAX = 30, SQUAD_MEMBERS_MAX = 50, SQUAD_COLORS = 6;
+const PERSON_SELECT = `SELECT u.id, u.name, p.title, a.v avatar_v, vf.verified_at FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+  LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN verifications vf ON vf.user_id = u.id`;
+const personOut = u => ({ id: u.id, name: u.name, title: u.title || "", avatar: avatarUrl(u.id, u.avatar_v), verified: u.verified_at || "" });
+// "contatos": todo mundo do outro lado das suas conversas e contratos
+const contactIds = userId => all(`SELECT freela_id id FROM threads WHERE client_id = ? UNION SELECT client_id FROM threads WHERE freela_id = ?
+  UNION SELECT freela_id FROM contracts WHERE client_id = ? UNION SELECT client_id FROM contracts WHERE freela_id = ?`, userId, userId, userId, userId).map(r => r.id);
+function squadAccess(user, id) {
+  const s = one("SELECT * FROM squads WHERE id = ? AND owner_id = ?", id, user.id);
+  if (!s) fail(404, "Squad não encontrado.");
+  return s;
+}
+const squadName = v => { const n = str(v, 40); if (!n) fail(400, "Dê um nome ao squad."); return n; };
+// TUDO DA TELA DE SQUADS: os seus squads com quem está em cada um, seus contatos e os squads em que você está
+route("GET", "/api/squads", ({ user }) => {
+  const squads = all("SELECT * FROM squads WHERE owner_id = ? ORDER BY pos, id", user.id).map(s => ({
+    id: s.id, name: s.name, color: s.color,
+    members: all(PERSON_SELECT + " JOIN squad_members m ON m.user_id = u.id WHERE m.squad_id = ? ORDER BY m.added_at, u.id", s.id).map(personOut),
+  }));
+  const ids = contactIds(user.id).filter(id => id !== user.id);
+  const contacts = ids.length ? all(PERSON_SELECT + ` WHERE u.id IN (${ids.map(() => "?").join(",")}) ORDER BY u.name`, ...ids).map(personOut) : [];
+  const memberOf = all(`SELECT s.id, s.name, s.color, o.name owner, o.id owner_id FROM squad_members m JOIN squads s ON s.id = m.squad_id
+    JOIN users o ON o.id = s.owner_id WHERE m.user_id = ? ORDER BY m.added_at DESC`, user.id);
+  return { squads, contacts, memberOf, colors: SQUAD_COLORS };
+});
+route("POST", "/api/squads", ({ user, body }) => {
+  const name = squadName(body.name);
+  const n = one("SELECT COUNT(*) n, COALESCE(MAX(pos), -1) + 1 pos FROM squads WHERE owner_id = ?", user.id);
+  if (n.n >= SQUAD_MAX) fail(409, `Você chegou ao limite de ${SQUAD_MAX} squads.`);
+  const color = body.color === undefined ? n.n % SQUAD_COLORS : int(body.color, 0, SQUAD_COLORS - 1);
+  return { id: Number(run("INSERT INTO squads (owner_id, name, color, pos) VALUES (?,?,?,?)", user.id, name, color, n.pos).lastInsertRowid) };
+});
+route("PUT", "/api/squads/:id", ({ user, params, body }) => {
+  const s = squadAccess(user, params.id);
+  run("UPDATE squads SET name = ?, color = ? WHERE id = ?", body.name === undefined ? s.name : squadName(body.name),
+    body.color === undefined ? s.color : int(body.color, 0, SQUAD_COLORS - 1), s.id);
+  return { ok: true };
+});
+route("DELETE", "/api/squads/:id", ({ user, params }) => {
+  run("DELETE FROM squads WHERE id = ?", squadAccess(user, params.id).id);
+  return { ok: true };
+});
+// COLOCAR PESSOAS NO SQUAD: aceita várias de uma vez (arrastar um grupo para o círculo, como no Google+)
+route("POST", "/api/squads/:id/members", ({ user, params, body }) => {
+  const s = squadAccess(user, params.id);
+  const ids = [...new Set((Array.isArray(body.user_ids) ? body.user_ids : [body.user_id]).map(v => int(v, 1)))].slice(0, SQUAD_MEMBERS_MAX);
+  if (!ids.length) fail(400, "Escolha quem entra no squad.");
+  const contacts = new Set(contactIds(user.id));
+  for (const id of ids) {
+    if (id === user.id) fail(400, "Você já é o dono do squad.");
+    const u = one(`SELECT u.id FROM users u WHERE u.id = ? AND (${HAS("freela")} OR ?)`, id, contacts.has(id) ? 1 : 0);
+    if (!u) fail(400, "Só dá para adicionar freelancers ou pessoas com quem você já conversou.");
+  }
+  return tx(() => {
+    for (const id of ids) run("INSERT OR IGNORE INTO squad_members (squad_id, user_id) VALUES (?,?)", s.id, id);
+    if (one("SELECT COUNT(*) n FROM squad_members WHERE squad_id = ?", s.id).n > SQUAD_MEMBERS_MAX) fail(409, `Um squad tem no máximo ${SQUAD_MEMBERS_MAX} pessoas.`);
+    return { ok: true };
+  });
+});
+route("DELETE", "/api/squads/:id/members/:uid", ({ user, params }) => {
+  run("DELETE FROM squad_members WHERE squad_id = ? AND user_id = ?", squadAccess(user, params.id).id, params.uid);
+  return { ok: true };
+});
+// SAIR DE UM SQUAD em que outra pessoa te colocou
+route("DELETE", "/api/squads/:id/leave", ({ user, params }) => {
+  run("DELETE FROM squad_members WHERE squad_id = ? AND user_id = ?", params.id, user.id);
+  return { ok: true };
+});
+
 // CARTEIRO PACIENTE: em vez de mandar um e-mail a cada mensagem (seria chato!), uma vez por
 // minuto ele olha as conversas e só manda se:
 // - tem coisa não lida há pelo menos 2 minutos sem nada novo (junta tudo num e-mail só);
@@ -1894,7 +1968,7 @@ const stamp = name => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|gestao|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|admin(?:\/dados)?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
   fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
