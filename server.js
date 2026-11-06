@@ -2308,7 +2308,7 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
