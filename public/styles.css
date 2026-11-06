@@ -573,6 +573,19 @@ body.menu-open{overflow:hidden}
 .file-row>a,.file-row>span:nth-child(2){overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600}
 .file-ext{min-width:44px; padding:4px 6px; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-family:var(--f-mono, monospace); font-size:.72rem; font-weight:800; text-transform:uppercase; text-align:center}
 @media (max-width:600px){ .file-row{grid-template-columns:auto minmax(0,1fr) auto} .file-row>.hint{display:none} }
+/* na coluna lateral (sua proposta) não cabe o tamanho: o nome do arquivo ganha o espaço */
+aside .file-row{grid-template-columns:auto minmax(0,1fr) auto} aside .file-row>.hint{display:none}
+/* anexos na conversa: um cartãozinho com o tipo, o nome e o tamanho; e o clipe ao lado da caixa de texto */
+.bub.file{padding:8px 10px}
+.bub-file{display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto auto; column-gap:10px; align-items:center; color:inherit; text-decoration:none; min-width:0}
+.bub-file .file-ext{grid-row:span 2}
+.bub-file .bf-name{font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:underline; text-underline-offset:3px}
+.bub-file .bf-size{font-size:.8rem; opacity:.75}
+.bub.me .bub-file .file-ext{background:rgba(255,255,255,.2); color:inherit}
+.compose label.attach-btn{padding:10px 12px; cursor:pointer; flex:none}
+.attach-btn svg{width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+/* o <input type=file> fica escondido; quem navega pelo teclado vê o contorno no botão que está antes dele */
+label.btn:has(+ input[type=file]:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
 
 /* ---------- selo de verificado ---------- */
 .vbadge{display:inline-flex; width:.95em; height:.95em; min-width:16px; min-height:16px; margin-left:.3em; vertical-align:-.12em; color:#19A957; flex:none}

@@ -234,11 +234,12 @@ function threadFor(jobId, clientId, freelaId) {
   return t.id;
 }
 function postMessage(threadId, senderId, body, actorId) {
-  run("INSERT INTO messages (thread_id, sender_id, body) VALUES (?,?,?)", threadId, senderId, body);
+  const id = Number(run("INSERT INTO messages (thread_id, sender_id, body) VALUES (?,?,?)", threadId, senderId, body).lastInsertRowid);
   run("UPDATE threads SET updated_at = datetime('now') WHERE id = ?", threadId);
   const who = actorId || senderId;
   if (who) run(`UPDATE threads SET client_read_at = CASE WHEN client_id = ? THEN datetime('now', '+1 second') ELSE client_read_at END,
     freela_read_at = CASE WHEN freela_id = ? THEN datetime('now', '+1 second') ELSE freela_read_at END WHERE id = ?`, who, who, threadId);
+  return id;
 }
 const brl = n => "R$ " + Number(n).toLocaleString("pt-BR");
 
@@ -599,11 +600,11 @@ route("GET", "/api/jobs/:id", ({ params, user }) => {
     files: user ? files : [], filesCount: files.length } };
   if (user && user.id === j.client_id) {
     out.proposals = all(`SELECT pr.*, u.name freela_name FROM proposals pr JOIN users u ON u.id = pr.freela_id WHERE pr.job_id = ? ORDER BY pr.created_at`, j.id)
-      .map(p => ({ ...p, milestones: parse(p.milestones), freela: profileOf(p.freela_id) }));
+      .map(p => ({ ...p, milestones: parse(p.milestones), freela: profileOf(p.freela_id), files: attsOf("proposal_id", p.id) }));
   }
   if (user && user.role === "freela") {
     const mine = one("SELECT * FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id);
-    if (mine) out.mine = { ...mine, milestones: parse(mine.milestones) };
+    if (mine) out.mine = { ...mine, milestones: parse(mine.milestones), files: attsOf("proposal_id", mine.id) };
   }
   return out;
 }, { auth: false });
@@ -658,12 +659,10 @@ const FILE_TYPES = {
   odp: ["application/vnd.oasis.opendocument.presentation", zipOffice],
   txt: ["text/plain; charset=utf-8", isText], csv: ["text/csv; charset=utf-8", isText], md: ["text/markdown; charset=utf-8", isText],
 };
-const filesOf = jobId => all("SELECT id, name, ext, size FROM job_files WHERE job_id = ? ORDER BY id", jobId);
-route("POST", "/api/jobs/:id/files", ({ user, params, req, body, ip }) => {
-  limit("files:" + ip, 40, 600_000);
-  const j = one("SELECT id FROM jobs WHERE id = ? AND client_id = ?", params.id, user.id);
-  if (!j) fail(404, "Vaga não encontrada.");
-  if (one("SELECT COUNT(*) n FROM job_files WHERE job_id = ?", j.id).n >= FILES_PER_JOB) fail(409, `Cada vaga aceita até ${FILES_PER_JOB} arquivos. Remova um para enviar outro.`);
+// A CONFERÊNCIA DE TODO ARQUIVO QUE CHEGA (vaga, proposta, mensagem ou etapa): limpa o nome
+// (tira barras e caracteres invisíveis), pega a extensão, confere se o tipo está na lista e se
+// os primeiros bytes combinam com o tipo. Devolve o nome limpo e a extensão.
+function checkUpload(req, body) {
   let name = ""; try { name = decodeURIComponent(String(req.headers["x-filename"] || "")); } catch {}
   name = name.replace(/[\x00-\x1f\x7f/\\]/g, "").trim().slice(-120);
   const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || "";
@@ -671,6 +670,15 @@ route("POST", "/api/jobs/:id/files", ({ user, params, req, body, ip }) => {
   if (!type) fail(400, "Tipo de arquivo não aceito. Envie PDF, imagem (JPG, PNG, WebP), PSD, AI, Word, Excel, PowerPoint ou texto.");
   if (!body.length) fail(400, "O arquivo está vazio.");
   if (!type[1](body)) fail(400, `Esse arquivo não parece um .${ext} de verdade.`);
+  return { name, ext };
+}
+const filesOf = jobId => all("SELECT id, name, ext, size FROM job_files WHERE job_id = ? ORDER BY id", jobId);
+route("POST", "/api/jobs/:id/files", ({ user, params, req, body, ip }) => {
+  limit("files:" + ip, 40, 600_000);
+  const j = one("SELECT id FROM jobs WHERE id = ? AND client_id = ?", params.id, user.id);
+  if (!j) fail(404, "Vaga não encontrada.");
+  if (one("SELECT COUNT(*) n FROM job_files WHERE job_id = ?", j.id).n >= FILES_PER_JOB) fail(409, `Cada vaga aceita até ${FILES_PER_JOB} arquivos. Remova um para enviar outro.`);
+  const { name, ext } = checkUpload(req, body);
   run("INSERT INTO job_files (job_id, name, ext, size, data) VALUES (?,?,?,?,?)", j.id, name, ext, body.length, body);
   return { files: filesOf(j.id) };
 }, { role: "cliente", raw: FILE_MAX });
@@ -687,6 +695,19 @@ function serveFile(req, res, id) {
   if (!currentUser(req)) return send(res, 401, "Entre na sua conta para baixar os arquivos da vaga.", { "Content-Type": "text/plain; charset=utf-8" });
   const f = one("SELECT name, ext, data FROM job_files WHERE id = ?", id);
   if (!f) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  sendBlob(res, f);
+}
+// BAIXAR ANEXO (proposta, mensagem ou etapa): diferente do briefing, que qualquer pessoa com
+// conta vê, um anexo é PARTICULAR. Só os dois lados envolvidos abrem: o cliente e o freela da
+// proposta, da conversa ou do contrato. Para qualquer outra pessoa, o anexo "não existe" (404).
+function serveAttachment(req, res, id) {
+  const user = currentUser(req);
+  if (!user) return send(res, 401, "Entre na sua conta para baixar este arquivo.", { "Content-Type": "text/plain; charset=utf-8" });
+  const f = one(ATT_OWNERS + " WHERE a.id = ?", id);
+  if (!f || (f.client_id !== user.id && f.freela_id !== user.id)) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  sendBlob(res, f);
+}
+function sendBlob(res, f) {
   // imagens e PDF abrem no navegador; o resto sempre baixa. O arquivo nunca roda como página do site.
   const inline = ["pdf", "png", "jpg", "jpeg", "webp"].includes(f.ext);
   const ascii = f.name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
@@ -696,6 +717,80 @@ function serveFile(req, res, id) {
     ...(f.ext === "pdf" ? {} : { "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" }),
   });
 }
+
+// ANEXOS DAS PROPOSTAS, MENSAGENS E ETAPAS: mesma conferência e mesmo limite de 10 MB dos
+// arquivos do briefing, mas cada anexo é particular dos dois lados envolvidos.
+// - proposta: o freela anexa até 6 arquivos (portfólio, orçamento detalhado) enquanto a
+//   proposta espera resposta; o cliente dono da vaga vê;
+// - mensagem: um arquivo vira uma mensagem na conversa ("📎 nome do arquivo");
+// - etapa: cliente e freela anexam até 10 arquivos (a entrega, referências, correções) enquanto
+//   a etapa não foi aprovada. Quem enviou pode remover, mas não depois que a etapa foi entregue.
+// ATT_OWNERS descobre, para qualquer anexo, quem é o cliente e quem é o freela daquela coisa.
+// --- anexos de propostas, mensagens e etapas
+const FILES_PER_PROPOSAL = 6, FILES_PER_MILESTONE = 10, FILES_PER_THREAD = 200;
+const ATT_OWNERS = `SELECT a.*, COALESCE(j.client_id, t.client_id, c.client_id) client_id, COALESCE(pr.freela_id, t.freela_id, c.freela_id) freela_id
+  FROM attachments a
+  LEFT JOIN proposals pr ON pr.id = a.proposal_id LEFT JOIN jobs j ON j.id = pr.job_id
+  LEFT JOIN messages m ON m.id = a.message_id LEFT JOIN threads t ON t.id = m.thread_id
+  LEFT JOIN milestones ms ON ms.id = a.milestone_id LEFT JOIN contracts c ON c.id = ms.contract_id`;
+const attsOf = (col, id) => all(`SELECT id, name, ext, size, user_id FROM attachments WHERE ${col} = ? ORDER BY id`, id);
+const addAtt = (col, id, user, name, ext, body) =>
+  Number(run(`INSERT INTO attachments (${col}, user_id, name, ext, size, data) VALUES (?,?,?,?,?,?)`, id, user.id, name, ext, body.length, body).lastInsertRowid);
+
+route("POST", "/api/proposals/:id/files", ({ user, params, req, body }) => {
+  limit("files:" + user.id, 40, 600_000);
+  const p = one("SELECT id, status FROM proposals WHERE id = ? AND freela_id = ?", params.id, user.id);
+  if (!p) fail(404, "Proposta não encontrada.");
+  if (p.status !== "enviada") fail(409, "Só dá para anexar arquivos enquanto a proposta aguarda resposta.");
+  if (one("SELECT COUNT(*) n FROM attachments WHERE proposal_id = ?", p.id).n >= FILES_PER_PROPOSAL) fail(409, `Cada proposta aceita até ${FILES_PER_PROPOSAL} arquivos. Remova um para enviar outro.`);
+  const { name, ext } = checkUpload(req, body);
+  addAtt("proposal_id", p.id, user, name, ext, body);
+  return { files: attsOf("proposal_id", p.id) };
+}, { role: "freela", raw: FILE_MAX });
+route("DELETE", "/api/proposals/:id/files/:fid", ({ user, params }) => {
+  const p = one("SELECT id, status FROM proposals WHERE id = ? AND freela_id = ?", params.id, user.id);
+  if (!p) fail(404, "Proposta não encontrada.");
+  if (p.status !== "enviada") fail(409, "A proposta já foi respondida: os arquivos ficam como estão.");
+  if (!run("DELETE FROM attachments WHERE id = ? AND proposal_id = ?", params.fid, p.id).changes) fail(404, "Arquivo não encontrado.");
+  return { files: attsOf("proposal_id", p.id) };
+}, { role: "freela" });
+
+route("POST", "/api/threads/:id/files", ({ user, params, req, body }) => {
+  limit("files:" + user.id, 40, 600_000);
+  limit("msg:" + user.id, 60, 60_000);
+  const t = threadAccess(user, params.id);
+  if (one("SELECT COUNT(*) n FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.thread_id = ?", t.id).n >= FILES_PER_THREAD)
+    fail(409, `Esta conversa chegou ao limite de ${FILES_PER_THREAD} arquivos.`);
+  const { name, ext } = checkUpload(req, body);
+  tx(() => { addAtt("message_id", postMessage(t.id, user.id, "📎 " + name), user, name, ext, body); });
+  run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
+  return { ok: true };
+}, { raw: FILE_MAX });
+
+// Etapa que a pessoa pode ver: ela precisa ser o cliente ou o freela do contrato.
+function msAccess(user, id) {
+  const m = one(MS_SELECT, id);
+  if (!m || (m.client_id !== user.id && m.freela_id !== user.id)) fail(404, "Etapa não encontrada.");
+  return m;
+}
+route("POST", "/api/milestones/:id/files", ({ user, params, req, body }) => {
+  limit("files:" + user.id, 40, 600_000);
+  const m = msAccess(user, params.id);
+  if (m.status === "aprovada") fail(409, "Esta etapa já foi aprovada. Mande o arquivo pela conversa.");
+  if (one("SELECT COUNT(*) n FROM attachments WHERE milestone_id = ?", m.id).n >= FILES_PER_MILESTONE) fail(409, `Cada etapa aceita até ${FILES_PER_MILESTONE} arquivos. Remova um para enviar outro.`);
+  const { name, ext } = checkUpload(req, body);
+  tx(() => {
+    addAtt("milestone_id", m.id, user, name, ext, body);
+    postMessage(threadFor(m.job_id, m.client_id, m.freela_id), null, `${user.name} anexou "${name}" à etapa "${m.title}".`, user.id);
+  });
+  return { files: attsOf("milestone_id", m.id) };
+}, { raw: FILE_MAX });
+route("DELETE", "/api/milestones/:id/files/:fid", ({ user, params }) => {
+  const m = msAccess(user, params.id);
+  if (["entregue", "aprovada"].includes(m.status)) fail(409, "A etapa já foi entregue: os arquivos ficam como estão até o cliente responder.");
+  if (!run("DELETE FROM attachments WHERE id = ? AND milestone_id = ? AND user_id = ?", params.fid, m.id, user.id).changes) fail(404, "Arquivo não encontrado.");
+  return { files: attsOf("milestone_id", m.id) };
+});
 
 // CONVIDAR: o cliente chama um talento para a vaga. Isso abre (ou reaproveita) a conversa
 // entre os dois com uma mensagem de convite.
@@ -814,6 +909,7 @@ route("GET", "/api/contracts", ({ user }) => {
     WHERE c.client_id = ? OR c.freela_id = ? ORDER BY c.status = 'concluido', c.created_at DESC`, user.id, user.id);
   for (const c of cs) {
     c.milestones = all("SELECT * FROM milestones WHERE contract_id = ? ORDER BY pos", c.id);
+    for (const m of c.milestones) m.files = attsOf("milestone_id", m.id).map(f => ({ ...f, mine: f.user_id === user.id }));
     c.thread = threadFor(c.job_id, c.client_id, c.freela_id);
     const mine = one("SELECT rating, created_at FROM reviews WHERE contract_id = ? AND author_id = ?", c.id, user.id);
     const theirs = one("SELECT 1 FROM reviews WHERE contract_id = ? AND author_id != ?", c.id, user.id);
@@ -1069,8 +1165,10 @@ route("GET", "/api/threads/:id", ({ user, params }) => {
   run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
   const other = profileOf(t.client_id === user.id ? t.freela_id : t.client_id);
   const job = t.job_id ? one("SELECT id, title FROM jobs WHERE id = ?", t.job_id) : null;
-  const msgs = all("SELECT id, sender_id, body, created_at FROM messages WHERE thread_id = ? ORDER BY id LIMIT 500", t.id)
-    .map(m => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null }));
+  const msgs = all(`SELECT m.id, m.sender_id, m.body, m.created_at, a.id file_id, a.name file_name, a.ext file_ext, a.size file_size
+      FROM messages m LEFT JOIN attachments a ON a.message_id = m.id WHERE m.thread_id = ? ORDER BY m.id LIMIT 500`, t.id)
+    .map(({ file_id, file_name, file_ext, file_size, ...m }) => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null,
+      file: file_id ? { id: file_id, name: file_name, ext: file_ext, size: file_size } : null }));
   return { thread: { id: t.id, pin: t.pin, job, with: other && { ...other, role: t.client_id === user.id ? "freela" : "cliente" } }, messages: msgs };
 });
 route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
@@ -1831,7 +1929,7 @@ function serveStatic(req, res, pathname) {
 
 // O PORTEIRO: TODO pedido que chega passa por aqui e é encaminhado:
 // 1. /auth/... -> login social;
-// 2. /arquivo/N -> anexo da vaga; /avatar/N e /portfolio/N -> imagens;
+// 2. /arquivo/N -> anexo da vaga; /arquivo/a/N -> anexo de proposta, mensagem ou etapa; /avatar/N e /portfolio/N -> imagens;
 // 3. qualquer outro endereço fora de /api/ -> arquivos do site;
 // 4. /api/... -> procura a rota certa no cardápio e, antes de chamar:
 //    - CSRF: pedidos que mudam algo precisam do cabeçalho "x-osmo: 1", que só o nosso
@@ -1847,8 +1945,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
-  const fm = url.pathname.match(/^\/arquivo\/(\d+)$/);
-  if (fm && (req.method === "GET" || req.method === "HEAD")) return serveFile(req, res, Number(fm[1]));
+  const fm = url.pathname.match(/^\/arquivo\/(a\/)?(\d+)$/);
+  if (fm && (req.method === "GET" || req.method === "HEAD")) return fm[1] ? serveAttachment(req, res, Number(fm[2])) : serveFile(req, res, Number(fm[2]));
   const av = url.pathname.match(/^\/(avatar|portfolio)\/(\d+)$/);
   if (av && (req.method === "GET" || req.method === "HEAD")) {
     const a = av[1] === "avatar" ? one("SELECT mime, data, v FROM avatars WHERE user_id = ?", Number(av[2]))

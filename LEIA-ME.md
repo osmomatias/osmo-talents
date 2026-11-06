@@ -253,6 +253,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - Avisos por e-mail, com escolha de quanto receber
 - Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
 - Arquivos no briefing da vaga: até 6 por vaga, 10 MB cada (PDF, imagens, PSD, AI, Office e texto), só para quem tem conta
+- Arquivos nas propostas (até 6), nas mensagens e nas etapas do contrato (até 10 por etapa), com os mesmos tipos e o limite de 10 MB. Esses anexos são particulares: só o cliente e o freela envolvidos conseguem abrir
 - Selo verde de verificado para quem envia laudo médico assinado com ICP-Brasil (opcional)
 - Avaliações depois do contrato (nota de 1 a 5, destaques e comentário), públicas só quando os dois lados avaliam ou após 14 dias
 - Perfil com "Como eu trabalho melhor" e identificação opcional
@@ -269,7 +270,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 
 ## Ainda não faz (próximas versões)
 
-- Arquivos nas propostas, mensagens e entregas das etapas (hoje só o briefing da vaga aceita arquivos)
+- Nada pendente por enquanto.
 
 ---
 

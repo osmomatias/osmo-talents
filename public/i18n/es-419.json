@@ -1216,5 +1216,22 @@
  "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.": "Sigues siendo cliente. Podrás enviar propuestas a vacantes y cambiar de rol desde el menú cuando quieras.",
  "Você continua sendo freelancer. Passa a poder publicar vagas e convidar talentos, e troca de papel pelo menu quando quiser.": "Sigues siendo freelancer. Podrás publicar vacantes e invitar talentos, y cambiar de rol desde el menú cuando quieras.",
  "Você está como": "Estás usando como",
- "Você não pode convidar a si mesmo.": "No puedes invitarte a ti mismo."
+ "Você não pode convidar a si mesmo.": "No puedes invitarte a ti mismo.",
+ "Anexar arquivo": "Adjuntar archivo",
+ "Anexar mais": "Adjuntar más",
+ "Arquivos da proposta": "Archivos de la propuesta",
+ "Arquivos (opcional)": "Archivos (opcional)",
+ "Trabalhos parecidos, um orçamento detalhado, um esboço. Até 6 arquivos de 10 MB. Só o cliente desta vaga consegue abrir.": "Trabajos similares, un presupuesto detallado, un boceto. Hasta 6 archivos de 10 MB. Solo el cliente de esta vacante puede abrirlos.",
+ "Remover \"{1}\"?": "¿Quitar \"{1}\"?",
+ "\"{1}\": cada proposta aceita até 6 arquivos.": "\"{1}\": cada propuesta acepta hasta 6 archivos.",
+ "Proposta enviada, mas {#1} arquivo(s) não subiram. Tente de novo na página da vaga.": "Propuesta enviada, pero {1} archivo(s) no se subieron. Inténtalo de nuevo en la página de la vacante.",
+ "Anexe aqui a entrega antes de marcar como entregue.": "Adjunta aquí la entrega antes de marcarla como entregada.",
+ "Só dá para anexar arquivos enquanto a proposta aguarda resposta.": "Solo puedes adjuntar archivos mientras la propuesta espera respuesta.",
+ "Cada proposta aceita até {#1} arquivos. Remova um para enviar outro.": "Cada propuesta acepta hasta {1} archivos. Quita uno para subir otro.",
+ "A proposta já foi respondida: os arquivos ficam como estão.": "La propuesta ya fue respondida: los archivos se quedan como están.",
+ "Esta conversa chegou ao limite de {#1} arquivos.": "Esta conversación llegó al límite de {1} archivos.",
+ "Esta etapa já foi aprovada. Mande o arquivo pela conversa.": "Esta etapa ya fue aprobada. Envía el archivo por la conversación.",
+ "Cada etapa aceita até {#1} arquivos. Remova um para enviar outro.": "Cada etapa acepta hasta {1} archivos. Quita uno para subir otro.",
+ "A etapa já foi entregue: os arquivos ficam como estão até o cliente responder.": "La etapa ya fue entregada: los archivos se quedan como están hasta que el cliente responda.",
+ "{1} anexou \"{2}\" à etapa \"{3}\".": "{1} adjuntó \"{2}\" a la etapa \"{3}\"."
 }

@@ -338,6 +338,27 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id, done);
 CREATE INDEX IF NOT EXISTS idx_task_comments ON task_comments(task_id, id);
 `);
 
+// --- migrações (versão 13: arquivos nas propostas, nas mensagens e nas entregas das etapas)
+// Cada anexo pertence a UMA coisa só: uma proposta, uma mensagem ou uma etapa (o CHECK garante
+// que exatamente uma das três colunas está preenchida). Como cada coluna aponta para a página
+// certa com ON DELETE CASCADE, apagar a proposta, a mensagem ou a etapa apaga o anexo junto.
+// O arquivo fica dentro do próprio banco, como os do briefing, para o backup continuar sendo um arquivo só.
+db.exec(`
+CREATE TABLE IF NOT EXISTS attachments (
+  id INTEGER PRIMARY KEY,
+  proposal_id INTEGER REFERENCES proposals(id) ON DELETE CASCADE,
+  message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  milestone_id INTEGER REFERENCES milestones(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL, ext TEXT NOT NULL, size INTEGER NOT NULL, data BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((proposal_id IS NOT NULL) + (message_id IS NOT NULL) + (milestone_id IS NOT NULL) = 1)
+);
+CREATE INDEX IF NOT EXISTS idx_att_proposal ON attachments(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_att_message ON attachments(message_id);
+CREATE INDEX IF NOT EXISTS idx_att_milestone ON attachments(milestone_id);
+`);
+
 // Antes, o portfólio era só uma lista de textos dentro do perfil. Este laço passa cada texto
 // antigo para a página nova de portfólio (no máximo 12) e depois esvazia a lista antiga,
 // para não copiar de novo da próxima vez que o programa ligar.

@@ -1352,5 +1352,22 @@
  "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.": "Vous restez client. Vous pourrez aussi envoyer des propositions aux offres, et changer de rôle depuis le menu quand vous voulez.",
  "Você continua sendo freelancer. Passa a poder publicar vagas e convidar talentos, e troca de papel pelo menu quando quiser.": "Vous restez pigiste. Vous pourrez aussi publier des offres et inviter des talents, et changer de rôle depuis le menu quand vous voulez.",
  "Você está como": "Vous l'utilisez en tant que",
- "Você não pode convidar a si mesmo.": "Vous ne pouvez pas vous inviter vous-même."
+ "Você não pode convidar a si mesmo.": "Vous ne pouvez pas vous inviter vous-même.",
+ "Anexar arquivo": "Joindre un fichier",
+ "Anexar mais": "Joindre d'autres fichiers",
+ "Arquivos da proposta": "Fichiers de la proposition",
+ "Arquivos (opcional)": "Fichiers (facultatif)",
+ "Trabalhos parecidos, um orçamento detalhado, um esboço. Até 6 arquivos de 10 MB. Só o cliente desta vaga consegue abrir.": "Travaux similaires, un devis détaillé, une ébauche. Jusqu'à 6 fichiers de 10 Mo. Seul le client de cette offre peut les ouvrir.",
+ "Remover \"{1}\"?": "Retirer « {1} » ?",
+ "\"{1}\": cada proposta aceita até 6 arquivos.": "« {1} » : chaque proposition accepte jusqu'à 6 fichiers.",
+ "Proposta enviada, mas {#1} arquivo(s) não subiram. Tente de novo na página da vaga.": "Proposition envoyée, mais {1} fichier(s) n'ont pas été envoyés. Réessayez sur la page de l'offre.",
+ "Anexe aqui a entrega antes de marcar como entregue.": "Joignez ici le livrable avant de le marquer comme livré.",
+ "Só dá para anexar arquivos enquanto a proposta aguarda resposta.": "Vous ne pouvez joindre des fichiers que tant que la proposition attend une réponse.",
+ "Cada proposta aceita até {#1} arquivos. Remova um para enviar outro.": "Chaque proposition accepte jusqu'à {1} fichiers. Retirez-en un pour en envoyer un autre.",
+ "A proposta já foi respondida: os arquivos ficam como estão.": "La proposition a déjà reçu une réponse : les fichiers restent tels quels.",
+ "Esta conversa chegou ao limite de {#1} arquivos.": "Cette conversation a atteint la limite de {1} fichiers.",
+ "Esta etapa já foi aprovada. Mande o arquivo pela conversa.": "Cette étape a déjà été approuvée. Envoyez le fichier dans la conversation.",
+ "Cada etapa aceita até {#1} arquivos. Remova um para enviar outro.": "Chaque étape accepte jusqu'à {1} fichiers. Retirez-en un pour en envoyer un autre.",
+ "A etapa já foi entregue: os arquivos ficam como estão até o cliente responder.": "L'étape a déjà été livrée : les fichiers restent tels quels jusqu'à la réponse du client.",
+ "{1} anexou \"{2}\" à etapa \"{3}\".": "{1} a joint « {2} » à l'étape « {3} »."
 }

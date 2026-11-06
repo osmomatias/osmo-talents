@@ -1346,5 +1346,22 @@
  "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.": "You're still a client. You'll also be able to send proposals to jobs, and you can switch roles from the menu anytime.",
  "Você continua sendo freelancer. Passa a poder publicar vagas e convidar talentos, e troca de papel pelo menu quando quiser.": "You're still a freelancer. You'll also be able to post jobs and invite talent, and you can switch roles from the menu anytime.",
  "Você está como": "You're using it as",
- "Você não pode convidar a si mesmo.": "You can't invite yourself."
+ "Você não pode convidar a si mesmo.": "You can't invite yourself.",
+ "Anexar arquivo": "Attach file",
+ "Anexar mais": "Attach more",
+ "Arquivos da proposta": "Proposal files",
+ "Arquivos (opcional)": "Files (optional)",
+ "Trabalhos parecidos, um orçamento detalhado, um esboço. Até 6 arquivos de 10 MB. Só o cliente desta vaga consegue abrir.": "Similar work, a detailed quote, a sketch. Up to 6 files of 10 MB. Only this job's client can open them.",
+ "Remover \"{1}\"?": "Remove \"{1}\"?",
+ "\"{1}\": cada proposta aceita até 6 arquivos.": "\"{1}\": each proposal accepts up to 6 files.",
+ "Proposta enviada, mas {#1} arquivo(s) não subiram. Tente de novo na página da vaga.": "Proposal sent, but {1} file(s) didn't upload. Try again on the job page.",
+ "Anexe aqui a entrega antes de marcar como entregue.": "Attach the delivery here before marking it as delivered.",
+ "Só dá para anexar arquivos enquanto a proposta aguarda resposta.": "You can only attach files while the proposal is awaiting a response.",
+ "Cada proposta aceita até {#1} arquivos. Remova um para enviar outro.": "Each proposal accepts up to {1} files. Remove one to upload another.",
+ "A proposta já foi respondida: os arquivos ficam como estão.": "The proposal has already been answered: the files stay as they are.",
+ "Esta conversa chegou ao limite de {#1} arquivos.": "This conversation has reached the limit of {1} files.",
+ "Esta etapa já foi aprovada. Mande o arquivo pela conversa.": "This milestone has already been approved. Send the file through the conversation.",
+ "Cada etapa aceita até {#1} arquivos. Remova um para enviar outro.": "Each milestone accepts up to {1} files. Remove one to upload another.",
+ "A etapa já foi entregue: os arquivos ficam como estão até o cliente responder.": "The milestone has already been delivered: the files stay as they are until the client responds.",
+ "{1} anexou \"{2}\" à etapa \"{3}\".": "{1} attached \"{2}\" to the milestone \"{3}\"."
 }

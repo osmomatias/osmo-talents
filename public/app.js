@@ -702,12 +702,21 @@ async function refreshJobs() {
 const PSTATUS = { enviada: ["Aguardando resposta", "wait"], aceita: ["Aceita", "ok"], recusada: ["Não escolhida", "off"], retirada: ["Retirada", "off"] };
 const JSTATUS = { aberta: ["Aberta", "ok"], em_andamento: ["Em andamento", "hi"], concluida: ["Concluída", "off"], fechada: ["Fechada", "off"] };
 const pill = (map, k) => `<span class="status ${(map[k] || ["", "off"])[1]}">${(map[k] || [k])[0]}</span>`;
+// Os arquivos da proposta do próprio freela: enquanto ela espera resposta, dá para tirar e pôr.
+function mineFiles(p) {
+  const open = p.status === "enviada";
+  if (!p.files.length && !open) return "";
+  return `<div class="stack" style="gap:8px; margin-top:6px"><span class="label">Arquivos</span>
+    ${attList(p.files, open ? f => `/api/proposals/${p.id}/files/${f.id}` : null) || `<p class="hint">Nenhum arquivo anexado.</p>`}
+    ${open && p.files.length < 6 ? attPicker("propFiles", `/api/proposals/${p.id}/files`, "propFilesErr") : ""}
+    <div id="propFilesErr" class="err" role="alert" hidden></div></div>`;
+}
 V.vaga = async id => {
   const d = await api("GET", "/api/jobs/" + id); const j = d.job, b = j.brief;
   const owner = ME && ME.id === j.client_id;
   let action = "";
   if (!ME) action = `<button class="btn hl" data-act="login-then" data-next="proposta-${j.id}">Entrar para enviar proposta</button>`;
-  else if (ME.role === "freela") action = d.mine ? `<div class="stack" style="gap:6px"><span class="label">Sua proposta</span>${pill(PSTATUS, d.mine.status)}<p class="mono">${brl(d.mine.value)} · ${d.mine.days} dias úteis</p></div>`
+  else if (ME.role === "freela") action = d.mine ? `<div class="stack" style="gap:6px"><span class="label">Sua proposta</span>${pill(PSTATUS, d.mine.status)}<p class="mono">${brl(d.mine.value)} · ${d.mine.days} dias úteis</p>${mineFiles(d.mine)}</div>`
     : j.status === "aberta" ? `<button class="btn hl" data-go="proposta-${j.id}">Enviar proposta guiada</button>` : "";
   else if (owner && j.status === "aberta") action = `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>`;
   // no celular, valor e botão principal ficam fixos embaixo (o mesmo botão do painel lateral)
@@ -720,6 +729,7 @@ V.vaga = async id => {
       <p style="white-space:pre-wrap" translate="no">${esc(p.text)}</p>
       ${p.freela.how.com ? `<p class="hint">Como trabalha melhor: ${esc(p.freela.how.com)} ${esc(p.freela.how.resp)}</p>` : ""}
       ${p.milestones.length > 1 ? `<ul style="margin:0; padding-left:20px">${p.milestones.map(m => `<li>${esc(m.title)}: <span class="mono">${brl(m.value)}</span></li>`).join("")}</ul>` : ""}
+      ${p.files.length ? `<div class="stack" style="gap:8px"><span class="label">Arquivos da proposta</span>${attList(p.files)}</div>` : ""}
       ${p.status === "enviada" && j.status === "aberta" ? `<div class="row"><button class="btn hl sm" data-act="accept" data-id="${p.id}">Aceitar e criar contrato</button><button class="btn sm" data-act="decline" data-id="${p.id}">Recusar</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>` : ""}
     </div>`).join("") : `<p class="muted">Ainda não chegaram propostas. Você pode convidar talentos pela página de cada perfil.</p>`}</section>` : "";
   return `<button class="back" data-go="vagas">← Voltar para vagas</button>
@@ -767,7 +777,13 @@ ${barAction ? `<div class="mcta"><div class="mcta-info"><b class="mono">${price}
 // msRows desenha as linhas das etapas e avisa se a soma não bate com o total.
 /* ---------- proposta guiada ---------- */
 const WSTEPS = ["Abordagem", "Valor e etapas", "Perguntas", "Revisar"];
-let W = null, WJOB = null;
+let W = null, WJOB = null, WFILES = []; // WFILES: arquivos escolhidos na revisão; sobem logo depois que a proposta é enviada
+function wfilesHTML() {
+  return `${WFILES.length ? `<ul class="files">${WFILES.map((f, i) => `<li class="file-row"><span class="file-ext" aria-hidden="true">${esc(fileExt(f.name))}</span><span>${esc(f.name)}</span><span class="hint">${fileSize(f.size)}</span>
+      <button type="button" class="btn sm ghost" data-act="wfile-del" data-i="${i}" aria-label="Remover ${esc(f.name)}">Remover</button></li>`).join("")}</ul>` : ""}
+    ${WFILES.length < 6 ? `<div><label class="btn sm" for="wFiles">Escolher arquivos</label><input type="file" id="wFiles" multiple accept="${FILE_ACCEPT}" class="sr-only"></div>` : ""}
+    <div id="wFilesErr" class="err" role="alert" hidden></div>`;
+}
 function wizDefaults(id) { return Object.assign({ step: 0, text: "", value: "", days: "", qs: "", split: false, ms: [{ title: "", value: "" }] }, store.get("draft-" + id, {})); }
 const saveDraft = (() => { let t; return () => { clearTimeout(t); t = setTimeout(() => { store.set("draft-" + WJOB.id, W); const s = $("#wsaved"); if (s) s.textContent = "Rascunho salvo"; }, 400); }; })();
 const msSum = () => W.ms.reduce((a, m) => a + (Number(m.value) || 0), 0);
@@ -775,7 +791,7 @@ V.proposta = async id => {
   if (needLogin("freela")) return;
   const d = await api("GET", "/api/jobs/" + id);
   if (d.mine) { toast("Você já enviou proposta para esta vaga."); go("vaga-" + id); return; }
-  if (!WJOB || WJOB.id !== id) { WJOB = d.job; W = wizDefaults(id); }
+  if (!WJOB || WJOB.id !== id) { WJOB = d.job; W = wizDefaults(id); WFILES = []; }
   return wizHTML();
 };
 function wizHTML() {
@@ -804,6 +820,8 @@ function wizHTML() {
         <section><span class="label">Abordagem</span><p style="white-space:pre-wrap">${esc(w.text) || '<span class="muted">Vazio. Volte ao passo 1.</span>'}</p></section>
         <section><span class="label">Valor e prazo</span><p class="mono">${brl(v)} · ${esc(w.days) || "—"} dias úteis</p></section>
         ${w.split ? `<section><span class="label">Etapas</span><ul>${w.ms.map(m => `<li>${esc(m.title || "Sem nome")}: <span class="mono">${brl(m.value)}</span></li>`).join("")}</ul></section>` : ""}
+        <section><span class="label">Arquivos (opcional)</span><div class="stack" style="gap:10px"><p class="hint">Trabalhos parecidos, um orçamento detalhado, um esboço. Até 6 arquivos de 10 MB. Só o cliente desta vaga consegue abrir.</p>
+          <div class="stack" style="gap:10px" id="wFilesBox">${wfilesHTML()}</div></div></section>
         <section><span class="label">Perguntas</span><p style="white-space:pre-wrap">${esc(w.qs) || '<span class="muted">Nenhuma</span>'}</p></section>
       </div>
       <div id="wErr" class="err" role="alert" hidden></div></div>`];
@@ -925,6 +943,7 @@ V.mensagens = async id => {
 };
 function bubbles() {
   return TH.messages.map(m => m.system ? `<div class="bub sys">${esc(m.body)}<small>${hm(m.created_at)}</small></div>`
+    : m.file ? `<div class="bub file ${m.mine ? "me" : ""}"><a class="bub-file" href="/arquivo/a/${m.file.id}" target="_blank" rel="noopener"><span class="file-ext" aria-hidden="true">${esc(m.file.ext)}</span><span class="bf-name" translate="no">${esc(m.file.name)}</span><span class="bf-size">${fileSize(m.file.size)}</span></a><small>${hm(m.created_at)}</small></div>`
     : `<div class="bub ${m.mine ? "me" : ""}"><span translate="no">${esc(m.body)}</span><small>${hm(m.created_at)}</small></div>`).join("");
 }
 function convoHTML() {
@@ -937,8 +956,23 @@ function convoHTML() {
     <form class="compose" id="compose">
       <button type="button" class="btn sm newmsg" id="newMsg" hidden></button>
       <div class="quick">${["Recebi, vou olhar até amanhã.", "Pode me mandar por escrito?", "Preciso de mais 1 dia.", "Entrega enviada, aguardo retorno."].map(q => `<button type="button" data-quick="${esc(q)}">${q}</button>`).join("")}</div>
-      <div class="row"><input class="input" id="msgIn" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"><button class="btn primary" type="submit">Enviar</button></div>
+      <div class="row"><label class="btn attach-btn" for="msgFile" title="Anexar arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg><span class="sr-only">Anexar arquivo</span></label><input type="file" id="msgFile" multiple accept="${FILE_ACCEPT}" class="sr-only">
+        <input class="input" id="msgIn" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"><button class="btn primary" type="submit">Enviar</button></div>
     </form>`;
+}
+// ARQUIVO NA CONVERSA: cada arquivo vira uma mensagem. Depois de enviar, recarrega a conversa
+// e desce até o fim, igual a quando se manda um texto.
+async function sendMsgFiles(files) {
+  const tid = TH && TH.thread.id; if (!tid) return;
+  const errs = [];
+  for (const [i, f] of files.entries()) {
+    const e2 = checkFile(f); if (e2) { errs.push(e2); continue; }
+    if (files.length > 1) toast(`Enviando ${i + 1} de ${files.length}: ${f.name}`);
+    try { await uploadTo(`/api/threads/${tid}/files`, f); } catch (e3) { errs.push(e3.message); }
+  }
+  if (errs.length) toast(errs.join(" "));
+  if (!TH || TH.thread.id !== tid) return;
+  TH = await api("GET", "/api/threads/" + tid); const b = $("#bubbles"); if (b) { b.innerHTML = bubbles(); b.scrollTop = b.scrollHeight; }
 }
 // celular: conversa aberta ocupa a tela toda (cabeçalho, rodapé e barra de navegação somem)
 function syncViewport() { // acompanha o teclado: a conversa usa só a parte visível da tela
@@ -999,6 +1033,18 @@ function msActions(c, m) {
   if (!isF && m.status === "entregue") return `<button class="btn sm hl" data-act="ms" data-a="approve" data-id="${m.id}">Aprovar e liberar</button><button class="btn sm" data-act="ms-changes" data-id="${m.id}">Pedir ajustes</button>`;
   return "";
 }
+// ARQUIVOS DA ETAPA: a entrega em si, referências, correções. Os dois lados anexam enquanto a
+// etapa não foi aprovada; quem enviou pode remover, menos depois de entregue (o cliente está
+// avaliando aquilo). O freela vê uma dica para anexar antes de marcar como entregue.
+function msFiles(c, m) {
+  const open = m.status !== "aprovada", locked = ["entregue", "aprovada"].includes(m.status);
+  if (!m.files.length && (!open || c.status === "concluido")) return "";
+  const hint = ME.id === c.freela_id && m.status === "andamento" && !m.files.length ? `<span class="hint">Anexe aqui a entrega antes de marcar como entregue.</span>` : "";
+  return `<div class="stack ms-files" style="gap:8px; margin-top:10px">
+    ${attList(m.files, locked ? null : f => f.mine ? `/api/milestones/${m.id}/files/${f.id}` : "")}
+    ${open && m.files.length < 10 ? `<div class="row" style="gap:10px">${attPicker("msf-" + m.id, `/api/milestones/${m.id}/files`, "msfErr-" + m.id, m.files.length ? "Anexar mais" : "Anexar arquivo")}${hint}</div>` : ""}
+    <div id="msfErr-${m.id}" class="err" role="alert" hidden></div></div>`;
+}
 V.painel = async () => {
   if (needLogin()) return;
   const isF = ME.role === "freela";
@@ -1007,7 +1053,7 @@ V.painel = async () => {
   const contracts = cs.contracts.length ? cs.contracts.map(c => `<div class="panel">
     <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px"><a class="btn sm" href="${url("contrato-" + (c.id))}">Tarefas</a>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
     <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="${url("mensagens-" + (c.thread))}">Abrir conversa</a></p>
-    ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div></div><span class="mono">${brl(m.value)}</span></div>`).join("")}
+    ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div>${msFiles(c, m)}</div><span class="mono">${brl(m.value)}</span></div>`).join("")}
     ${c.status === "concluido" ? reviewBox(c) : ""}
   </div>`).join("") : emptyBox("Nenhum contrato ainda.", isF ? "Quando um cliente aceitar sua proposta, o contrato aparece aqui." : "Quando você aceitar uma proposta, o contrato aparece aqui.");
   let side;
@@ -1757,9 +1803,10 @@ function checkFile(f) {
   if (!f.size) return `"${f.name}" está vazio.`;
   return "";
 }
-async function uploadFile(jobId, f) {
+const uploadFile = (jobId, f) => uploadTo(`/api/jobs/${jobId}/files`, f);
+async function uploadTo(path, f) {
   let res;
-  try { res = await fetch(`/api/jobs/${jobId}/files`, { method: "POST", credentials: "same-origin", body: f,
+  try { res = await fetch(path, { method: "POST", credentials: "same-origin", body: f,
     headers: { "X-Osmo": "1", "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(f.name) } }); }
   catch { throw new Error("Sem conexão com o servidor. Confira sua internet e tente de novo."); }
   const data = await res.json().catch(() => ({}));
@@ -1779,6 +1826,26 @@ async function addJobFiles(jobId, files) {
 const fileRow = (f, owner, jobId) => `<li class="file-row"><span class="file-ext" aria-hidden="true">${esc(f.ext || fileExt(f.name))}</span>
   ${f.id ? `<a href="/arquivo/${f.id}" target="_blank" rel="noopener">${esc(f.name)}</a>` : `<span>${esc(f.name)}</span>`}<span class="hint">${fileSize(f.size)}</span>
   ${owner ? `<button type="button" class="btn sm ghost" data-act="${f.id ? "file-del" : "pfile-del"}" data-id="${f.id || 0}" data-job="${jobId || 0}" data-name="${esc(f.name)}" aria-label="Remover ${esc(f.name)}">Remover</button>` : ""}</li>`;
+// ANEXOS DE PROPOSTA, MENSAGEM E ETAPA: são particulares (só os dois lados abrem) e moram em
+// /arquivo/a/N. attList desenha a lista; delUrl(f), quando devolve um endereço, mostra o botão
+// Remover. attPicker é o botão "Anexar arquivo": o <input> leva no data-upload o endereço para
+// onde os arquivos sobem, e o ouvido de "change" lá embaixo faz o resto (addAtts).
+const attRow = (f, del) => `<li class="file-row"><span class="file-ext" aria-hidden="true">${esc(f.ext || fileExt(f.name))}</span>
+  <a href="/arquivo/a/${f.id}" target="_blank" rel="noopener">${esc(f.name)}</a><span class="hint">${fileSize(f.size)}</span>
+  ${del ? `<button type="button" class="btn sm ghost" data-act="att-del" data-url="${esc(del)}" data-name="${esc(f.name)}" aria-label="Remover ${esc(f.name)}">Remover</button>` : ""}</li>`;
+const attList = (files, delUrl) => files && files.length ? `<ul class="files">${files.map(f => attRow(f, delUrl && delUrl(f))).join("")}</ul>` : "";
+const attPicker = (inputId, path, errId, label = "Anexar arquivo") => `<div><label class="btn sm" for="${inputId}">${label}</label><input type="file" id="${inputId}" data-upload="${esc(path)}" data-err="${errId}" multiple accept="${FILE_ACCEPT}" class="sr-only"></div>`;
+async function addAtts(path, files, errId) {
+  const errs = [];
+  for (const [i, f] of files.entries()) {
+    const e2 = checkFile(f); if (e2) { errs.push(e2); continue; }
+    toast(`Enviando ${i + 1} de ${files.length}: ${f.name}`);
+    try { await uploadTo(path, f); } catch (e3) { errs.push(e3.message); }
+  }
+  await route();
+  if (errs.length) { const b = errId && $("#" + errId); if (b) { b.textContent = errs.join(" "); b.hidden = false; } else toast(errs.join(" ")); } else toast("Arquivos anexados");
+}
+
 let PFILES = []; // arquivos escolhidos antes de publicar (ficam só na memória; sobem depois que a vaga é criada)
 function pfilesHTML() {
   return `${PFILES.length ? `<ul class="files">${PFILES.map((f, i) => fileRow({ name: f.name, size: f.size, idx: i }, true)).join("")}</ul>` : ""}
@@ -1895,6 +1962,11 @@ document.addEventListener("click", async e => {
       return;
     }
     case "login-then": S.next = act.dataset.next; return go("entrar");
+    case "wfile-del": WFILES.splice(Number(act.dataset.i), 1); { const b = $("#wFilesBox"); if (b) b.innerHTML = wfilesHTML(); } return;
+    case "att-del": return busy(async () => {
+      if (!await confirmSheet({ title: `Remover "${act.dataset.name}"?`, text: "Quem já baixou o arquivo continua com a cópia.", ok: "Remover" })) return;
+      await api("DELETE", act.dataset.url); toast("Arquivo removido"); route();
+    })();
     case "pfile-del": { const i = PFILES.findIndex(f => f.name === act.dataset.name); if (i >= 0) PFILES.splice(i, 1); const b = $("#pFilesBox"); if (b) b.innerHTML = pfilesHTML(); return; }
     case "file-del": return busy(async () => {
       if (!await confirmSheet({ title: `Remover "${act.dataset.name}" da vaga?`, text: "Quem já baixou o arquivo continua com a cópia.", ok: "Remover" })) return;
@@ -1932,9 +2004,16 @@ document.addEventListener("click", async e => {
     case "ms-del": W.ms.splice(Number(act.dataset.i), 1); saveDraft(); const mb2 = $("#msBox"); if (mb2) mb2.innerHTML = msRows(); return;
     case "wsend": return busy(async () => {
       const body = { text: W.text, value: Number(W.value), days: Number(W.days), questions: W.qs, milestones: W.split ? W.ms.map(m => ({ title: m.title, value: Number(m.value) })) : [] };
-      try { await api("POST", `/api/jobs/${WJOB.id}/proposals`, body); }
+      let r; try { r = await api("POST", `/api/jobs/${WJOB.id}/proposals`, body); }
       catch (err) { const box = $("#wErr"); if (box) { box.textContent = err.message; box.hidden = false; } else toast(err.message); return; }
-      store.set("draft-" + WJOB.id, null); W = null; WJOB = null; toast("Proposta enviada"); refreshMe(); go("painel");
+      const failed = [], jobId = WJOB.id;
+      for (const [i, file] of WFILES.entries()) {
+        act.textContent = `Enviando arquivo ${i + 1} de ${WFILES.length}…`;
+        try { await uploadTo(`/api/proposals/${r.id}/files`, file); } catch (e2) { failed.push(e2.message); }
+      }
+      store.set("draft-" + jobId, null); W = null; WJOB = null; WFILES = []; refreshMe();
+      if (failed.length) { toast(`Proposta enviada, mas ${failed.length} arquivo(s) não subiram. Tente de novo na página da vaga.`); console.warn(failed); return go("vaga-" + jobId); }
+      toast("Proposta enviada"); go("painel");
     })();
     case "pay": return busy(async () => { await api("POST", `/api/milestones/${id}/pay`); toast("Cobrança gerada. Clique em Abrir cobrança para pagar."); route(); })();
     case "payout": return busy(async () => {
@@ -2001,6 +2080,14 @@ document.addEventListener("change", e => {
     if (errs.length) { const b = $("#pFilesErr"); b.textContent = errs.join(" "); b.hidden = false; }
   }
   if (id === "jFiles" && t.files.length) addJobFiles(Number(t.dataset.job), [...t.files]);
+  if (t.dataset.upload && t.files.length) { addAtts(t.dataset.upload, [...t.files], t.dataset.err); t.value = ""; }
+  if (id === "wFiles" && t.files.length) {
+    const errs = [];
+    for (const f of t.files) { const e2 = checkFile(f); if (e2) errs.push(e2); else if (WFILES.length < 6) WFILES.push(f); else errs.push(`"${f.name}": cada proposta aceita até 6 arquivos.`); }
+    $("#wFilesBox").innerHTML = wfilesHTML();
+    if (errs.length) { const b = $("#wFilesErr"); b.textContent = errs.join(" "); b.hidden = false; }
+  }
+  if (id === "msgFile" && t.files.length) { sendMsgFiles([...t.files]); t.value = ""; }
   if (id === "peImg" && t.files[0]) { syncPE(); shrinkImage(t.files[0], 1600, false).then(d => { PE.newImage = PE.image = d; PE.removeImage = false; renderPort(); })
     .catch(e2 => { const b = $("#peErr"); b.textContent = e2.message; b.hidden = false; }); }
   if (t.dataset.p) { P[t.dataset.p] = t.type === "checkbox" ? t.checked : t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
