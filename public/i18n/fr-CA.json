@@ -1393,5 +1393,6 @@
  "As notificações estão funcionando neste aparelho.": "Les notifications fonctionnent sur cet appareil.",
  "As notificações ainda não estão ativas na plataforma.": "Les notifications ne sont pas encore actives sur la plateforme.",
  "Este navegador mandou uma inscrição que não reconhecemos.": "Ce navigateur a envoyé un abonnement que nous ne reconnaissons pas.",
- "Este aparelho não está inscrito. Ative as notificações de novo.": "Cet appareil n'est pas abonné. Réactivez les notifications."
+ "Este aparelho não está inscrito. Ative as notificações de novo.": "Cet appareil n'est pas abonné. Réactivez les notifications.",
+ "O serviço de notificações recusou o teste (código {1}). Avise a Osmo.": "Le service de notifications a refusé le test (code {1}). Prévenez Osmo."
 }

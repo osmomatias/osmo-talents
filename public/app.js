@@ -1883,8 +1883,10 @@ async function pushTest() {
     const reg = await navigator.serviceWorker.getRegistration(), sub = reg && await reg.pushManager.getSubscription();
     if (!sub) return refreshPushBox();
     const r = await api("POST", "/api/push/test", { endpoint: sub.endpoint });
-    toast(r.ok ? "Teste enviado. Deve aparecer em instantes." : "O navegador não aceitou o teste. Ative as notificações de novo.");
-    if (!r.ok) { await sub.unsubscribe().catch(() => {}); refreshPushBox(); }
+    // ok: o correio de avisos (Apple, Google...) aceitou; gone: a inscrição morreu; outro código: o correio recusou
+    toast(r.ok ? "Teste enviado. Deve aparecer em instantes." : r.gone ? "O navegador não aceitou o teste. Ative as notificações de novo."
+      : `O serviço de notificações recusou o teste (código ${r.status}). Avise a Osmo.`);
+    if (r.gone) { await sub.unsubscribe().catch(() => {}); refreshPushBox(); }
   } catch (e) { toast(e.message); }
 }
 // tocar numa notificação com o site já aberto: o sw.js manda o endereço e a própria aba vai até lá

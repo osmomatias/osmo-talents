@@ -1840,11 +1840,16 @@ async function sendPushNotice(p, msgs, subs) {
 }
 // Entrega para cada aparelho. O correio respondeu 404/410? A inscrição morreu (notificações
 // desligadas, app desinstalado): apagamos a linha para não tentar de novo. Deu certo? Anotamos a data.
+// Cada envio deixa uma linha no registro do servidor (journalctl): o código do correio, qual correio
+// (Apple, Google...) e o número da inscrição. Nada de conteúdo, nome ou endereço completo.
+// Devolve os códigos, para o botão "Enviar um teste" contar à pessoa o que aconteceu.
 async function pushTo(subs, data) {
-  await Promise.all(subs.map(async s => {
-    const status = await push.send(s, data).catch(e => { console.error(new Date().toISOString(), "push", e.message); return 0; });
+  return Promise.all(subs.map(async s => {
+    const status = await push.send(s, data).catch(e => { console.error(new Date().toISOString(), "push falhou", e.message); return 0; });
+    console.log(new Date().toISOString(), "push", status, new URL(s.endpoint).hostname, "inscrição", s.id);
     if (status === 404 || status === 410) run("DELETE FROM push_subscriptions WHERE id = ?", s.id);
     else if (status >= 200 && status < 300) run("UPDATE push_subscriptions SET last_ok_at = datetime('now') WHERE id = ?", s.id);
+    return status;
   }));
 }
 if (mail.ENABLED || push.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
@@ -1889,8 +1894,9 @@ route("POST", "/api/push/test", async ({ user, body }) => {
   const s = one("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND endpoint = ?", user.id, str(body.endpoint, 1000));
   if (!s) fail(404, "Este aparelho não está inscrito. Ative as notificações de novo.");
   const T = (k, ...a) => i18n.T(user.lang, k, ...a);
-  await pushTo([s], { title: "Osmo Talents", body: T("As notificações estão funcionando neste aparelho."), url: "/perfil", tag: "teste" });
-  return { ok: !!one("SELECT 1 FROM push_subscriptions WHERE id = ?", s.id) };
+  const [status] = await pushTo([s], { title: "Osmo Talents", body: T("As notificações estão funcionando neste aparelho."), url: "/perfil", tag: "teste" });
+  // ok = o correio aceitou; gone = a inscrição morreu (precisa ativar de novo); status = o código, para diagnóstico
+  return { ok: status >= 200 && status < 300, gone: status === 404 || status === 410, status };
 });
 
 // O CAMINHO DO "ENTRAR COM GOOGLE" (a parte do servidor):

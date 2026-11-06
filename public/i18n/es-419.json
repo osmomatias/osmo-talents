@@ -1257,5 +1257,6 @@
  "As notificações estão funcionando neste aparelho.": "Las notificaciones funcionan en este dispositivo.",
  "As notificações ainda não estão ativas na plataforma.": "Las notificaciones todavía no están activas en la plataforma.",
  "Este navegador mandou uma inscrição que não reconhecemos.": "Este navegador envió una suscripción que no reconocemos.",
- "Este aparelho não está inscrito. Ative as notificações de novo.": "Este dispositivo no está suscrito. Activa las notificaciones de nuevo."
+ "Este aparelho não está inscrito. Ative as notificações de novo.": "Este dispositivo no está suscrito. Activa las notificaciones de nuevo.",
+ "O serviço de notificações recusou o teste (código {1}). Avise a Osmo.": "El servicio de notificaciones rechazó la prueba (código {1}). Avísale a Osmo."
 }
