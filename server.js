@@ -2114,6 +2114,7 @@ const top10Item = (x, i) => ({
   year: String(x.release_date || x.first_air_date || "").slice(0, 4),
   rating: Math.round((x.vote_average || 0) * 10) / 10,
   poster: x.poster_path ? `https://image.tmdb.org/t/p/w342${x.poster_path}` : "",
+  backdrop: x.backdrop_path ? `https://image.tmdb.org/t/p/w1280${x.backdrop_path}` : "", // imagem larga (fundo do app de TV em /tv/)
   overview: String(x.overview || "").slice(0, 280),
 });
 route("GET", "/api/top10", async ({ query }) => {
@@ -2160,6 +2161,7 @@ function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
   else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
+  else if (rel === "/tv" || rel === "/tv/") rel = "/tv/index.html"; // app de TV separado: só o Top 10 de filmes e séries
   else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");

@@ -1,0 +1,77 @@
+/* APP DE TV: as cores e a letra são as do sistema de design da Osmo (tema escuro de styles.css):
+   vinho, rosa, laranja do foco e dourado da nota. Tudo medido em vw/vh para caber em qualquer TV. */
+:root{
+  --brand:#7A0B3C; --brand-deep:#610930; --pink:#FF7597; --orange:#EA580C; --on-brand:#FFFFFF;
+  --bg:#170810; --surface:#22101A; --sunken:#12060C; --line:#3A1E2B;
+  --fg:#F6E9EE; --muted:#B99AA7; --accent:#FFB6C1; --sun:#E5B456;
+  --f:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
+  --r:16px; --pad:4.2vw; --card:10.4vw; --gap:1.6vw;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:var(--f)}
+body{display:flex; flex-direction:column}
+button{font:inherit; color:inherit}
+:focus{outline:none}
+
+/* FUNDO: a imagem larga do título com foco, com degradê para o texto ficar legível.
+   Duas camadas (A e B) para trocar de imagem com um "esmaecer" suave. */
+.bg{position:fixed; inset:0; z-index:0; background:var(--brand-deep) radial-gradient(ellipse at 70% 30%, transparent 0%, rgb(0 0 0 / .55) 100%)}
+.bg-img{position:absolute; inset:0 0 0 30%; background-size:cover; background-position:center top; opacity:0; transition:opacity .6s ease}
+.bg-img.on{opacity:1}
+.bg-shade{position:absolute; inset:0; background:
+  linear-gradient(90deg, var(--bg) 28%, rgb(23 8 16 / .82) 48%, rgb(23 8 16 / .25) 75%, transparent),
+  linear-gradient(0deg, var(--bg) 8%, rgb(23 8 16 / .7) 45%, transparent 75%)}
+
+/* TOPO: logo da Osmo e as duas abas */
+.bar{position:relative; z-index:2; display:flex; align-items:center; gap:3vw; padding:2.6vh var(--pad) 0}
+.brand{display:flex; align-items:center; gap:.8vw; color:var(--on-brand)}
+.brand svg{height:2.2vw; min-height:20px; width:auto; fill:currentColor}
+.brand .sub{font-weight:700; font-size:.95vw; letter-spacing:.18em; color:var(--pink); padding-left:.8vw; border-left:1px solid rgb(255 255 255 / .3)}
+.tabs{display:flex; gap:.3vw; background:rgb(255 255 255 / .12); box-shadow:inset 0 0 0 1px rgb(255 255 255 / .18); border-radius:999px; padding:.3vw}
+.tabs button{border:0; background:none; cursor:pointer; font-weight:700; font-size:1.15vw; padding:.6vw 1.5vw; border-radius:999px; color:rgb(255 255 255 / .8)}
+.tabs button[aria-pressed="true"]{background:#fff; color:var(--brand-deep)}
+.tabs button:focus-visible,.tabs button.focus{outline:.25vw solid var(--orange); outline-offset:.25vw; box-shadow:0 0 0 .7vw rgb(232 101 15 / .25)}
+
+main{position:relative; z-index:1; flex:1; display:flex; flex-direction:column; min-height:0}
+
+/* DESTAQUE: o título com foco, em letras grandes */
+.hero{padding:4vh var(--pad) 2vh; max-width:52vw; min-height:36vh; display:flex; flex-direction:column; justify-content:flex-end; gap:1vh}
+.eyebrow{font-size:1vw; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--pink)}
+.hero h1{margin:0; font-size:3.6vw; line-height:1.05; letter-spacing:-.01em; font-weight:700; text-wrap:balance;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.meta{margin:0; font-size:1.25vw; font-weight:600; color:var(--fg)}
+.meta .star{color:var(--sun)}
+.overview{margin:0; font-size:1.15vw; line-height:1.5; color:var(--muted); max-width:44vw;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden}
+
+/* FILEIRAS: "Top 10 Filmes" e "Top 10 Séries". A área rola sozinha para mostrar a fileira com foco. */
+.rows{flex:1; min-height:0; overflow:hidden; padding-bottom:6vh}
+.row{padding:1.4vh 0 2vh}
+.row h2{margin:0 0 .6vh; padding:0 var(--pad); font-size:1.5vw; font-weight:700}
+.track{list-style:none; margin:0; display:flex; gap:var(--gap); overflow-x:auto; scrollbar-width:none; padding:1.6vh var(--pad) 1.6vh calc(var(--pad) + 1vw)}
+.track::-webkit-scrollbar{display:none}
+.card{position:relative; flex:none; width:var(--card); padding-left:2.2vw; cursor:pointer}
+.rank{position:absolute; left:-.6vw; bottom:-1.2vw; z-index:1; font-weight:700; font-size:6.4vw; line-height:1; letter-spacing:-.06em;
+  color:var(--bg); -webkit-text-stroke:.16vw var(--pink); paint-order:stroke fill; pointer-events:none}
+.poster{aspect-ratio:2/3; border-radius:var(--r); overflow:hidden; background:var(--sunken); border:1px solid var(--line);
+  display:grid; place-items:center; transition:transform .18s ease, box-shadow .18s ease}
+.poster img{width:100%; height:100%; object-fit:cover; display:block}
+.poster svg{width:46%; fill:var(--muted); opacity:.5}
+.card.focus .poster{transform:scale(1.08); box-shadow:0 0 0 .25vw var(--orange), 0 0 0 .8vw rgb(232 101 15 / .25), 0 1.2vw 2.4vw rgb(0 0 0 / .5)}
+.card.focus .rank{color:var(--brand-deep)}
+
+.state{margin:2vh var(--pad); padding:2vw; max-width:46vw; border-radius:var(--r); background:var(--surface); border:1px solid var(--line); font-size:1.2vw; line-height:1.5}
+.state b{display:block; font-size:1.4vw; margin-bottom:.5vw}
+.credit{position:fixed; z-index:2; right:var(--pad); bottom:1.6vh; margin:0; font-size:.75vw; color:rgb(255 255 255 / .45); max-width:40vw; text-align:right}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+/* tela em pé (celular): mantém tudo usável, com letras um pouco maiores */
+@media (max-aspect-ratio: 1/1){
+  :root{--card:28vw; --pad:5vw}
+  .hero{max-width:none; min-height:30vh} .eyebrow{font-size:2.6vw} .hero h1{font-size:7vw} .meta{font-size:3.6vw} .overview{font-size:3.4vw; max-width:none}
+  .tabs button{font-size:3.4vw; padding:1.6vw 3vw} .brand svg{height:6vw} .brand .sub{font-size:2.6vw}
+  .row h2{font-size:4.2vw} .rank{font-size:16vw; bottom:-3vw} .card{padding-left:5vw} .credit{font-size:2.4vw; max-width:none; left:var(--pad)}
+  .state{max-width:none; font-size:3.6vw} .state b{font-size:4vw}
+  html,body{overflow:auto} .rows{overflow:visible}
+}

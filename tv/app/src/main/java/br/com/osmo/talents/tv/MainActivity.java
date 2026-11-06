@@ -104,11 +104,15 @@ public class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if (offline) { super.onBackPressed(); return; }
-        // Voltar do controle: se há um painel aberto ou tela anterior, o site cuida (mesmo código do modo TV);
-        // na primeira tela, sem nada aberto, sai do app
+        // Voltar do controle:
+        // - app de TV (/tv/, sem o #layer do site): a página decide; se ela "segurar" o Voltar
+        //   (preventDefault, ex.: subir das fileiras para as abas), fica; senão, sai do app;
+        // - site completo: se há um painel aberto ou tela anterior, o site cuida; senão, sai do app
         final boolean canGoBack = web.canGoBack();
         web.evaluateJavascript(
-                "(function(){var l=document.getElementById('layer');var open=!!(l&&l.children.length);"
+                "(function(){var l=document.getElementById('layer');"
+                        + "if(!l){var e=new KeyboardEvent('keydown',{key:'GoBack',bubbles:true,cancelable:true});document.dispatchEvent(e);return e.defaultPrevented}"
+                        + "var open=!!l.children.length;"
                         + "if(open||" + canGoBack + "){document.dispatchEvent(new KeyboardEvent('keydown',{key:'GoBack',bubbles:true,cancelable:true}));return true}"
                         + "return false})()",
                 handled -> { if (!"true".equals(handled)) finish(); });
