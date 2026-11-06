@@ -1,7 +1,7 @@
 // ============================================================================
 // EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
 // ============================================================================
-// É o botão "Entrar com Google" (ou GitHub, LinkedIn, Adobe). Em vez de criar uma senha
+// É o botão "Entrar com Google" (ou Microsoft, GitHub, LinkedIn, Adobe). Em vez de criar uma senha
 // nova, a pessoa pede ao Google: "diz para a Osmo que eu sou eu".
 // Funciona como pegar um bilhete na portaria:
 //   1. A Osmo manda a pessoa até a "portaria do Google", com um bilhete secreto (state);
@@ -10,7 +10,7 @@
 //   4. a Osmo troca esse código, direto com o Google, pelos dados da pessoa (nome, e-mail).
 // Os segredos extras (state, nonce, PKCE) servem para ninguém conseguir "pegar carona"
 // no meio do caminho e entrar na conta de outra pessoa.
-// Login com Google, LinkedIn, Adobe e GitHub (OAuth 2.0 / OpenID Connect, sem dependências)
+// Login com Google, Microsoft, LinkedIn, Adobe e GitHub (OAuth 2.0 / OpenID Connect, sem dependências)
 const crypto = require("node:crypto");
 
 // PUBLIC_URL é o endereço do site (ex.: https://osmo.com.br). O Google precisa saber para
@@ -41,6 +41,14 @@ const P = {
     userinfo: "https://ims-na1.adobelogin.com/ims/userinfo/v2", scope: "openid,AdobeID,email,profile",
     id: process.env.ADOBE_CLIENT_ID, secret: process.env.ADOBE_CLIENT_SECRET, pkce: true, nonce: true, basicAuth: true,
   },
+  // Microsoft: contas pessoais (Outlook, Hotmail, Xbox) e de trabalho/escola, pelo endpoint "common".
+  // O emissor muda conforme a organização (tid), por isso a conferência usa um molde.
+  microsoft: {
+    name: "Microsoft", issuer: [], issuerRe: /^https:\/\/login\.microsoftonline\.com\/[0-9a-f-]{36}\/v2\.0$/,
+    auth: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", token: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    userinfo: "https://graph.microsoft.com/oidc/userinfo", scope: "openid email profile",
+    id: process.env.MICROSOFT_CLIENT_ID, secret: process.env.MICROSOFT_CLIENT_SECRET, pkce: true, nonce: true, microsoft: true, extra: { prompt: "select_account" },
+  },
   github: {
     name: "GitHub", issuer: [],
     auth: "https://github.com/login/oauth/authorize", token: "https://github.com/login/oauth/access_token",
@@ -54,7 +62,7 @@ if (TEST_BASE) for (const [k, p] of Object.entries(P)) for (const f of ["auth", 
 // - list: a lista de botões que vão aparecer, nesta ordem;
 // - redirectUri: o endereço de volta (ex.: /auth/google/callback);
 // - b64u: um jeito de escrever bytes como texto que pode ir num endereço da internet.
-const ORDER = ["google", "linkedin", "adobe", "github"];
+const ORDER = ["google", "microsoft", "linkedin", "adobe", "github"];
 const enabled = k => { const p = P[k]; return !!(p && p.id && p.secret && PUBLIC_URL); };
 const list = () => ORDER.filter(enabled);
 const redirectUri = k => `${PUBLIC_URL}/auth/${k}/callback`;
@@ -128,7 +136,7 @@ async function finish(k, code, saved) {
     const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!aud.includes(p.id)) throw new Error("id_token para outro aplicativo");
     if (claims.exp && claims.exp * 1000 < Date.now() - 60000) throw new Error("id_token expirado");
-    if (!TEST_BASE && claims.iss && !p.issuer.includes(claims.iss)) throw new Error("emissor inesperado");
+    if (!TEST_BASE && claims.iss && !p.issuer.includes(claims.iss) && !(p.issuerRe && p.issuerRe.test(claims.iss))) throw new Error("emissor inesperado");
     if (saved.nonce && claims.nonce && claims.nonce !== saved.nonce) throw new Error("nonce não confere");
   }
   const r = await fetch(p.userinfo, { headers: { Authorization: `Bearer ${tok.access_token}`, Accept: "application/json" }, signal: AbortSignal.timeout(15000) });
@@ -137,7 +145,17 @@ async function finish(k, code, saved) {
   const name = src.name || [src.given_name, src.family_name].filter(Boolean).join(" ");
   const sub = String(src.sub || "");
   if (!sub) throw new Error("identificador ausente");
-  return { sub, email: String(src.email || "").toLowerCase(), emailVerified: src.email_verified === true || src.email_verified === "true", name: String(name).trim() };
+  let emailVerified = src.email_verified === true || src.email_verified === "true";
+  if (p.microsoft) {
+    // A Microsoft não manda email_verified. Só confiamos no e-mail de conta pessoal (a própria
+    // Microsoft confirma) ou quando ela garante que a organização é dona do domínio (xms_edov).
+    // Sem isso, alguém poderia pôr o e-mail de outra pessoa numa organização de teste e
+    // entrar na conta dela aqui (o golpe conhecido como "nOAuth").
+    const consumer = (claims && claims.tid) === "9188040d-6c67-4c5b-b112-36a304b66dad";
+    emailVerified = !!(claims && claims.email) && (consumer || claims.xms_edov === true || claims.xms_edov === "1" || claims.xms_edov === 1);
+    if (claims && claims.email) src.email = claims.email;
+  }
+  return { sub, email: String(src.email || "").toLowerCase(), emailVerified, name: String(name).trim() };
 }
 
 module.exports = { P, enabled, list, start, finish };

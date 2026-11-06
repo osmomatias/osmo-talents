@@ -110,7 +110,7 @@ O app mora em `app.osmo.com.br`. O `osmo.com.br` fica reservado para o site da a
 
 1. Na Cloudflare, no site osmo.com.br: **DNS → Records → Add record**. Tipo `A`, nome `app`, IPv4 `46.202.147.229`, nuvem laranja ligada (Proxied). Salve.
 2. No terminal do editor: `bash publicar.sh`. O instalador confere se o `app.` já existe no DNS e se o certificado de origem cobre `*.osmo.com.br`; só então liga o redirecionamento e troca o `PUBLIC_URL` do `.env` do servidor para `https://app.osmo.com.br`. Se faltar algo, o app continua em `osmo.com.br` e aparece um aviso.
-3. Login social: se aparecer o aviso, cadastre o novo endereço de retorno (`https://app.osmo.com.br/auth/<provedor>/callback`) no painel do Google, LinkedIn, Adobe ou GitHub.
+3. Login social: se aparecer o aviso, cadastre o novo endereço de retorno (`https://app.osmo.com.br/auth/<provedor>/callback`) no painel do Google, Microsoft, LinkedIn, Adobe ou GitHub.
 4. Asaas: o aviso continua chegando em `osmo.com.br/api/webhooks/asaas`. Se quiser, troque no painel do Asaas para `https://app.osmo.com.br/api/webhooks/asaas`.
 
 Quem estava logado em `osmo.com.br` precisa entrar de novo uma vez, porque o login fica guardado por endereço.
@@ -153,12 +153,12 @@ Pontos a confirmar com o Asaas antes de ir para produção: se valores de split 
 
 ---
 
-## Login com Google, LinkedIn, Adobe e GitHub
+## Login com Google, Microsoft, LinkedIn, Adobe e GitHub
 
 Cada botão só aparece no site depois que o provedor é configurado. Para cada um:
 
 1. Crie o aplicativo no painel do provedor (links abaixo).
-2. Cadastre o endereço de retorno: `https://osmo.com.br/auth/<provedor>/callback` (troque `<provedor>` por google, linkedin, adobe ou github).
+2. Cadastre o endereço de retorno: `https://app.osmo.com.br/auth/<provedor>/callback` (troque `<provedor>` por google, microsoft, linkedin, adobe ou github).
 3. No terminal do editor: `bash configurar-login-social.sh`, escolha o provedor e cole as chaves.
 
 | Provedor | Onde criar | O que você recebe |
@@ -166,7 +166,8 @@ Cada botão só aparece no site depois que o provedor é configurado. Para cada 
 | Google | console.cloud.google.com → APIs e serviços → Credenciais → ID do cliente OAuth (Aplicativo da Web) | Client ID e Client Secret |
 | LinkedIn | linkedin.com/developers → Create app → produto "Sign In with LinkedIn using OpenID Connect" | Client ID e Client Secret |
 | GitHub | github.com → Settings → Developer settings → OAuth Apps → New OAuth App (em "Authorization callback URL" use o endereço de retorno) | Client ID e Client Secret |
-| Adobe | developer.adobe.com/console → projeto → OAuth Web App | Client ID e Client Secret |
+| Microsoft | portal.azure.com → Microsoft Entra ID → Registros de aplicativo → Novo registro ("Contas em qualquer diretório organizacional e contas pessoais Microsoft"; plataforma Web com o endereço de retorno). Depois: Certificados e segredos → Novo segredo do cliente | ID do aplicativo (cliente) e o Valor do segredo |
+| Adobe | developer.adobe.com/console → projeto → OAuth Web App ("Default redirect URI" e "Redirect URI pattern" com o endereço de retorno) | Client ID e Client Secret |
 
 Como funciona:
 
@@ -252,7 +253,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
 - `src/mail.js`: o carteiro que manda e-mails.
 - `src/push.js`: o carteiro das notificações no celular e no computador (Web Push).
-- `src/oauth.js`: o "Entrar com Google/GitHub/LinkedIn/Adobe".
+- `src/oauth.js`: o "Entrar com Google/Microsoft/GitHub/LinkedIn/Adobe".
 - `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
 
 **O site (o garçom, roda no navegador)**

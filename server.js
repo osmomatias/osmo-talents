@@ -1919,7 +1919,7 @@ function createOAuthUser(r, role) {
 function redirect(res, to) { res.writeHead(302, { ...SECURITY_HEADERS, Location: to, "Cache-Control": "no-store" }); res.end(); }
 const stateCookie = (v, age) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
 async function handleAuth(req, res, url, ip) {
-  const m = url.pathname.match(/^\/auth\/(google|linkedin|adobe|github)(\/callback)?$/);
+  const m = url.pathname.match(/^\/auth\/(google|microsoft|linkedin|adobe|github)(\/callback)?$/);
   const fail2 = code => redirect(res, `/entrar?oauth_error=${code}`);
   if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   const k = m[1];

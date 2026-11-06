@@ -3,23 +3,25 @@
 # Você escolhe o serviço, ele mostra o endereço de volta que precisa ser cadastrado no
 # painel desse serviço e pede o "Client ID" e o "Client Secret" (a identificação da Osmo lá).
 # Esses dados vão direto para o .env do servidor, e o app é reiniciado.
-# Liga o login com Google, LinkedIn, Adobe ou GitHub no servidor.
+# Liga o login com Google, Microsoft, LinkedIn, Adobe ou GitHub no servidor.
 # Uso, no terminal do editor:  bash configurar-login-social.sh
 # As chaves são digitadas aqui no seu Mac e vão direto para o servidor.
 set -e
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
+# o app mora em app.osmo.com.br: é para lá que os provedores devolvem a pessoa
+APP_HOST="${APP_HOST:-app.$DOMAIN}"
 echo ""
 echo "Login social"
 echo "------------"
-echo "1) Google   2) LinkedIn   3) Adobe   4) GitHub"
+echo "1) Google   2) LinkedIn   3) Adobe   4) GitHub   5) Microsoft"
 read -r -p "Qual você quer ligar? " OP
-case "$OP" in 1) P=google; N=GOOGLE;; 2) P=linkedin; N=LINKEDIN;; 3) P=adobe; N=ADOBE;; 4) P=github; N=GITHUB;; *) echo "Opção inválida."; exit 1;; esac
+case "$OP" in 1) P=google; N=GOOGLE;; 2) P=linkedin; N=LINKEDIN;; 3) P=adobe; N=ADOBE;; 4) P=github; N=GITHUB;; 5) P=microsoft; N=MICROSOFT;; *) echo "Opção inválida."; exit 1;; esac
 echo ""
 echo "No painel do provedor, o endereço de retorno (redirect URI) deve ser:"
-echo "   https://$DOMAIN/auth/$P/callback"
+echo "   https://$APP_HOST/auth/$P/callback"
 echo ""
-LINES="PUBLIC_URL=https://$DOMAIN"
+LINES="PUBLIC_URL=https://$APP_HOST"
 read -r -p "Client ID: " CID
 read -r -s -p "Client Secret (não aparece na tela): " SEC; echo ""
 [ -n "$CID" ] && [ -n "$SEC" ] || { echo "Faltou o Client ID ou o Secret. Nada foi alterado."; exit 1; }
@@ -40,4 +42,4 @@ mv \$ENV.tmp \$ENV && chmod 640 \$ENV && chgrp osmo \$ENV
 systemctl restart osmo-talents
 REMOTE
 echo ""
-echo "Pronto. Abra https://$DOMAIN/#entrar: o botão de $P deve aparecer."
+echo "Pronto. Abra https://$APP_HOST/entrar: o botão de $P deve aparecer."
