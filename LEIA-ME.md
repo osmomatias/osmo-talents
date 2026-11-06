@@ -305,9 +305,22 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - Painel com valores recebidos e protegidos
 - Ajustes de conforto, menu de celular e modo escuro
 
+## Versão 3.1 (MVP): recursos escondidos
+
+Para o MVP focar no caminho vaga → proposta → contrato → entrega → pagamento, quatro recursos saíram da tela. Nada foi apagado: o código, as rotas do servidor e os dados continuam no lugar. Quem abrir um link antigo de tarefas vai para o Painel, e quem abrir um link de squads vai para o início.
+
+| Recurso | Para trazer de volta |
+| --- | --- |
+| Projetos e tarefas (Minhas tarefas, Projetos, botão "Tarefas" no Painel e no admin) | `tarefas: true` no `RECURSOS`, no começo do `public/app.js` |
+| Squads | `squads: true` no `RECURSOS` |
+| Relógio Pomodoro | `pomodoro: true` no `RECURSOS` |
+| Inglês, espanhol e francês (site e e-mails) | `ATIVO = true` no `public/i18n.js` e no `src/i18n.js` |
+
+Continuam no ar: vidro líquido com o botão de ligar e desligar, animação do botão de trocar de papel, login com Adobe e Microsoft (aparecem quando as credenciais forem configuradas) e o selo de verificado.
+
 ## Ainda não faz (próximas versões)
 
-- Nada pendente por enquanto.
+As ideias que ficaram de fora estão no relatório [Osmo Talents: ideias fora do MVP](https://claude.ai/artifact/L1j3JQbAVhCqUs9fysZzhc).
 
 ---
 

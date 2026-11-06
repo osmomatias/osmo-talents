@@ -20,6 +20,19 @@
 //   pessoa. TODO texto que vem de gente passa pelo esc;
 // - brl: escreve dinheiro do jeito brasileiro (R$ 1.500);
 // - words: conta palavras; isMobile: a tela é de celular (até 700 px)?
+/* ---------- recursos ligados nesta versão ---------- */
+// VERSÃO 3.1 (MVP): alguns recursos ficam ESCONDIDOS para o app focar no caminho principal
+// (vaga → proposta → contrato → entrega → pagamento). Nada foi apagado: o código, as rotas do
+// servidor e os dados continuam lá. Para trazer um recurso de volta, troque false por true
+// (os idiomas têm o interruptor deles no i18n.js, que carrega antes deste arquivo).
+// - tarefas: projetos e tarefas no estilo Asana (Minhas tarefas, Projetos, botão "Tarefas" no Painel)
+// - squads: os círculos para montar equipes
+// - pomodoro: o relógio de foco nos Ajustes
+const RECURSOS = { tarefas: false, squads: false, pomodoro: false, idiomas: !!(window.I18N && window.I18N.ativo) };
+// telas de cada recurso escondido e para onde a pessoa vai se abrir um link antigo
+const TELAS_ESCONDIDAS = { tarefas: ["tarefas", "projetos", "projeto", "contrato"], squads: ["squads"] };
+const DESTINO_ESCONDIDO = { tarefas: "painel", squads: "inicio" };
+const recursoDaTela = name => Object.keys(TELAS_ESCONDIDAS).find(k => !RECURSOS[k] && TELAS_ESCONDIDAS[k].includes(name));
 /* ---------- utilidades ---------- */
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -333,7 +346,7 @@ function renderChrome() {
     ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])}</p>${roleSwitch()}` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
-      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + item("tarefas", "Tarefas") + item("squads", "Squads") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
+      ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + (RECURSOS.tarefas ? item("tarefas", "Tarefas") : "") + (RECURSOS.squads ? item("squads", "Squads") : "") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
     </ul>
     <div class="mm-foot">
       ${!ME || ME.role === "cliente" ? `<button class="btn hl" data-go="publicar">Publicar vaga</button>` : ""}
@@ -433,6 +446,8 @@ async function route() {
   const seq = ++renderSeq;
   const h = curH();
   const [name, idStr] = h.split("-"); const id = Number(idStr) || null;
+  const off = recursoDaTela(name); // link antigo para um recurso escondido nesta versão
+  if (off) { history.replaceState(null, "", hToPath(DESTINO_ESCONDIDO[off])); return route(); }
   const fn = V[name] || V.inicio;
   markNav();
   // trocou de tela e a resposta demorou: mostra blocos no formato do conteúdo
@@ -1247,7 +1262,7 @@ V.painel = async () => {
   const [cs, extra] = await Promise.all([api("GET", "/api/contracts"), isF ? api("GET", "/api/me/proposals") : api("GET", "/api/me/jobs")]);
   const st = cs.stats;
   const contracts = cs.contracts.length ? cs.contracts.map(c => `<div class="panel">
-    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px"><a class="btn sm" href="${url("contrato-" + (c.id))}">Tarefas</a>${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
+    <div class="row" style="justify-content:space-between; margin-bottom:6px"><h3>${esc(c.job_title)}</h3><span class="row" style="gap:8px">${RECURSOS.tarefas ? `<a class="btn sm" href="${url("contrato-" + (c.id))}">Tarefas</a>` : ""}${c.status === "concluido" ? `<span class="status off">Concluído</span>` : `<span class="status ok">Ativo</span>`}</span></div>
     <p class="muted" style="margin-bottom:8px">${isF ? "Cliente: " + esc(c.client_name) : "Freelancer: " + esc(c.freela_name)} · <span class="mono">${brl(c.value)}</span> no total · <a href="${url("mensagens-" + (c.thread))}">Abrir conversa</a></p>
     ${c.milestones.map(m => `<div class="ms"><span class="st ${MSTATUS[m.status][2]}"></span><div><b>${esc(m.title)}</b><p class="hint">${MSTATUS[m.status][0]}${PAY.enabled ? " · " + pill(PAYST, m.pay_status) : ""}</p><div class="row" style="margin-top:6px" id="msa-${m.id}">${msActions(c, m)}</div>${msFiles(c, m)}</div><span class="mono">${brl(m.value)}</span></div>`).join("")}
     ${c.status === "concluido" ? reviewBox(c) : ""}
@@ -1301,7 +1316,7 @@ const admList = (title, items, row, empty) => `<div class="panel stack" style="g
 // ÁREA DO ADMIN: a mesma barra no topo de todas as telas do dono, para pular entre elas
 // (Visão geral = /admin, Dados = /admin/dados, Registro = o que o dono mudou, Projetos internos).
 function admNav(active) {
-  const tabs = [["panorama", "Visão geral"], ["gestao", "Dados"], ["log", "Registro"], ["projetos", "Projetos"]];
+  const tabs = [["panorama", "Visão geral"], ["gestao", "Dados"], ["log", "Registro"], ...(RECURSOS.tarefas ? [["projetos", "Projetos"]] : [])];
   return `<div class="adm-head stack" style="gap:10px"><span class="label">Área do admin · só para a Osmo</span>
   <nav class="seg adm-tabs adm-nav" aria-label="Área do admin">${tabs.map(([k, l]) => `<button type="button" data-adm-nav="${k}" ${k === active ? 'aria-current="page"' : ""}>${l}</button>`).join("")}</nav>
   ${admModeSwitch()}</div>`;
@@ -1373,7 +1388,7 @@ V.panorama = async () => {
     ${kpi("Contratos ativos", num(m.contracts.ativo || 0), `${num(m.contracts.concluido || 0)} concluídos`)}
     ${kpi("Valor contratado", brl(m.contracted), "soma de todos os contratos")}
     ${kpi(d.config.payments ? "Liberado aos freelas" : "Aprovado (simulado)", brl(m.released), `receita Osmo ${brl(m.feeEarned)}`)}
-    ${kpi("Tarefas em aberto", num(d.tasks.open), `${num(d.tasks.late)} atrasadas · ${num(d.tasks.done)} concluídas · ${num(d.tasks.projects)} projetos`)}
+    ${RECURSOS.tarefas ? kpi("Tarefas em aberto", num(d.tasks.open), `${num(d.tasks.late)} atrasadas · ${num(d.tasks.done)} concluídas · ${num(d.tasks.projects)} projetos`) : ""}
     ${kpi("Protegido / a pagar", `${brl(m.held)}`, d.config.payments ? `${brl(m.toPay)} ainda a pagar` : "etapas ainda não aprovadas")}
   </div>
 
@@ -2744,6 +2759,7 @@ document.addEventListener("pointerover", e => { if (e.target.closest && e.target
 document.addEventListener("focusin", e => { if (e.target.closest && e.target.closest("#pomo")) pomoWake(); });
 addEventListener("resize", () => { if (POMO.on) pomoPlace(); });
 // se a página recarregar com o relógio ligado, ele volta como estava (e, se o tempo acabou enquanto isso, avisa)
+if (!RECURSOS.pomodoro) { POMO.on = false; POMO.running = false; }
 if (POMO.on) { if (POMO.running && POMO.endsAt <= Date.now()) { POMO.running = false; POMO.left = 0; pomoDone(); } else pomoRender(); }
 
 // CADA TELA DO SEU JEITO: o theme.js já descobriu se é celular, tablet, computador ou TV (data-device no <html>).
@@ -2878,9 +2894,9 @@ function openA11y() {
     <div class="sheet-grip" aria-hidden="true"></div>
     <div class="row" style="justify-content:space-between"><h2>Ajustes</h2><button class="btn sm ghost" id="a11yClose">Fechar</button></div>
     <p class="muted">Deixe a plataforma do seu jeito. Fica salvo neste navegador.</p>
-    <section class="adj-group" aria-labelledby="adjLang"><h3 class="label" id="adjLang">Idioma</h3>
+    ${RECURSOS.idiomas ? `<section class="adj-group" aria-labelledby="adjLang"><h3 class="label" id="adjLang">Idioma</h3>
       <div class="field"><label class="lang-pill"><span class="sr-only">Idioma</span><span class="lang-flag" aria-hidden="true">${LANG_FLAGS[TR.lang] || ""}</span><select id="langSel" data-lang-set translate="no">${TR.langs.map(([c, n]) => `<option value="${c}" ${c === TR.lang ? "selected" : ""}>${n}</option>`).join("")}</select><svg class="lang-caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z"/></svg></label>
-      <span class="hint">Escolha o idioma da plataforma. Fica salvo neste navegador.</span></div></section>
+      <span class="hint">Escolha o idioma da plataforma. Fica salvo neste navegador.</span></div></section>` : ""}
     <section class="adj-group" aria-labelledby="adjLook"><h3 class="label" id="adjLook">Aparência</h3>
       ${themeHTML()}
       ${sw("glass", "Vidro líquido", "Painéis translúcidos com fundo desfocado. Desligue para cores sólidas e mais contraste")}</section>
@@ -2890,7 +2906,7 @@ function openA11y() {
     <section class="adj-group" aria-labelledby="adjFocus"><h3 class="label" id="adjFocus">Foco e movimento</h3>
       ${sw("focus", "Modo foco", "Esconde painéis laterais e informações extras")}
       ${sw("calm", "Sem animações", "Remove transições e movimentos")}
-      <div class="toggle"><span><b>Relógio Pomodoro</b><br><span class="hint">Blocos de foco e pausa, numa bolinha que fica no canto da tela</span></span><button class="btn sm" data-pomo-open="1">🍅 Abrir</button></div></section>
+      ${RECURSOS.pomodoro ? `<div class="toggle"><span><b>Relógio Pomodoro</b><br><span class="hint">Blocos de foco e pausa, numa bolinha que fica no canto da tela</span></span><button class="btn sm" data-pomo-open="1">🍅 Abrir</button></div>` : ""}</section>
     <section class="adj-group" aria-labelledby="adjApp"><h3 class="label" id="adjApp">App</h3><div id="adjInstall">${installHTML()}</div></section>
     ${ga ? `<section class="adj-group" aria-labelledby="adjPriv"><h3 class="label" id="adjPriv">Privacidade</h3>${ga}</section>` : ""}
   </div>`;
@@ -2907,6 +2923,7 @@ const LANG_FLAGS = {
 };
 // IDIOMA: qualquer seletor com data-lang-set (Ajustes e rodapé) troca o idioma e recarrega a página
 document.addEventListener("change", e => { if (e.target.matches && e.target.matches("[data-lang-set]")) TR.set(e.target.value); });
+$$("[data-recurso]").forEach(el => { el.hidden = !RECURSOS[el.dataset.recurso]; });
 $$("[data-lang-set]").forEach(s => { s.value = TR.lang; });
 $$(".lang-flag").forEach(f => { f.innerHTML = LANG_FLAGS[TR.lang] || ""; });
 function closeA11y() { $("#layer").innerHTML = ""; const b = $("#a11yBtn"); (b && b.offsetParent ? b : $("#menuBtn")).focus(); }

@@ -17,7 +17,7 @@
 // e das que estão abaixo dela.
 // Trocar VERSION apaga as cópias antigas de todo mundo na próxima visita.
 
-const VERSION = "osmo-v5"; // v5: notificações no aparelho (v4: volta ao visual sem o vidro líquido 2 v3: vidro líquido 2, v2: idiomas)
+const VERSION = "osmo-v6"; // v6: versão 3.1 do MVP, com recursos escondidos (v5: notificações no aparelho, v4: volta ao visual sem o vidro líquido 2, v3: vidro líquido 2, v2: idiomas)
 const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png", "/i18n-core.js", "/i18n.js"];
 // endereços que nunca passam pelo cache: dados de conta, sessão e arquivos enviados pelas pessoas
 const PRIVATE = /^\/(api|auth|arquivo|avatar|portfolio)\//;

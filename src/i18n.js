@@ -15,8 +15,11 @@ const core = require("../public/i18n-core.js");
 const DIR = path.join(__dirname, "..", "public", "i18n");
 const LANGS = core.LANGS.map(l => l[0]);
 const cache = {}; // idioma -> { mtime, C }
+// VERSÃO 3.1 (MVP): outros idiomas escondidos, então os e-mails saem sempre em português,
+// mesmo para quem tinha escolhido outro idioma antes. Volta junto com o ATIVO do public/i18n.js.
+const ATIVO = false;
 function dict(lang) {
-  if (lang === "pt-BR" || !LANGS.includes(lang)) return null;
+  if (!ATIVO || lang === "pt-BR" || !LANGS.includes(lang)) return null;
   const file = path.join(DIR, lang + ".json");
   try {
     const m = fs.statSync(file).mtimeMs;

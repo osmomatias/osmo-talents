@@ -58,8 +58,8 @@
       <button data-go="talentos"><span class="nav-long">Encontrar talentos</span><span class="nav-short">Talentos</span></button>
       <button data-go="mensagens">Mensagens<span class="badge" data-unread hidden></span></button>
       <button data-go="painel">Painel</button>
-      <button data-go="tarefas">Tarefas</button>
-      <button data-go="squads">Squads</button>
+      <button data-go="tarefas" data-recurso="tarefas" hidden>Tarefas</button>
+      <button data-go="squads" data-recurso="squads" hidden>Squads</button>
     </nav>
     <div class="top-actions" id="topActions"></div>
   </div>
@@ -72,7 +72,7 @@
   <span>Osmo Talents · uma iniciativa <a href="https://osmo.com.br" style="color:inherit">Osmo</a> · <a href="/privacidade" style="color:inherit">Privacidade</a> · <a href="/termos" style="color:inherit">Termos</a></span>
   <span class="row" style="gap:14px"><span id="payNote">Pagamentos ainda simulados durante o período de testes.</span>
   <!-- seletor de idioma: os nomes ficam sempre no próprio idioma (translate="no") -->
-  <label class="lang-pill"><span class="sr-only">Idioma</span><span class="lang-flag" aria-hidden="true"></span><select data-lang-set translate="no">
+  <label class="lang-pill" data-recurso="idiomas" hidden><span class="sr-only">Idioma</span><span class="lang-flag" aria-hidden="true"></span><select data-lang-set translate="no">
     <option value="pt-BR">Português (Brasil)</option><option value="en-US">English (US)</option><option value="es-419">Español (Latinoamérica)</option><option value="fr-CA">Français (Canada)</option>
   </select><svg class="lang-caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z"/></svg></label></span>
 </div></footer>

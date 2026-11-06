@@ -17,11 +17,16 @@
   "use strict";
   var core = window.OsmoI18nCore;
   var KEY = "osmo-lang";
+  // VERSÃO 3.1 (MVP): os outros idiomas ficam escondidos e o site fica só em português.
+  // Os dicionários continuam em public/i18n/. Para trazer de volta, troque false por true:
+  // o seletor volta ao rodapé e aos Ajustes, e ?lang=en-US volta a funcionar.
+  var ATIVO = false;
   var SUPPORTED = core.LANGS.map(function (l) { return l[0]; });
   var html = document.documentElement;
 
   function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function detect() {
+    if (!ATIVO) return "pt-BR";
     var q = (location.search.match(/[?&]lang=([\w-]+)/) || [])[1];
     var fromUrl = q && core.pick([q]);
     if (fromUrl) { try { localStorage.setItem(KEY, fromUrl); } catch (e) {} return fromUrl; }
@@ -130,7 +135,8 @@
   window.I18N = {
     lang: lang,
     locale: locale,
-    langs: core.LANGS,
+    ativo: ATIVO,
+    langs: ATIVO ? core.LANGS : core.LANGS.filter(function (l) { return l[0] === "pt-BR"; }),
     ready: ready,
     // T("Olá, {1}!", nome): para textos que não passam pela tela (prompt, título da aba...)
     t: function (key) { return core.format(C, key, Array.prototype.slice.call(arguments, 1)); },
@@ -139,7 +145,7 @@
     // processa já o que entrou na página (útil logo antes de ler um texto da tela)
     flush: function () { if (C) handle(obs.takeRecords()); },
     set: function (l) {
-      if (SUPPORTED.indexOf(l) < 0) return;
+      if (!ATIVO || SUPPORTED.indexOf(l) < 0) return;
       try { localStorage.setItem(KEY, l); } catch (e) {}
       var u = new URL(location.href); u.searchParams.delete("lang");
       location.replace(u.pathname + u.search + u.hash);
