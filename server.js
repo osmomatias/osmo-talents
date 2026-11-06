@@ -1926,6 +1926,10 @@ async function handleAuth(req, res, url, ip) {
   if (!oauth.enabled(k)) return fail2("indisponivel");
   if (!m[2]) {
     if (req.method !== "GET") return send(res, 405, "Método não permitido");
+    // começou por outro endereço (ex.: osmo.com.br, ícone antigo)? Vai antes para o endereço do app:
+    // o bilhete (cookie) precisa ficar no mesmo endereço para onde o Google/GitHub vão devolver a pessoa
+    const pub = new URL(PUBLIC_URL);
+    if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
     try { limit("oauth:" + ip, 30, 600_000); } catch { return fail2("tentativas"); }
     const role = ["freela", "cliente"].includes(url.searchParams.get("role")) ? url.searchParams.get("role") : "";
     const s = oauth.start(k);
