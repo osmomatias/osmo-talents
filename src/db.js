@@ -412,6 +412,13 @@ for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfo
   db.prepare("UPDATE profiles SET portfolio = '[]' WHERE user_id = ?").run(p.user_id);
 }
 
+// Conversas de SUPORTE: o admin da Osmo e um cliente (contratante) trocam mensagens pelo mesmo
+// sistema de conversas. kind = '' é a conversa normal (cliente e freela); 'suporte' é com a Osmo.
+// Nelas, client_id é o cliente e freela_id guarda a conta do admin.
+// --- migrações (conversas de suporte)
+addColumn("threads", "kind", "TEXT NOT NULL DEFAULT ''");
+db.exec("CREATE INDEX IF NOT EXISTS idx_threads_kind ON threads(kind, client_id)");
+
 // As quatro ferramentas que o resto do programa usa para falar com o caderno:
 // - one(pergunta): devolve UMA linha (ex.: "me dá a pessoa com id 5");
 // - all(pergunta): devolve TODAS as linhas que combinam (ex.: "todas as vagas abertas");

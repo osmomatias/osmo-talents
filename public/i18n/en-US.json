@@ -1462,5 +1462,16 @@
  "Logotipo Identidade visual": "Logo\nVisual identity",
  "Ex.: 15": "E.g.: 15",
  "Ex.: Primeiras propostas de logotipo": "E.g.: First logo concepts",
- "De 1 a 5": "From 1 to 5"
+ "De 1 a 5": "From 1 to 5",
+ "Falar com a Osmo": "Talk to Osmo",
+ "Suporte Osmo": "Osmo Support",
+ "Suporte Osmo · cada mensagem também chega por e-mail": "Osmo Support · every message also arrives by email",
+ "Equipe Osmo": "Osmo Team",
+ "Nova mensagem da Equipe Osmo": "New message from the Osmo Team",
+ "{1} mandou mensagem ao suporte": "{1} sent a message to support",
+ "Para responder, abra a conversa (responder este e-mail não chega até nós):": "To reply, open the conversation (replying to this email won't reach us):",
+ "Cópia de uma mensagem do suporte.": "Copy of a support message.",
+ "O suporte ainda não está disponível. Tente de novo mais tarde.": "Support isn't available yet. Try again later.",
+ "O canal com a Osmo é para quem contrata.": "The Osmo channel is for clients who hire.",
+ "Conversas com o suporte não têm resumo do combinado.": "Support conversations don't have an agreement summary."
 }

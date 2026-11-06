@@ -1155,11 +1155,14 @@ let TH = null;
 V.mensagens = async id => {
   if (needLogin()) return;
   const { threads } = await api("GET", "/api/threads");
-  if (!threads.length) return `<h2 style="margin-bottom:18px">Mensagens</h2>` + emptyBox("Nenhuma conversa ainda.", "As conversas começam quando alguém envia uma proposta, um convite ou uma mensagem direta.", "vagas", "Ver vagas");
+  // contratante (cliente) tem um canal direto com a Osmo; o admin abre as conversas pela área do admin
+  const canSupport = ME.role === "cliente" && !ME.isAdmin;
+  const head = `<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:18px"><h2>Mensagens</h2>${canSupport ? `<button class="btn sm" data-act="support">Falar com a Osmo</button>` : ""}</div>`;
+  if (!threads.length) return head + emptyBox("Nenhuma conversa ainda.", "As conversas começam quando alguém envia uma proposta, um convite ou uma mensagem direta.", "vagas", "Ver vagas");
   const openId = id || (isMobile() ? null : threads[0].id);
   TH = openId ? await api("GET", "/api/threads/" + openId) : null;
   if (openId) { const t = threads.find(x => x.id === openId); if (t) t.unread = 0; refreshMe(); }
-  return `<h2 style="margin-bottom:18px">Mensagens</h2>
+  return `${head}
 <div class="msgs ${openId ? "show-convo" : ""}">
   <div class="threads" role="list">${threads.map(t => `<button class="thread" role="listitem" data-go="mensagens-${t.id}" aria-current="${t.id === openId}">${av(t.with, t.withId, "sm", t.withAvatar)}<div class="tx"><b>${esc(t.with)}${vbadge(t.withVerified)}${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</b><p>${esc(t.job)}</p><p>${esc(t.last)}</p></div></button>`).join("")}</div>
   <div class="convo">${TH ? convoHTML() : ""}</div>
@@ -1173,13 +1176,13 @@ function bubbles() {
 function convoHTML() {
   const t = TH.thread;
   return `<div class="convo-head"><button class="back only-m" data-go="mensagens" style="margin:0">← Conversas</button>
-      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}${vbadge(t.with.role === "freela" && t.with.verified)}</b><p class="hint">${t.job ? `<a href="${url("vaga-" + (t.job.id))}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
+      <div style="flex:1; min-width:0"><b>${esc(t.with.name)}${vbadge(t.with.role === "freela" && t.with.verified)}</b><p class="hint">${t.support ? "Suporte Osmo · cada mensagem também chega por e-mail" : t.job ? `<a href="${url("vaga-" + (t.job.id))}">${esc(t.job.title)}</a>` : "Conversa direta"}</p></div>
       ${t.with.how && t.with.how.resp ? `<span class="chip accent">${esc(t.with.how.resp)}</span>` : ""}</div>
-    <div class="pin" id="pinBox"><b>Combinado até agora:</b> <span id="pinText">${esc(t.pin) || "Nada registrado ainda."}</span> <button class="btn sm ghost" data-act="pin-edit" style="padding:2px 8px">Editar</button></div>
+    ${t.support ? "" : `<div class="pin" id="pinBox"><b>Combinado até agora:</b> <span id="pinText">${esc(t.pin) || "Nada registrado ainda."}</span> <button class="btn sm ghost" data-act="pin-edit" style="padding:2px 8px">Editar</button></div>`}
     <div class="bubbles" id="bubbles" aria-live="polite">${bubbles()}</div>
     <form class="compose" id="compose">
       <button type="button" class="btn sm newmsg" id="newMsg" hidden></button>
-      <div class="quick">${["Recebi, vou olhar até amanhã.", "Pode me mandar por escrito?", "Preciso de mais 1 dia.", "Entrega enviada, aguardo retorno."].map(q => `<button type="button" data-quick="${esc(q)}">${q}</button>`).join("")}</div>
+      ${t.support ? "" : `<div class="quick">${["Recebi, vou olhar até amanhã.", "Pode me mandar por escrito?", "Preciso de mais 1 dia.", "Entrega enviada, aguardo retorno."].map(q => `<button type="button" data-quick="${esc(q)}">${q}</button>`).join("")}</div>`}
       <div class="row"><label class="btn attach-btn" for="msgFile" title="Anexar arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg><span class="sr-only">Anexar arquivo</span></label><input type="file" id="msgFile" multiple accept="${FILE_ACCEPT}" class="sr-only">
         <input class="input" id="msgIn" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"><button class="btn primary" type="submit">Enviar</button></div>
     </form>`;
@@ -1481,7 +1484,7 @@ function gestaoTable() {
   const e = admEnt();
   return `<div class="panel adm-table"><table><thead><tr><th>#</th>${e.cols.map(([, l]) => `<th>${esc(l)}</th>`).join("")}<th><span class="sr-only">Ações</span></th></tr></thead><tbody>
     ${ADM.rows.length ? ADM.rows.map(r => `<tr><td class="mono">${r.id}</td>${e.cols.map(([k]) => `<td>${admCell(e, k, r[k])}</td>`).join("")}
-      <td class="adm-actions"><button class="btn sm" data-adm-edit="${r.id}">Editar</button><button class="btn sm ghost" data-adm-del="${r.id}">Apagar</button></td></tr>`).join("")
+      <td class="adm-actions">${e.k === "users" && r.role === "cliente" && r.id !== ME.id ? `<button class="btn sm" data-act="adm-support" data-id="${r.id}">Mensagem</button>` : ""}<button class="btn sm" data-adm-edit="${r.id}">Editar</button><button class="btn sm ghost" data-adm-del="${r.id}">Apagar</button></td></tr>`).join("")
       : `<tr><td colspan="${e.cols.length + 2}" class="hint">Nada encontrado.</td></tr>`}
   </tbody></table></div>
   <div class="row" style="justify-content:space-between"><span class="hint">Página ${ADM.page + 1} · até 50 por página</span>
@@ -2375,6 +2378,8 @@ document.addEventListener("click", async e => {
     case "decline": return busy(async () => { await api("POST", `/api/proposals/${id}/decline`); toast("Proposta recusada"); route(); })();
     case "withdraw": return busy(async () => { await api("POST", `/api/proposals/${id}/withdraw`); toast("Proposta retirada"); route(); })();
     case "invite": return busy(async () => { const inv = $("#invJob"); if (!inv) return; const r = await api("POST", `/api/jobs/${inv.value}/invite`, { talentId: id }); toast("Convite enviado"); go("mensagens-" + r.thread); })();
+    case "support": return busy(async () => { const r = await api("POST", "/api/support"); go("mensagens-" + r.thread); })();
+    case "adm-support": return busy(async () => { const r = await api("POST", `/api/admin/support/${id}`); go("mensagens-" + r.thread); })();
     case "chat": return busy(async () => { const r = await api("POST", "/api/threads", { withId: Number(act.dataset.with) }); go("mensagens-" + r.thread); })();
     case "ms": return busy(async () => { await api("POST", `/api/milestones/${id}/${act.dataset.a}`, {}); toast({ start: "Etapa iniciada", deliver: "Entrega registrada", approve: "Etapa aprovada e valor liberado" }[act.dataset.a]); route(); })();
     case "ms-changes": { const box = $("#msa-" + id); if (!box) return; box.innerHTML = `<input class="input" id="chg-${id}" placeholder="O que precisa ajustar?" style="flex:1; min-width:180px"><button class="btn sm hl" data-act="ms-changes-send" data-id="${id}">Enviar pedido</button>`; const chg = $("#chg-" + id); if (chg) chg.focus(); return; }

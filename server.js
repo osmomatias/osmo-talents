@@ -230,7 +230,7 @@ const JOB_SELECT = `SELECT j.*, u.name client_name, p.company,
 // é do SISTEMA (ex.: "Proposta aceita."), que aparece no meio da conversa.
 // Quem fez a ação já fica marcado como "leu", para não receber aviso da própria ação.
 function threadFor(jobId, clientId, freelaId) {
-  let t = one("SELECT id FROM threads WHERE job_id IS ? AND client_id = ? AND freela_id = ?", jobId, clientId, freelaId);
+  let t = one("SELECT id FROM threads WHERE job_id IS ? AND client_id = ? AND freela_id = ? AND kind = ''", jobId, clientId, freelaId);
   if (!t) t = { id: Number(run("INSERT INTO threads (job_id, client_id, freela_id) VALUES (?,?,?)", jobId, clientId, freelaId).lastInsertRowid) };
   return t.id;
 }
@@ -768,6 +768,7 @@ route("POST", "/api/threads/:id/files", ({ user, params, req, body }) => {
   const { name, ext } = checkUpload(req, body);
   tx(() => { addAtt("message_id", postMessage(t.id, user.id, "📎 " + name), user, name, ext, body); });
   run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
+  if (t.kind === "suporte") supportNotify(t, user, "📎 " + name);
   return { ok: true };
 }, { raw: FILE_MAX });
 
@@ -1154,8 +1155,10 @@ route("GET", "/api/threads", ({ user }) => {
          AND m.created_at > CASE WHEN t.client_id = ? THEN t.client_read_at ELSE t.freela_read_at END) unread
     FROM threads t LEFT JOIN jobs j ON j.id = t.job_id JOIN users uc ON uc.id = t.client_id JOIN users uf ON uf.id = t.freela_id
     WHERE t.client_id = ? OR t.freela_id = ? ORDER BY t.updated_at DESC`, user.id, user.id, user.id, user.id, user.id);
-  return { threads: rows.map(t => ({ id: t.id, job: t.job_title || "Conversa direta", with: t.client_id === user.id ? t.freela_name : t.client_name,
-    withId: t.client_id === user.id ? t.freela_id : t.client_id, withAvatar: avatarUrl(t.client_id === user.id ? t.freela_id : t.client_id, t.with_v),
+  return { threads: rows.map(t => ({ id: t.id, support: t.kind === "suporte",
+    job: t.kind === "suporte" ? "Suporte Osmo" : t.job_title || "Conversa direta",
+    with: t.kind === "suporte" && t.client_id === user.id ? SUPPORT_NAME : t.client_id === user.id ? t.freela_name : t.client_name,
+    withId: t.client_id === user.id ? t.freela_id : t.client_id, withAvatar: t.kind === "suporte" && t.client_id === user.id ? "" : avatarUrl(t.client_id === user.id ? t.freela_id : t.client_id, t.with_v),
     withVerified: t.client_id === user.id && !!t.freela_verified, last: t.last || "", unread: t.unread, updated_at: t.updated_at })) };
 });
 
@@ -1173,7 +1176,10 @@ route("GET", "/api/threads/:id", ({ user, params }) => {
       FROM messages m LEFT JOIN attachments a ON a.message_id = m.id WHERE m.thread_id = ? ORDER BY m.id LIMIT 500`, t.id)
     .map(({ file_id, file_name, file_ext, file_size, ...m }) => ({ ...m, mine: m.sender_id === user.id, system: m.sender_id === null,
       file: file_id ? { id: file_id, name: file_name, ext: file_ext, size: file_size } : null }));
-  return { thread: { id: t.id, pin: t.pin, job, with: other && { ...other, role: t.client_id === user.id ? "freela" : "cliente" } }, messages: msgs };
+  const support = t.kind === "suporte", withOut = other && { ...other, role: t.client_id === user.id ? "freela" : "cliente" };
+  // no suporte, o cliente vê "Equipe Osmo" (e não a conta pessoal do admin)
+  if (support && withOut && t.client_id === user.id) Object.assign(withOut, { name: SUPPORT_NAME, role: "suporte", verified: "", how: null });
+  return { thread: { id: t.id, pin: t.pin, job, support, with: withOut }, messages: msgs };
 });
 route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
   limit("msg:" + user.id, 60, 60_000);
@@ -1182,10 +1188,12 @@ route("POST", "/api/threads/:id/messages", ({ user, params, body, ip }) => {
   if (!text) fail(400, "A mensagem está vazia.");
   postMessage(t.id, user.id, text);
   run(`UPDATE threads SET ${t.client_id === user.id ? "client_read_at" : "freela_read_at"} = datetime('now') WHERE id = ?`, t.id);
+  if (t.kind === "suporte") supportNotify(t, user, text);
   return { ok: true };
 });
 route("PUT", "/api/threads/:id/pin", ({ user, params, body }) => {
   const t = threadAccess(user, params.id);
+  if (t.kind === "suporte") fail(409, "Conversas com o suporte não têm resumo do combinado.");
   run("UPDATE threads SET pin = ? WHERE id = ?", str(body.pin, 600), t.id);
   postMessage(t.id, null, `${user.name} atualizou o resumo do combinado.`, user.id);
   return { ok: true };
@@ -1197,6 +1205,65 @@ route("POST", "/api/threads", ({ user, body }) => {
   const th = user.role === "cliente" ? threadFor(null, user.id, other.id) : threadFor(null, other.id, user.id);
   return { thread: th };
 });
+
+// SUPORTE OSMO: conversa entre o admin (a Osmo) e um contratante (cliente). Usa o mesmo sistema de
+// conversas: aparece na caixa de entrada dos dois, com bolinha de não lidas, anexos etc.
+// A diferença está nos avisos: cada mensagem do suporte vai NA HORA por notificação (push) e com uma
+// CÓPIA por e-mail para o outro lado (sem esperar os 2 minutos do carteiro paciente lá embaixo).
+// - POST /api/support: o cliente abre (ou reabre) a conversa dele com a Osmo;
+// - POST /api/admin/support/:id: o admin abre a conversa com um cliente específico.
+const SUPPORT_NAME = "Equipe Osmo";
+const adminAccount = () => one("SELECT id, name, email FROM users WHERE lower(email) = ?", ADMIN_EMAIL);
+function supportThread(clientId) {
+  const adm = adminAccount();
+  if (!adm) fail(503, "O suporte ainda não está disponível. Tente de novo mais tarde.");
+  if (adm.id === clientId) fail(400, "Essa conta é a do próprio suporte.");
+  let t = one("SELECT id FROM threads WHERE kind = 'suporte' AND client_id = ?", clientId);
+  if (!t) t = { id: Number(run("INSERT INTO threads (job_id, client_id, freela_id, kind) VALUES (NULL,?,?,'suporte')", clientId, adm.id).lastInsertRowid) };
+  return t.id;
+}
+route("POST", "/api/support", ({ user }) => {
+  if (isAdmin(user)) fail(400, "Você é o suporte: abra a conversa pela lista de pessoas na área do admin.");
+  if (!rolesOf(user).includes("cliente")) fail(403, "O canal com a Osmo é para quem contrata.");
+  return { thread: supportThread(user.id) };
+});
+route("POST", "/api/admin/support/:id", ({ user, params }) => {
+  if (!isAdmin(user)) fail(404, "Rota não encontrada.");
+  const other = one("SELECT id, role, roles FROM users WHERE id = ?", int(params.id));
+  if (!other) fail(404, "Pessoa não encontrada.");
+  if (!rolesOf(other).includes("cliente")) fail(400, "Essa pessoa não é contratante (cliente).");
+  return { thread: supportThread(other.id) };
+});
+// Aviso imediato de uma mensagem do suporte: push nos aparelhos do outro lado + cópia por e-mail.
+// O e-mail sai sempre (é a cópia da conversa); o push só se a pessoa ligou em algum aparelho.
+// Roda "por fora" (sem await): a mensagem já foi gravada, e um e-mail lento não segura a resposta.
+function supportNotify(t, sender, text) {
+  const toId = t.client_id === sender.id ? t.freela_id : t.client_id;
+  const to = one("SELECT id, name, email, lang FROM users WHERE id = ?", toId);
+  if (!to) return;
+  const fromAdmin = t.freela_id === sender.id;
+  const T = (k, ...a) => i18n.T(to.lang, k, ...a);
+  const who = fromAdmin ? SUPPORT_NAME : sender.name;
+  const subject = fromAdmin ? T("Nova mensagem da Equipe Osmo") : T("{1} mandou mensagem ao suporte", sender.name);
+  const link = `${PUBLIC_URL}/mensagens/${t.id}`;
+  if (push.ENABLED) {
+    const subs = all("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?", to.id);
+    if (subs.length) pushTo(subs, { title: subject, body: `${who}: ${text.length > 120 ? text.slice(0, 120) + "…" : text}`, url: `/mensagens/${t.id}`, tag: `thread-${t.id}`, badge: unreadCount(to.id) })
+      .catch(e => console.error(new Date().toISOString(), "push suporte", e.message));
+  }
+  if (!mail.ENABLED) return;
+  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const first = to.name.split(" ")[0];
+  const reply = T("Para responder, abra a conversa (responder este e-mail não chega até nós):");
+  const text2 = `${T("Olá, {1}.", first)}\n\n${who}:\n${text}\n\n${reply}\n${link}\n\n--\nOsmo Talents · ${T("Cópia de uma mensagem do suporte.")}`;
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
+<p>${escHtml(T("Olá, {1}.", first))}</p>
+<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1"><b>${escHtml(who)}</b><br>${escHtml(text).replace(/\n/g, "<br>")}</p>
+<p style="color:#666;font-size:14px">${escHtml(reply)}</p>
+<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Abrir conversa"))}</a></p>
+<p style="color:#666;font-size:13px">Osmo Talents · ${escHtml(T("Cópia de uma mensagem do suporte."))}</p></div>`;
+  mail.send({ to: to.email, subject, text: text2, html }).catch(e => console.error(new Date().toISOString(), "e-mail suporte", e.message));
+}
 
 // PAINEL DO DONO (panorama da plataforma): só UMA pessoa em todo o site é administradora, e ela está fixada
 // aqui no código — não vem do .env, então ninguém ganha acesso editando variáveis no servidor. O antigo
@@ -1700,7 +1767,7 @@ const PERSON_SELECT = `SELECT u.id, u.name, p.title, a.v avatar_v, vf.verified_a
   LEFT JOIN avatars a ON a.user_id = u.id LEFT JOIN verifications vf ON vf.user_id = u.id`;
 const personOut = u => ({ id: u.id, name: u.name, title: u.title || "", avatar: avatarUrl(u.id, u.avatar_v), verified: u.verified_at || "" });
 // "contatos": todo mundo do outro lado das suas conversas e contratos
-const contactIds = userId => all(`SELECT freela_id id FROM threads WHERE client_id = ? UNION SELECT client_id FROM threads WHERE freela_id = ?
+const contactIds = userId => all(`SELECT freela_id id FROM threads WHERE client_id = ? AND kind = '' UNION SELECT client_id FROM threads WHERE freela_id = ? AND kind = ''
   UNION SELECT freela_id FROM contracts WHERE client_id = ? UNION SELECT client_id FROM contracts WHERE freela_id = ?`, userId, userId, userId, userId).map(r => r.id);
 function squadAccess(user, id) {
   const s = one("SELECT * FROM squads WHERE id = ? AND owner_id = ?", id, user.id);
@@ -1790,7 +1857,7 @@ function notifySweep() {
       CASE WHEN u.id = t.client_id THEN t.client_read_at ELSE t.freela_read_at END read_at
     FROM threads t JOIN users u ON u.id IN (t.client_id, t.freela_id) LEFT JOIN jobs j ON j.id = t.job_id
     LEFT JOIN notify_log n ON n.thread_id = t.id AND n.user_id = u.id
-    WHERE t.updated_at > datetime('now', '-30 minutes') AND u.notify_level != 'nada'
+    WHERE t.updated_at > datetime('now', '-30 minutes') AND t.kind = '' AND u.notify_level != 'nada'
       AND (n.last_at IS NULL OR n.last_at < datetime('now', '-15 minutes'))`);
   for (const p of pairs) {
     // aparelhos inscritos dessa pessoa; sem e-mail ligado e sem aparelho, não há por onde avisar

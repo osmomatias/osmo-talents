@@ -1468,5 +1468,16 @@
  "Logotipo Identidade visual": "Logo\nIdentité visuelle",
  "Ex.: 15": "Ex. : 15",
  "Ex.: Primeiras propostas de logotipo": "Ex. : Premières propositions de logo",
- "De 1 a 5": "De 1 à 5"
+ "De 1 a 5": "De 1 à 5",
+ "Falar com a Osmo": "Parler à Osmo",
+ "Suporte Osmo": "Soutien Osmo",
+ "Suporte Osmo · cada mensagem também chega por e-mail": "Soutien Osmo · chaque message arrive aussi par courriel",
+ "Equipe Osmo": "Équipe Osmo",
+ "Nova mensagem da Equipe Osmo": "Nouveau message de l'Équipe Osmo",
+ "{1} mandou mensagem ao suporte": "{1} a écrit au soutien",
+ "Para responder, abra a conversa (responder este e-mail não chega até nós):": "Pour répondre, ouvrez la conversation (répondre à ce courriel ne nous parvient pas) :",
+ "Cópia de uma mensagem do suporte.": "Copie d'un message du soutien.",
+ "O suporte ainda não está disponível. Tente de novo mais tarde.": "Le soutien n'est pas encore disponible. Réessayez plus tard.",
+ "O canal com a Osmo é para quem contrata.": "Le canal avec Osmo est réservé aux clients.",
+ "Conversas com o suporte não têm resumo do combinado.": "Les conversations avec le soutien n'ont pas de résumé de l'entente."
 }
