@@ -1253,3 +1253,15 @@ span.sq-swatch{cursor:default; width:22px; height:22px}
   .sq-people{grid-template-columns:1fr}
   .av.xs,.sq-dot{width:24px; height:24px} .sq-dot{margin:-12px 0 0 -12px}
 }
+
+/* foto de perfil ampliada ao tocar (openPhoto em app.js) */
+img.av{cursor:zoom-in}
+:is(a,button,label,[data-go],[data-act]) img.av{cursor:inherit}
+.photo-zoom{position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:16px; background:rgb(10 20 20 / .78); cursor:zoom-out; animation:pzFade .18s ease-out}
+.photo-zoom figure{margin:0; display:grid; justify-items:center; gap:12px; animation:pzPop .22s cubic-bezier(.2,.8,.2,1)}
+.photo-zoom img{width:min(420px, calc(100vw - 32px), calc(100dvh - 120px)); aspect-ratio:1; object-fit:cover; border-radius:50%; background:var(--sunken); box-shadow:0 20px 60px rgb(0 0 0 / .45)}
+.photo-zoom figcaption{color:#fff; font-family:var(--f-display); font-weight:700; font-size:1.1rem; text-align:center}
+.photo-zoom-x{position:absolute; top:max(12px, env(safe-area-inset-top)); right:12px; width:44px; height:44px; border:0; border-radius:50%; background:rgb(255 255 255 / .15); color:#fff; font-size:1.6rem; line-height:1; cursor:pointer}
+.photo-zoom-x:focus-visible{outline:3px solid #fff; outline-offset:2px}
+@keyframes pzFade{from{opacity:0}}
+@keyframes pzPop{from{transform:scale(.6); opacity:0}}

@@ -194,7 +194,7 @@ const VB_SVG = (() => {
 })();
 const VB_TXT = "Verificado: neurodivergência comprovada por laudo médico com assinatura digital ICP-Brasil";
 const vbadge = on => on ? `<span class="vbadge" role="img" aria-label="${VB_TXT}" title="${VB_TXT}">${VB_SVG}</span>` : "";
-const av = (name, id, size = "", src = "") => src ? `<img class="av ${size}" src="${esc(src)}" alt="" loading="lazy">` : `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
+const av = (name, id, size = "", src = "") => src ? `<img class="av ${size}" src="${esc(src)}" alt="" data-name="${esc(name || "")}" loading="lazy">` : `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
 function clarBar(v) { const cls = v >= 80 ? "" : v >= 65 ? "mid" : "low"; return `<span class="clarity" title="Clareza do briefing"><span class="bar ${cls}"><i style="width:${v}%"></i></span>${v}% claro</span>`; }
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
@@ -2549,6 +2549,28 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
     panel.querySelector('[data-sheet="no"]').focus(); // o foco começa no caminho seguro
   });
 }
+
+// FOTO AMPLIADA: tocar numa foto de perfil abre a foto grande no meio da tela, com o fundo escurecido.
+// Fecha tocando em qualquer lugar, no "×" ou com Esc. Fotos dentro de botões e links (lista de conversas,
+// cartões que levam a outra tela) continuam fazendo o que já faziam.
+function openPhoto(img) {
+  const back = document.activeElement, name = img.dataset.name || "", box = document.createElement("div");
+  box.className = "photo-zoom"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", name ? "Foto de " + name : "Foto de perfil");
+  box.innerHTML = `<button type="button" class="photo-zoom-x" aria-label="Fechar">×</button>
+    <figure><img src="${esc(img.currentSrc || img.src)}" alt="${esc(name ? "Foto de " + name : "Foto de perfil")}">${name ? `<figcaption translate="no">${esc(name)}</figcaption>` : ""}</figure>`;
+  document.body.appendChild(box);
+  const done = () => { document.removeEventListener("keydown", onKey, true); box.remove(); if (back && back.focus) back.focus(); };
+  const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); } else if (e.key === "Tab") { e.preventDefault(); } };
+  document.addEventListener("keydown", onKey, true);
+  box.addEventListener("click", done);
+  box.querySelector(".photo-zoom-x").focus();
+}
+document.addEventListener("click", e => {
+  const img = e.target.closest("img.av");
+  if (!img || img.closest("a,button,label,[data-go],[data-act],.photo-zoom")) return;
+  e.preventDefault(); openPhoto(img);
+});
 
 // GOOGLE ANALYTICS QUE CONTA DESDE A ENTRADA, COM AVISO DE COOKIES: assim que a pessoa entra no site, a visita
 // já é contada (o Analytics carrega sozinho). Ao mesmo tempo aparece um aviso embaixo da tela, com um cookie
