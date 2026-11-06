@@ -1265,3 +1265,15 @@ img.av{cursor:zoom-in}
 .photo-zoom-x:focus-visible{outline:3px solid #fff; outline-offset:2px}
 @keyframes pzFade{from{opacity:0}}
 @keyframes pzPop{from{transform:scale(.6); opacity:0}}
+
+/* ---------- topo sem magenta: degradê preto translúcido que some para transparente ----------
+   Vence as camadas anteriores (identidade Osmo e vidro líquido). O fio colorido de baixo some. */
+html .top,html.glass .top{background:linear-gradient(to bottom, rgb(0 0 0 / .62) 0%, rgb(0 0 0 / .32) 60%, rgb(0 0 0 / 0) 100%); background-color:transparent;
+  box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none}
+html body::before,html.glass body::before{background:rgb(0 0 0 / .62); -webkit-backdrop-filter:none; backdrop-filter:none}
+.top::after{display:none}
+/* desfoque atrás do topo: o conteúdo que passa por trás fica borrado (some aos poucos para baixo),
+   e o texto branco do menu continua legível mesmo sobre páginas claras */
+.top::before{content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  -webkit-backdrop-filter:blur(14px) saturate(140%); backdrop-filter:blur(14px) saturate(140%);
+  -webkit-mask-image:linear-gradient(to bottom, #000 55%, transparent 100%); mask-image:linear-gradient(to bottom, #000 55%, transparent 100%)}
