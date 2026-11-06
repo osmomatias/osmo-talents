@@ -617,7 +617,8 @@ const SOCIAL = {
   github: ["GitHub", '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82a7.6 7.6 0 0 0-4 0c-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8 8 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>'],
 };
 function socialHTML(reg) {
-  if (!OAUTH.length) return "";
+  // no app de TV (OsmoTV) o login social não funciona: Google e outros bloqueiam login dentro de WebView
+  if (!OAUTH.length || /OsmoTV/.test(navigator.userAgent)) return "";
   const role = reg ? "freela" : ""; // a tela nasce com "freelancer" marcado; trocar o perfil atualiza os links (ouvinte de "change")
   return `<div class="stack" style="gap:10px" id="socialBox">
     ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
@@ -2633,7 +2634,7 @@ function gaBanner() {
     <div class="row consent-actions"><button class="btn sm" data-consent="nao">Não quero</button><button class="btn sm hl" data-consent="sim">Entendi</button></div>`;
   document.body.appendChild(b);
 }
-document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); toast(c.dataset.consent === "sim" ? "Obrigado!" : "Pronto, cookies de estatística desligados"); } });
+document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); if (typeof tvFocusFirst === "function") tvFocusFirst(); toast(c.dataset.consent === "sim" ? "Obrigado!" : "Pronto, cookies de estatística desligados"); } });
 document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
 const gaToggleHTML = () => GA_ID ? `<label class="toggle"><span><b>Cookies de estatística</b><br><span class="hint">O Google Analytics conta as visitas para melhorarmos a plataforma, sem seus dados de conta</span></span><input type="checkbox" class="sw" id="gaSw" ${gaOn() ? "checked" : ""}></label>` : "";
 
@@ -2699,6 +2700,8 @@ function pomoRender() {
   if (!el) { el = document.createElement("div"); el.id = "pomo"; document.body.appendChild(el); }
   el.className = "pomo " + (POMO.open ? "is-open" : "is-bubble") + (POMO.side === "left" ? " on-left" : "");
   el.innerHTML = pomoHTML(); pomoPlace(); pomoWake();
+  // na TV o aviso cobre a tela: o foco vai direto para ele (e fica preso nele, ver focusables) até a pessoa responder
+  if (document.documentElement.dataset.device === "tv") b.querySelector("[data-consent]").focus({ preventScroll: true });
   if (!pomoTick) pomoTick = setInterval(pomoStep, 1000);
 }
 // a cada segundo: atualiza o número e o anel (sem redesenhar tudo) e confere se o tempo acabou
@@ -2810,7 +2813,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]):n
 const isTyping = el => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 // o que está visível de verdade (dentro de um painel aberto, só ele conta)
 function focusables() {
-  const scope = $("#layer .drawer") || $("#layer") && $("#layer").children.length && $("#layer") || document;
+  const scope = $("#layer .drawer") || $("#layer") && $("#layer").children.length && $("#layer") || DEVICE === "tv" && $("#consent") || document;
   return [...scope.querySelectorAll(FOCUSABLE)].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden"; });
 }
 // navegação espacial: de onde o foco está, procura o item mais perto na direção da seta
@@ -2903,6 +2906,7 @@ function installHTML() {
   if (installPrompt) return row("Ícone na tela inicial, abre em janela própria e sem a barra do navegador", `<button class="btn sm" data-install="1">Instalar</button>`);
   if (isIOS()) return row("No iPhone ou iPad, toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.");
   if (isMacSafari()) return row("No Safari do Mac, use o menu <b>Arquivo → Adicionar ao Dock</b>. O app abre em janela própria.");
+  const consent = $("#consent [data-consent]"); if (consent) { consent.focus({ preventScroll: true }); return; } // aviso de cookies ainda sem resposta
   return row("Se o seu navegador permitir, procure no menu dele a opção <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.");
 }
 function refreshInstallHTML() { const box = $("#adjInstall"); if (box) box.innerHTML = installHTML(); }
