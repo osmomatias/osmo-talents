@@ -512,7 +512,14 @@ body.menu-open{overflow:hidden}
 .pin-edit .input{flex:1; min-width:0}
 .whoami{color:#fff; background:none; border:0; font-weight:600; cursor:pointer; padding:8px 10px; border-radius:999px; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis}
 .whoami:hover{background:rgb(255 255 255 / .12)}
-.mm-user{padding:14px 10px 4px; color:var(--muted); font-size:.92rem}
+/* quem está logado: foto (ou iniciais) + "Olá, Fulano"; tocar abre Meu perfil */
+.mm-user{width:100%; display:flex; align-items:center; gap:14px; margin:6px 0 2px; padding:10px; border:0; border-radius:14px; background:none; color:var(--fg); font:inherit; text-align:left; cursor:pointer}
+.mm-user:hover{background:var(--sunken)}
+.mm-user .av{width:52px; height:52px; font-size:1.05rem}
+.mm-user-txt{display:flex; flex-direction:column; min-width:0; line-height:1.25}
+.mm-user-txt b{font-size:1.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mm-user-txt span{font-size:.86rem; color:var(--muted)}
+.mm-user .chev{margin-left:auto; color:var(--muted); font-size:1.4rem; line-height:1}
 @media (max-width:980px){ .whoami{display:none} }
 @media (max-width:600px){ .msrow{grid-template-columns:minmax(0,1fr) 110px 44px} }
 
