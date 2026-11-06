@@ -163,6 +163,10 @@
     const x = cur(); if (!x) return;
     if (x.type === "show") return openShow(x);
     if (x.type === "season") { screen.pos.row = 1; return paint(); }
+    start(x);
+  }
+  // começa a tocar um filme, clipe ou episódio, com a fila certa (clipes em sequência, próximos episódios)
+  function start(x) {
     if (x.type === "movie") return play(x, []);
     if (x.type === "clip") return play(x, lib.clipes.slice(lib.clipes.findIndex(c => c.id === x.id) + 1)); // clipes tocam em sequência
     if (x.type === "episode") {
@@ -269,6 +273,7 @@
   // depois de assistir: atualiza a biblioteca (barrinhas e "Continuar assistindo") sem perder o lugar
   async function refresh(last) {
     try { await loadLibrary(); } catch { return; }
+    sendCatalog();
     if (screen.name === "show") {
       const sh = lib.series.find(s => s.id === screen.show.id);
       if (!sh) return goHome();
@@ -335,6 +340,60 @@
   });
   addEventListener("pagehide", () => save(true));
 
+  // ---------- controle pelo celular (remote-tv.js) ----------
+  // série: continua de onde parou (ou começa no 1º episódio)
+  const nextEpisode = sh => {
+    const all = sh.seasons.flatMap(s => s.episodes);
+    return lib.continuar.find(e => e.show === sh.id) || all.filter(e => prog(e)).sort((a, b) => prog(b).at - prog(a).at)[0] || all[0];
+  };
+  function playById(id) {
+    if (!lib) return false;
+    const eps = lib.series.flatMap(sh => sh.seasons.flatMap(s => s.episodes));
+    const sh = lib.series.find(s => s.id === id);
+    const x = sh ? nextEpisode(sh) : [...lib.filmes, ...lib.clipes, ...eps, ...lib.continuar].find(v => v.id === id);
+    if (!x) return false;
+    if (playing) { cancelNext(); save(true); }
+    start(x); return true;
+  }
+  window.OsmoRemote?.on("play", id => playById(id));
+  // manda para o celular as fileiras, com uma capa pequena embutida quando a capa mora no Mac
+  // (o celular abre app.osmo.com.br em https e não consegue ver as imagens do Mac)
+  const thumbs = new Map();
+  function thumb(src) {
+    if (!src || /^https:/.test(src)) return Promise.resolve(src || "");
+    if (thumbs.has(src)) return thumbs.get(src);
+    const p = new Promise(ok => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas"); c.width = 200; c.height = 300;
+          const g = c.getContext("2d"), k = Math.max(200 / img.width, 300 / img.height);
+          g.drawImage(img, (200 - img.width * k) / 2, (300 - img.height * k) / 2, img.width * k, img.height * k);
+          ok(c.toDataURL("image/jpeg", 0.72));
+        } catch { ok(""); }
+      };
+      img.onerror = () => ok("");
+      img.src = src;
+    });
+    thumbs.set(src, p); return p;
+  }
+  async function sendCatalog() {
+    if (!lib || !window.OsmoRemote) return;
+    const it = async (x, eyebrow, meta) => ({ id: x.id, title: x.title, eyebrow, meta, overview: x.overview || "", poster: await thumb(x.poster || x.still || x.backdrop) });
+    const rows = [];
+    if (lib.continuar.length) rows.push({ title: "Continuar assistindo", items: await Promise.all(lib.continuar.map(x => it(x,
+      x.type === "episode" ? `${x.showTitle} · ${epLabel(x)}` : x.type === "clip" ? (x.artist || "Clipe") : "Filme", prog(x) ? `Parou em ${clock(prog(x).t)}` : ""))) });
+    if (lib.filmes.length) rows.push({ title: "Filmes", items: await Promise.all(lib.filmes.map(x => it(x, "Filme", [x.year, x.rating ? "★ " + x.rating.toFixed(1) : ""].filter(Boolean).join(" · ")))) });
+    if (lib.series.length) rows.push({ title: "Séries", items: await Promise.all(lib.series.map(sh => {
+      const e = nextEpisode(sh), n = sh.seasons.reduce((a, s) => a + s.episodes.length, 0);
+      return it(sh, "Série", [`${n} episódio${n > 1 ? "s" : ""}`, e ? (prog(e) ? "Continua em " : "Começa em ") + epLabel(e) : ""].filter(Boolean).join(" · "));
+    })) });
+    if (lib.clipes.length) rows.push({ title: "Clipes", items: await Promise.all(lib.clipes.map(x => it(x, x.artist || "Clipe", ""))) });
+    const json = JSON.stringify(rows); if (json === lastCatalog) return; // nada mudou: não reenvia
+    lastCatalog = json; window.OsmoRemote.catalog({ rows });
+  }
+  let lastCatalog = "";
+
   // atualiza sozinho a cada 30 s (vídeo novo na pasta, capas que chegaram do TMDB)
   setInterval(() => { if (!playing && !document.hidden) refresh(); }, 30000);
 
@@ -345,5 +404,7 @@
     screen.rows = homeRows();
     screen.pos = { row: 0, col: screen.rows.map(() => 0) };
     render();
+    sendCatalog();
+    if (window.OsmoRemote?.pending) { playById(window.OsmoRemote.pending); window.OsmoRemote.pending = ""; } // o celular pediu este título
   })();
 })();

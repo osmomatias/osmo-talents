@@ -13,7 +13,10 @@
   const keep = (st) => ({ get(k) { try { return st().getItem(k); } catch { return null; } }, set(k, v) { try { st().setItem(k, v); } catch {} } });
   const local = keep(() => localStorage), session = keep(() => sessionStorage);
   const API_OK = /^(https:\/\/app\.osmo\.com\.br|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/;
-  const R = window.OsmoRemote = { handlers: {}, on(cmd, fn) { this.handlers[cmd] = fn; }, link: url => url, leaving: false };
+  // handlers: pedidos especiais que a página resolve ("play" = tocar um título pelo id);
+  // catalog(): a Biblioteca manda as fileiras dela para o celular mostrar os pôsteres;
+  // pending: um título pedido pelo celular antes de a Biblioteca abrir (veio no endereço, #play=...)
+  const R = window.OsmoRemote = { handlers: {}, on(cmd, fn) { this.handlers[cmd] = fn; }, link: url => url, catalog() {}, pending: "", leaving: false };
 
   const onTvPage = !!$("#tabs"); // o Osmo TV (as abas só existem nele); senão, é a Biblioteca da casa
   let base = "", t = "";
@@ -27,13 +30,14 @@
     const h = new URLSearchParams(location.hash.slice(1));
     if (h.get("remote") && API_OK.test(h.get("api") || "")) {
       session.set("osmotv:remote", JSON.stringify({ t: h.get("remote"), api: h.get("api") }));
+      R.pending = h.get("play") || "";
       history.replaceState(null, "", location.pathname + location.search);
     }
     let s = null; try { s = JSON.parse(session.get("osmotv:remote") || "null"); } catch {}
     if (!s || !API_OK.test(s.api || "") || typeof s.t !== "string") return;
     base = s.api; t = s.t;
   }
-  R.link = url => t ? url.replace(/#.*$/, "") + "#" + new URLSearchParams({ remote: t, api: base }) : url;
+  R.link = (url, play) => t ? url.replace(/#.*$/, "") + "#" + new URLSearchParams({ remote: t, api: base, ...(play ? { play } : {}) }) : url;
 
   // ---------- as ordens do celular viram teclas ----------
   const KEYS = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", ok: "Enter", back: "Escape",
@@ -104,7 +108,7 @@
       eyebrow: p ? (txt("#pSub") || (onTvPage ? "Osmo Originais" : "Na sua casa")) : txt("#hEyebrow"),
       title: p ? txt("#pTitle") : txt("#hTitle"),
       playing: p && !!v && !v.paused, t: p && v ? v.currentTime || 0 : 0, d: p && v && isFinite(v.duration) ? v.duration : 0,
-      hasHome: !!$("#tabs button.home"),
+      hasHome: !!$("#tabs button.home"), casa: !onTvPage,
     };
   }
   function report(force) {
@@ -123,6 +127,9 @@
   const v = $("#pv");
   if (v) ["play", "pause", "seeked", "loadedmetadata", "ended"].forEach(ev => v.addEventListener(ev, () => report(true)));
   setInterval(() => report(), 5000);
+
+  let catT = 0;
+  R.catalog = catalog => { clearTimeout(catT); catT = setTimeout(() => t && post("catalog", { t, catalog }).catch(() => {}), 500); };
 
   // ---------- ligar ----------
   // sem internet agora? tenta de novo a cada 30 s. O código é trocado a cada 10 min (ele vale 20).

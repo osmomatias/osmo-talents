@@ -258,8 +258,13 @@
 
   // CONTROLE PELO CELULAR (remote-tv.js): as setas e o OK chegam como teclas; estes dois pedidos são especiais:
   // "play" abre um Osmo Original direto; "home" abre a aba Na sua casa (levando o crachá do controle junto).
-  function goHome(url) { location.href = window.OsmoRemote ? window.OsmoRemote.link(url) : url; }
-  window.OsmoRemote?.on("play", id => { const x = videos.find(v => v.id === id); if (!x) return; if (cur) closePlayer(); play(x); });
+  function goHome(url, playId) { location.href = window.OsmoRemote ? window.OsmoRemote.link(url, playId) : url; }
+  // um Osmo Original toca aqui; qualquer outro id é da Biblioteca da casa: abre "Na sua casa" já tocando
+  window.OsmoRemote?.on("play", id => {
+    const x = videos.find(v => v.id === id);
+    if (x) { if (cur) closePlayer(); return play(x); }
+    const b = tabs.find(t => t.dataset.home); if (b) { if (cur) closePlayer(); goHome(b.dataset.home, id); }
+  });
   window.OsmoRemote?.on("home", () => { const b = tabs.find(t => t.dataset.home); if (b) goHome(b.dataset.home); });
 
   load();

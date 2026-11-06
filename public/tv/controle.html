@@ -65,15 +65,33 @@
 
     <button type="button" class="wide home" id="homeBtn" data-cmd="home" hidden>⌂ Abrir “Na sua casa” na TV</button>
 
-    <section class="orig" id="orig" hidden>
-      <h2>Osmo Originais</h2>
-      <p class="hint">Toque para assistir na TV.</p>
-      <ul id="origList"></ul>
+    <!-- PARA ASSISTIR: pôsteres da Biblioteca da casa e dos Osmo Originais. Tocar amplia; arrastar para cima toca na TV -->
+    <section class="lib" id="lib" hidden>
+      <h2 class="libh">Para assistir na TV</h2>
+      <p class="hint">Toque num pôster para ver maior. Arraste para cima para tocar na TV.</p>
+      <div id="libRows"></div>
     </section>
 
     <button type="button" class="link" id="unpair">Desconectar desta TV</button>
   </section>
 </main>
+
+<!-- PÔSTER AMPLIADO: arrastar para cima manda tocar na TV; para baixo (ou ×) fecha -->
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sTitle">
+  <button type="button" class="sclose" id="sClose" aria-label="Fechar">×</button>
+  <div class="sbody">
+    <div class="sfly" id="sFly">
+      <div class="sposter" id="sPoster"></div>
+      <div class="sinfo"><small id="sEyebrow"></small><h2 id="sTitle"></h2><p class="smeta" id="sMeta"></p></div>
+    </div>
+    <p class="sover" id="sOver"></p>
+  </div>
+  <div class="sfoot">
+    <p class="shint" id="sHint"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/><path d="M6 20l6-6 6 6" opacity=".45"/></svg>Arraste o pôster para cima para assistir na TV</p>
+    <button type="button" class="primary" id="sPlay">Assistir na TV</button>
+  </div>
+  <div class="sdone" id="sDone" hidden role="status"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><b id="sDoneText">Tocando na TV</b></div>
+</div>
 
 <p class="other"><a href="/tv/?tela">Ver o Osmo TV na tela deste aparelho</a></p>
 <script src="/tv/controle.js" defer></script>

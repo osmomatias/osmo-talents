@@ -453,6 +453,9 @@ CREATE TABLE IF NOT EXISTS tv_phones (
 );
 `);
 
+// catálogo da Biblioteca da casa que a TV mandou (o celular mostra os pôsteres mesmo com a TV em outra tela)
+addColumn("tv_screens", "catalog", "TEXT");
+
 // As quatro ferramentas que o resto do programa usa para falar com o caderno:
 // - one(pergunta): devolve UMA linha (ex.: "me dá a pessoa com id 5");
 // - all(pergunta): devolve TODAS as linhas que combinam (ex.: "todas as vagas abertas");

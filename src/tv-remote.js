@@ -17,9 +17,16 @@ const SCREENS = new Set(["inicio", "player", "casa"]);
 const sha = s => crypto.createHash("sha256").update(String(s)).digest("hex");
 const token = () => crypto.randomBytes(24).toString("base64url");
 
-const rooms = new Map(); // tvId -> { tvs:Set<res>, phones:Set<res>, state, offT }
+const rooms = new Map(); // tvId -> { tvs:Set<res>, phones:Set<res>, state, offT, catalog }
 const codes = new Map(); // "123456" -> { tvId, exp }
-const room = id => { let r = rooms.get(id); if (!r) rooms.set(id, r = { tvs: new Set(), phones: new Set(), state: null, offT: 0 }); return r; };
+const room = id => {
+  let r = rooms.get(id);
+  if (!r) {
+    let catalog = null; try { catalog = JSON.parse(one("SELECT catalog FROM tv_screens WHERE id = ?", id)?.catalog || "null"); } catch {}
+    rooms.set(id, r = { tvs: new Set(), phones: new Set(), state: null, offT: 0, catalog });
+  }
+  return r;
+};
 const emit = (set, data) => { const s = `data: ${JSON.stringify(data)}\n\n`; for (const res of set) res.write(s); };
 const online = id => (rooms.get(id)?.tvs.size || 0) > 0;
 
@@ -51,8 +58,23 @@ function cleanState(s) {
     screen: SCREENS.has(s.screen) ? s.screen : "inicio",
     eyebrow: clean(s.eyebrow, 120), title: clean(s.title, 160),
     playing: !!s.playing, t: num(s.t), d: num(s.d), at: Date.now(),
-    hasHome: !!s.hasHome, subs: clean(s.subs, 60),
+    hasHome: !!s.hasHome, casa: !!s.casa,
   };
+}
+// CATÁLOGO: as fileiras da Biblioteca da casa (Continuar, Filmes, Séries, Clipes), para o celular mostrar os pôsteres.
+// Capa só do TMDB (https) ou uma foto pequena embutida (data:), que a TV gera das capas do Mac.
+const POSTER_OK = /^(https:\/\/image\.tmdb\.org\/[A-Za-z0-9_./-]{1,200}|data:image\/(jpeg|webp);base64,[A-Za-z0-9+/=]{1,90000})$/;
+function cleanCatalog(c) {
+  if (!c || !Array.isArray(c.rows)) return null;
+  let n = 0;
+  const rows = c.rows.slice(0, 8).map(r => ({
+    title: clean(r && r.title, 60),
+    items: (Array.isArray(r && r.items) ? r.items : []).slice(0, 200).filter(x => x && /^[A-Za-z0-9_=-]{1,400}$/.test(x.id) && n++ < 500).map(x => ({
+      id: x.id, title: clean(x.title, 160), eyebrow: clean(x.eyebrow, 120), meta: clean(x.meta, 120), overview: clean(x.overview, 500),
+      poster: typeof x.poster === "string" && POSTER_OK.test(x.poster) ? x.poster : "",
+    })),
+  })).filter(r => r.items.length);
+  return { rows, at: Date.now() };
 }
 
 // O cano (SSE). ?t= é a TV; ?k= é o celular.
@@ -73,6 +95,7 @@ function events(req, res, url, send) {
     run("UPDATE tv_phones SET seen_at = datetime('now') WHERE id = ?", ph.id);
     r.phones.add(res);
     res.write(`data: ${JSON.stringify({ type: "state", online: online(id), state: r.state })}\n\n`);
+    if (r.catalog) res.write(`data: ${JSON.stringify({ type: "catalog", catalog: r.catalog })}\n\n`);
   }
   req.on("close", () => {
     if (tv) {
@@ -101,6 +124,17 @@ async function handle(req, res, url, ip, { send, readBody, limit, HttpError }) {
       }
       return send(res, 200, { t, code: newCode(tv.id), minutes: CODE_MIN, phones: room(tv.id).phones.size }, cors);
     }
+    if (p === "catalog") {
+      const b = await readBody(req, 3_000_000);
+      const tv = tvOf(b.t); if (!tv) throw new HttpError(404, "TV não encontrada.");
+      const r = room(tv.id), c = cleanCatalog(b.catalog);
+      const same = JSON.stringify(c?.rows) === JSON.stringify(r.catalog?.rows);
+      if (!same) {
+        r.catalog = c; run("UPDATE tv_screens SET catalog = ? WHERE id = ?", c ? JSON.stringify(c) : null, tv.id);
+        emit(r.phones, { type: "catalog", catalog: c });
+      }
+      return send(res, 200, { ok: true }, cors);
+    }
     if (p === "state") {
       const b = await readBody(req, 4000);
       const tv = tvOf(b.t); if (!tv) throw new HttpError(404, "TV não encontrada.");
@@ -123,7 +157,7 @@ async function handle(req, res, url, ip, { send, readBody, limit, HttpError }) {
     if (p === "send") {
       limit("tvcmd:" + ph.id, 600, 60_000);
       const cmd = String(b.cmd || ""); if (!CMDS.has(cmd)) throw new HttpError(400, "Comando desconhecido.");
-      const id = typeof b.id === "string" && /^[A-Za-z0-9._ -]{1,160}$/.test(b.id) ? b.id : undefined;
+      const id = typeof b.id === "string" && /^[A-Za-z0-9._= -]{1,400}$/.test(b.id) ? b.id : undefined;
       const r = rooms.get(ph.tv_id);
       if (!r || !r.tvs.size) throw new HttpError(409, "A TV está desligada ou com o Osmo TV fechado.");
       emit(r.tvs, { type: "cmd", cmd, id });

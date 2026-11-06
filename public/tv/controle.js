@@ -56,6 +56,7 @@
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === "unknown") return pairScreen("Este celular não está mais ligado à TV. Digite o código de novo.");
       if (m.type === "state") { tvOnline = m.online; st = m.state; stAt = Date.now(); render(); }
+      if (m.type === "catalog") { catalog = m.catalog; renderLib(); }
     };
     es.onerror = () => status("Sem conexão…", "off");
     loadOriginais();
@@ -110,17 +111,101 @@
     if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); send(b.dataset.cmd); }
   });
 
-  // Osmo Originais: tocar = começar a tocar na TV
+  // ---------- 4. para assistir: pôsteres ----------
+  // duas fontes: os Osmo Originais (do servidor) e o catálogo da Biblioteca da casa (a TV manda)
+  let originais = [], catalog = null, items = [];
   async function loadOriginais() {
     try {
       const r = await fetch("/api/videos", { headers: { Accept: "application/json" } });
-      const vids = (await r.json()).videos || [];
-      $("#orig").hidden = !vids.length;
-      $("#origList").innerHTML = vids.map(v => `<li><button type="button" data-play="${esc(v.id)}">
-        <span class="poster">${v.poster ? `<img src="${esc(v.poster)}" alt="" loading="lazy">` : ""}</span><span class="t">${esc(v.title)}</span></button></li>`).join("");
-    } catch { $("#orig").hidden = true; }
+      originais = ((await r.json()).videos || []).map(v => ({ id: v.id, title: v.title, eyebrow: "Osmo Originais", meta: v.year || "", overview: v.overview || "", poster: v.poster || "", orig: true }));
+    } catch { originais = []; }
+    renderLib();
   }
-  $("#origList").addEventListener("click", e => { const b = e.target.closest("[data-play]"); if (b) send("play", b.dataset.play); });
+  function renderLib() {
+    const rows = [...(catalog?.rows || [])];
+    if (originais.length) rows.push({ title: "Osmo Originais", items: originais });
+    items = [];
+    $("#lib").hidden = !rows.length;
+    $("#libRows").innerHTML = rows.map(r => `<section class="lrow"><h3>${esc(r.title)}</h3><ul>${r.items.map(x => {
+      const n = items.push(x) - 1;
+      return `<li><button type="button" data-item="${n}" aria-label="${esc(x.title)}: ver maior">${posterHTML(x)}<span class="t">${esc(x.title)}</span></button></li>`;
+    }).join("")}</ul></section>`).join("");
+  }
+  const posterHTML = (x, cls = "pst") => `<span class="${cls}"><span class="ph">${esc(x.title)}</span>${x.poster ? `<img src="${esc(x.poster)}" alt="" loading="lazy" draggable="false">` : ""}</span>`;
+  $("#libRows").addEventListener("click", e => { const b = e.target.closest("[data-item]"); if (b) openSheet(items[Number(b.dataset.item)], b); });
+
+  // ---------- 5. pôster ampliado: arrastar para cima = tocar na TV ----------
+  const sheet = $("#sheet"), fly = $("#sFly");
+  let sel = null, opener = null, doneT = 0;
+  function openSheet(x, from) {
+    if (!x) return;
+    sel = x; opener = from;
+    $("#sPoster").innerHTML = `<span class="ph">${esc(x.title)}</span>${x.poster ? `<img src="${esc(x.poster)}" alt="" draggable="false">` : ""}`;
+    $("#sEyebrow").textContent = x.eyebrow || ""; $("#sTitle").textContent = x.title;
+    $("#sMeta").textContent = x.meta || ""; $("#sMeta").hidden = !x.meta;
+    $("#sOver").textContent = x.overview || ""; $("#sOver").hidden = !x.overview;
+    $("#sDone").hidden = true; fly.className = "sfly"; fly.style.transform = ""; fly.style.opacity = "";
+    sheet.hidden = false; document.body.classList.add("locked");
+    try { history.pushState({ sheet: 1 }, ""); } catch {}
+    $("#sClose").focus({ preventScroll: true });
+  }
+  function closeSheet(fromHistory) {
+    if (sheet.hidden) return;
+    clearTimeout(doneT); sheet.hidden = true; document.body.classList.remove("locked"); sel = null;
+    if (!fromHistory && history.state?.sheet) history.back();
+    opener?.focus({ preventScroll: true });
+  }
+  addEventListener("popstate", () => closeSheet(true)); // o "voltar" do celular fecha o pôster
+  $("#sClose").addEventListener("click", () => closeSheet());
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !sheet.hidden) closeSheet(); });
+  $("#sPlay").addEventListener("click", () => sel && launch());
+
+  // dá para tocar este título agora? (casa = precisa do Mac ligado; a TV conta isso)
+  function blocker(x) {
+    if (!tvOnline) return "A TV está desligada ou com o Osmo TV fechado.";
+    if (!x.orig && st && !st.casa && !st.hasHome) return "O Mac com a Biblioteca da casa está desligado.";
+    return "";
+  }
+  function done(text, bad) {
+    $("#sDoneText").textContent = text; $("#sDone").className = "sdone" + (bad ? " bad" : ""); $("#sDone").hidden = false;
+    doneT = setTimeout(() => bad ? ($("#sDone").hidden = true) : closeSheet(), bad ? 2200 : 1100);
+  }
+  function snapBack() { fly.className = "sfly back"; fly.style.transform = ""; fly.style.opacity = ""; }
+  function launch() {
+    const why = blocker(sel);
+    if (why) { snapBack(); try { navigator.vibrate?.([30, 60, 30]); } catch {} return done(why, true); }
+    fly.className = "sfly go"; fly.style.transform = "translateY(-110vh) scale(.55)"; fly.style.opacity = "0";
+    try { navigator.vibrate?.(25); } catch {}
+    const x = sel;
+    api("send", { k, cmd: "play", id: x.id })
+      .then(() => done("Tocando na TV"))
+      .catch(err => { if (err.status === 401) return pairScreen(err.message); snapBack(); done(err.message || "Não deu para mandar para a TV.", true); });
+  }
+  // o gesto: o pôster segue o dedo; para cima encolhe um pouco (indo "para a TV"); para baixo fecha
+  let drag = null;
+  fly.addEventListener("pointerdown", e => {
+    if (!sel || e.button > 0) return;
+    drag = { y: e.clientY, x: e.clientX, t: performance.now(), dy: 0, v: 0 };
+    fly.className = "sfly"; fly.setPointerCapture(e.pointerId);
+  });
+  fly.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const now = performance.now(), dy = e.clientY - drag.y;
+    drag.v = (dy - drag.dy) / Math.max(1, now - drag.t); drag.dy = dy; drag.t = now;
+    const up = Math.min(0, dy), down = Math.max(0, dy);
+    fly.style.transform = `translateY(${up + down * 0.6}px) scale(${1 - Math.min(0.22, -up / 1400)})`;
+    fly.style.opacity = String(1 - Math.min(0.35, -up / 900) - Math.min(0.5, down / 600));
+  });
+  const endDrag = e => {
+    if (!drag) return;
+    const { dy, v } = drag; drag = null;
+    if (e.type === "pointercancel") return snapBack();
+    if (dy < -110 || (v < -0.55 && dy < -40)) return launch();
+    if (dy > 140 || (v > 0.7 && dy > 50)) return closeSheet();
+    snapBack();
+  };
+  fly.addEventListener("pointerup", endDrag);
+  fly.addEventListener("pointercancel", endDrag);
 
   $("#unpair").addEventListener("click", async () => {
     if (!confirm("Desconectar este celular da TV? Para usar de novo, é só digitar o código da TV.")) return;
