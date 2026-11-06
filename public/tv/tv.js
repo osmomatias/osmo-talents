@@ -9,6 +9,7 @@
 // Também funciona com mouse e toque: clicar num cartaz dá foco; clicar de novo abre.
 (() => {
   "use strict";
+  if (window.OsmoRemote?.leaving) return; // é um celular: foi para a tela do controle remoto
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const LISTAS = { "em-alta": "Em alta nesta semana", melhores: "Mais bem avaliados de todos os tempos" };
@@ -121,7 +122,7 @@
   function choose() {
     if (pos.row === 0 || !rows.length) {
       const b = tabs[pos.col[0]];
-      if (b.dataset.home) { location.href = b.dataset.home; return; } // "Na sua casa": abre a biblioteca do Mac
+      if (b.dataset.home) { goHome(b.dataset.home); return; } // "Na sua casa": abre a biblioteca do Mac
       if (b.dataset.lista !== lista) { lista = b.dataset.lista; tabs.forEach(t => t.setAttribute("aria-pressed", t === b)); }
       return load();
     }
@@ -254,6 +255,12 @@
     check(); setInterval(check, 2000);
   }
   watchHome();
+
+  // CONTROLE PELO CELULAR (remote-tv.js): as setas e o OK chegam como teclas; estes dois pedidos são especiais:
+  // "play" abre um Osmo Original direto; "home" abre a aba Na sua casa (levando o crachá do controle junto).
+  function goHome(url) { location.href = window.OsmoRemote ? window.OsmoRemote.link(url) : url; }
+  window.OsmoRemote?.on("play", id => { const x = videos.find(v => v.id === id); if (!x) return; if (cur) closePlayer(); play(x); });
+  window.OsmoRemote?.on("home", () => { const b = tabs.find(t => t.dataset.home); if (b) goHome(b.dataset.home); });
 
   load();
 })();

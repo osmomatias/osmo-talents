@@ -33,6 +33,7 @@ const push = require("./src/push"); // notificações no celular e no computador
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 const sms = require("./src/sms"); // código de confirmação do celular (WhatsApp ou SMS)
+const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -2294,6 +2295,7 @@ function serveStatic(req, res, pathname) {
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
   else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
   else if (rel === "/tv" || rel === "/tv/") rel = "/tv/index.html"; // app de TV separado: só o Top 10 de filmes e séries
+  else if (rel === "/tv/controle" || rel === "/tv/controle/") rel = "/tv/controle.html"; // o celular como controle remoto da TV
   else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
@@ -2308,7 +2310,7 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
@@ -2346,6 +2348,8 @@ const server = http.createServer(async (req, res) => {
     // o endereço muda (?v=) a cada foto nova, então pode ficar em cache por muito tempo
     return send(res, 200, Buffer.from(a.data), { "Content-Type": a.mime, "Cache-Control": url.searchParams.get("v") === String(a.v) ? "public, max-age=31536000, immutable" : "no-cache" });
   }
+  // controle pelo celular do app de TV: tem regras próprias (cano aberto, pedidos vindos da Biblioteca da casa)
+  if (url.pathname.startsWith("/api/tv/remote/")) return tvRemote.handle(req, res, url, ip, { send, readBody, limit, HttpError });
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
     return serveStatic(req, res, url.pathname);

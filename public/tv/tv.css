@@ -93,6 +93,20 @@ body.playing .bar, body.playing main, body.playing .credit{visibility:hidden}
   background:rgb(0 0 0 / .7); font-size:1.4vw; font-weight:600; text-align:center; max-width:60vw}
 .pstate[hidden]{display:none}
 
+/* CONTROLE PELO CELULAR: o canto de cima mostra o QR code e o código de 6 números (remote-tv.js) */
+.remote{margin-left:auto; display:flex; align-items:center; gap:1vw; padding:.5vw 1.2vw .5vw .5vw; border-radius:var(--r);
+  background:rgb(255 255 255 / .1); box-shadow:inset 0 0 0 1px rgb(255 255 255 / .16)}
+.remote .qr{display:block; width:5.4vw; min-width:72px; aspect-ratio:1; border-radius:8px; overflow:hidden; background:#fff}
+.remote .qr svg{display:block; width:100%; height:100%}
+.rtext{display:flex; flex-direction:column; gap:.15vw; font-size:.85vw; color:var(--muted)}
+.rtext b{color:var(--fg); font-weight:700}
+.rtext > b{font-size:.95vw}
+.rcode{font-size:1.7vw; font-weight:700; letter-spacing:.12em; color:var(--fg); font-variant-numeric:tabular-nums}
+.rtoast{position:fixed; z-index:20; left:50%; top:3vh; transform:translate(-50%,-150%); padding:1vw 2vw; border-radius:999px;
+  background:var(--surface); box-shadow:0 0 0 1px var(--line), 0 1vw 2vw rgb(0 0 0 / .5); font-size:1.2vw; font-weight:600;
+  opacity:0; transition:transform .3s ease, opacity .3s ease}
+.rtoast.on{transform:translate(-50%,0); opacity:1}
+
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 /* tela em pé (celular): mantém tudo usável, com letras um pouco maiores */
 @media (max-aspect-ratio: 1/1){

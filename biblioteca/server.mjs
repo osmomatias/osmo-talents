@@ -261,7 +261,7 @@ function continuar(lib) {
 // ---------- entregar arquivos ----------
 const HEAD = {
   "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
-  "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https://image.tmdb.org; media-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https://image.tmdb.org; media-src 'self' blob:; connect-src 'self' https://app.osmo.com.br http://localhost:3000; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 };
 function send(res, status, body, headers = {}) {
   const json = typeof body === "object" && !Buffer.isBuffer(body);
@@ -327,6 +327,11 @@ const server = http.createServer(async (req, res) => {
       return send(res, 404, "Não encontrado");
     }
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
+    // o controle pelo celular: o mesmo arquivo do Osmo TV (public/tv/remote-tv.js do site), para os dois nunca ficarem diferentes
+    if (p === "/remote-tv.js") {
+      const buf = await fsp.readFile(path.join(HERE, "..", "public", "tv", "remote-tv.js")).catch(() => null);
+      return buf ? send(res, 200, buf, { "Content-Type": STATIC[".js"], "Cache-Control": "no-cache" }) : send(res, 404, "Não encontrado");
+    }
     // a tela do app (pasta public)
     const rel = p === "/" ? "/index.html" : decodeURIComponent(p);
     const file = path.normalize(path.join(PUBLIC, rel));
