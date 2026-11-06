@@ -1277,3 +1277,42 @@ html body::before,html.glass body::before{background:rgb(0 0 0 / .62); -webkit-b
 .top::before{content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
   -webkit-backdrop-filter:blur(14px) saturate(140%); backdrop-filter:blur(14px) saturate(140%);
   -webkit-mask-image:linear-gradient(to bottom, #000 55%, transparent 100%); mask-image:linear-gradient(to bottom, #000 55%, transparent 100%)}
+
+/* ---------- topo no tema claro: vidro branco que some para transparente, logo positivo em bordô Osmo ----------
+   Vale quando a pessoa escolheu "claro" ou "igual ao sistema" com o sistema no claro. */
+html[data-theme="light"] .top{background:linear-gradient(to bottom, rgb(255 255 255 / .94) 0%, rgb(255 255 255 / .78) 60%, rgb(255 255 255 / 0) 100%); color:var(--brand)}
+html[data-theme="light"] body::before{background:rgb(255 255 255 / .94)}
+html[data-theme="light"] .brand{color:var(--brand)}
+html[data-theme="light"] .brand .sub{color:var(--brand); opacity:.85; border-left-color:rgb(122 11 60 / .3)}
+html[data-theme="light"] .nav button{color:rgb(122 11 60 / .78)}
+html[data-theme="light"] .nav button:hover{background:rgb(122 11 60 / .07); color:var(--brand)}
+html[data-theme="light"] .nav button[aria-current="page"]{background:rgb(122 11 60 / .08); color:var(--brand)}
+html[data-theme="light"] .top .btn:not(.primary):not(.hl),html[data-theme="light"].glass .top .btn:not(.primary):not(.hl){background:rgb(255 255 255 / .6); color:var(--brand); border-color:rgb(122 11 60 / .35); box-shadow:none}
+html[data-theme="light"] .top .btn:not(.primary):not(.hl):hover,html[data-theme="light"].glass .top .btn:not(.primary):not(.hl):hover{border-color:var(--brand)}
+html[data-theme="light"] .top .btn.primary{background:var(--brand); color:#fff; border-color:var(--brand)}
+html[data-theme="light"] .menu-btn{color:var(--brand); border-color:rgb(122 11 60 / .35)}
+@media (prefers-color-scheme: light){
+html:not([data-theme]) .top{background:linear-gradient(to bottom, rgb(255 255 255 / .94) 0%, rgb(255 255 255 / .78) 60%, rgb(255 255 255 / 0) 100%); color:var(--brand)}
+html:not([data-theme]) body::before{background:rgb(255 255 255 / .94)}
+html:not([data-theme]) .brand{color:var(--brand)}
+html:not([data-theme]) .brand .sub{color:var(--brand); opacity:.85; border-left-color:rgb(122 11 60 / .3)}
+html:not([data-theme]) .nav button{color:rgb(122 11 60 / .78)}
+html:not([data-theme]) .nav button:hover{background:rgb(122 11 60 / .07); color:var(--brand)}
+html:not([data-theme]) .nav button[aria-current="page"]{background:rgb(122 11 60 / .08); color:var(--brand)}
+html:not([data-theme]) .top .btn:not(.primary):not(.hl),html:not([data-theme]).glass .top .btn:not(.primary):not(.hl){background:rgb(255 255 255 / .6); color:var(--brand); border-color:rgb(122 11 60 / .35); box-shadow:none}
+html:not([data-theme]) .top .btn:not(.primary):not(.hl):hover,html:not([data-theme]).glass .top .btn:not(.primary):not(.hl):hover{border-color:var(--brand)}
+html:not([data-theme]) .top .btn.primary{background:var(--brand); color:#fff; border-color:var(--brand)}
+html:not([data-theme]) .menu-btn{color:var(--brand); border-color:rgb(122 11 60 / .35)}
+}
+
+/* ---------- tema claro um pouco mais vivo e com contornos definidos ----------
+   Os cartões de vidro tinham borda branca sobre fundo branco (sumia): agora a borda é um bordô
+   translúcido. Rosa, laranja suave e as manchas de luz do fundo ficam um tom mais fortes. */
+:root[data-theme="light"]{--bg:#F7F3F7; --sunken:#F5E6EF; --line:#CC9DBB; --accent-soft:#FBDCEA; --orange-soft:#FFE3C7;
+  --glass-line:rgb(133 11 66 / .2); --glass-edge:rgb(133 11 66 / .14); --glass-sunken:rgb(133 11 66 / .07);
+  --glass-shadow:0 10px 30px -6px rgb(97 9 48 / .14), 0 2px 6px -2px rgb(97 9 48 / .08);
+  --glass-glow-1:rgb(249 115 22 / .24); --glass-glow-2:rgb(180 16 92 / .18); --glass-glow-3:rgb(255 82 144 / .26)}
+@media (prefers-color-scheme: light){:root:not([data-theme]){--bg:#F7F3F7; --sunken:#F5E6EF; --line:#CC9DBB; --accent-soft:#FBDCEA; --orange-soft:#FFE3C7;
+  --glass-line:rgb(133 11 66 / .2); --glass-edge:rgb(133 11 66 / .14); --glass-sunken:rgb(133 11 66 / .07);
+  --glass-shadow:0 10px 30px -6px rgb(97 9 48 / .14), 0 2px 6px -2px rgb(97 9 48 / .08);
+  --glass-glow-1:rgb(249 115 22 / .24); --glass-glow-2:rgb(180 16 92 / .18); --glass-glow-3:rgb(255 82 144 / .26)}}
