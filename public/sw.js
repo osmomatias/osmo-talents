@@ -55,3 +55,41 @@ self.addEventListener("fetch", e => {
     e.respondWith(caches.match(req).then(hit => hit || net.catch(() => caches.match(req, { ignoreSearch: true }))));
   }
 });
+
+// NOTIFICAÇÕES PUSH: o servidor manda um envelope lacrado; o navegador abre e entrega aqui o
+// texto ({ title, body, url, tag }). Mostramos a notificação mesmo com o site fechado.
+// tag: uma por conversa; a nova substitui a anterior em vez de empilhar várias.
+self.addEventListener("push", e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Osmo Talents", {
+    body: d.body || "", icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
+    tag: d.tag || "osmo", data: { url: d.url || "/" },
+  }));
+});
+
+// TOCAR NA NOTIFICAÇÃO: se o site já está aberto em alguma aba ou no app, vai para ela e abre
+// a conversa; se não, abre uma janela nova já na conversa.
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "/", location.origin);
+  if (url.origin !== location.origin) return; // só endereços do próprio site
+  e.waitUntil((async () => {
+    const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    const win = wins.find(w => new URL(w.url).origin === location.origin);
+    if (win) { await win.focus(); return win.navigate(url.href).catch(() => {}); }
+    return clients.openWindow(url.href);
+  })());
+});
+
+// O navegador às vezes troca o endereço de entrega sozinho (chaves vencidas, por exemplo).
+// Aí refazemos a inscrição com a mesma chave pública e avisamos o servidor do endereço novo.
+self.addEventListener("pushsubscriptionchange", e => {
+  e.waitUntil((async () => {
+    const opts = e.oldSubscription && e.oldSubscription.options;
+    const sub = e.newSubscription || (opts ? await self.registration.pushManager.subscribe(opts) : null);
+    const headers = { "Content-Type": "application/json", "x-osmo": "1" };
+    if (e.oldSubscription) await fetch("/api/push", { method: "DELETE", headers, credentials: "same-origin", body: JSON.stringify({ endpoint: e.oldSubscription.endpoint }) }).catch(() => {});
+    if (sub) await fetch("/api/push", { method: "POST", headers, credentials: "same-origin", body: JSON.stringify(sub.toJSON()) }).catch(() => {});
+  })());
+});

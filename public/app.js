@@ -200,7 +200,7 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 // - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
 //   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false;
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PUSH_KEY = "";
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 // vidro líquido vem ligado, exceto para quem pediu menos transparência no sistema
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
@@ -228,8 +228,8 @@ async function checkVersion() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; GA_ID = d.analytics || ""; } catch { ME = null; }
-  renderChrome(); gaLoad(); gaBanner();
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PUSH_KEY = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
+  renderChrome(); gaLoad(); gaBanner(); pushSync();
 }
 
 // CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
@@ -1792,7 +1792,7 @@ async function sendVerify(file) {
 // link do rodapé do e-mail, sem precisar entrar na conta.
 /* ---------- avisos por e-mail ---------- */
 const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos e mensagens das pessoas"],
-  ["importante", "Só o importante", "Propostas, contratos, etapas e pagamentos. Sem mensagens de conversa"], ["nada", "Nenhum", "Não mandar e-mails de aviso"]];
+  ["importante", "Só o importante", "Propostas, contratos, etapas e pagamentos. Sem mensagens de conversa"], ["nada", "Nenhum", "Não mandar avisos por e-mail nem notificações"]];
 const notifyOpts = cur => `<div class="field" role="radiogroup" aria-label="Avisos por e-mail">${NOTIFY_OPTS.map(([v, t, d]) =>
   `<label class="check"><input type="radio" name="notify" value="${v}" ${cur === v ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>`;
 V.avisos = async () => {
@@ -1934,7 +1934,9 @@ V.perfil = async () => {
       + f("w_foco", "Ritmo", p.how.foco, 'placeholder="Ex.: Entregas a cada 2 ou 3 dias"')
       + f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")
       + save, "Aparece no seu perfil e nas suas propostas. Quem contrata lê antes de chamar.") : ""}
-    ${MAIL ? sec("avisos", "Avisos por e-mail", notifyOpts(ME.notify || "tudo") + save, "Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.") : ""}
+    ${MAIL || PUSH_KEY ? sec("avisos", PUSH_KEY ? "Avisos" : "Avisos por e-mail", notifyOpts(ME.notify || "tudo") + save, PUSH_KEY
+      ? "Valem para os e-mails e para as notificações dos aparelhos onde você as ligou em Ajustes. Só avisamos quando você ainda não viu a novidade no site, juntando tudo que chegou junto."
+      : "Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.") : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
   </form>
   ${isF ? `<div class="stack" style="margin-top:18px">
@@ -2134,7 +2136,7 @@ document.addEventListener("click", async e => {
   const busy = fn => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
     case "switch-role": return busy(() => switchRole(act.dataset.role, act.dataset.back))();
-    case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
+    case "logout": if (menuOpen) closeMenu(false); await pushOff(true); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
     case "oauth-role": return busy(async () => {
       try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }
       catch (err) { const b = $("#roleErr"); if (b) { b.textContent = err.message; b.hidden = false; } else toast(err.message); }
@@ -2730,6 +2732,84 @@ document.addEventListener("click", async e => {
 });
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 
+// NOTIFICAÇÕES PUSH (Ajustes → Notificações): cada aparelho liga as suas. Só pedimos a permissão do
+// navegador quando a pessoa liga o interruptor (nunca ao abrir a página). Ligar = o navegador cria
+// um "endereço de entrega" com a chave pública do Osmo (PUSH_KEY) e nós guardamos no servidor.
+// Quem mostra a notificação é o sw.js. O que avisar segue a escolha de Avisos no perfil.
+// - iPhone e iPad: só recebem com o app instalado na Tela de Início (iOS 16.4 em diante);
+// - permissão negada: só a pessoa pode liberar, nas configurações do navegador;
+// - ao sair da conta, o aparelho deixa de receber (outra pessoa pode usar o mesmo navegador).
+/* ---------- notificações push ---------- */
+const pushOK = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64uBytes = s => { const b = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function pushSub() {
+  if (!pushOK()) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+// sub: a inscrição deste aparelho (ou null); antes de saber, mostramos o interruptor desligado e travado
+function pushHTML(sub, busy) {
+  const row = (hint, ctrl = "") => `<div class="toggle"><span><b>Notificações neste aparelho</b><br><span class="hint">${hint}</span></span>${ctrl}</div>`;
+  if (!pushOK()) return row(isIOS() && !isInstalled()
+    ? "No iPhone e no iPad, as notificações funcionam com o app instalado. Instale pelo item abaixo, abra o Osmo pelo ícone e volte aqui."
+    : "Este navegador não recebe notificações.");
+  if (Notification.permission === "denied") return row("As notificações estão bloqueadas para este site. Libere nas configurações do navegador e volte aqui.");
+  const on = !!sub;
+  return row("Avisa quando chega mensagem, proposta ou novidade de contrato, mesmo com o site fechado. Segue o que você escolheu em Avisos, no seu perfil.",
+    `<input type="checkbox" class="sw" data-push-toggle aria-label="Notificações neste aparelho" ${on ? "checked" : ""} ${busy ? "disabled" : ""}>`)
+    + (on ? `<div class="row" style="justify-content:flex-end; margin-top:8px"><button class="btn sm" type="button" data-push-test>Testar</button></div>` : "");
+}
+async function refreshPushHTML(busy) {
+  const box = $("#adjPushBox"); if (!box) return;
+  let sub = null; try { sub = await pushSub(); } catch {}
+  box.innerHTML = pushHTML(sub, busy);
+}
+async function pushOn() {
+  if (await Notification.requestPermission() !== "granted") { toast("Sem permissão do navegador, as notificações ficam desligadas."); return; }
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  const key = b64uBytes(PUSH_KEY);
+  // inscrição antiga feita com outra chave (a chave do servidor mudou): troca por uma nova
+  if (sub && sub.options && sub.options.applicationServerKey && new Uint8Array(sub.options.applicationServerKey).join() !== key.join()) { await sub.unsubscribe(); sub = null; }
+  // se o serviço de push do navegador não responder (rede bloqueada), desiste em 20 s em vez de travar o interruptor
+  if (!sub) sub = await Promise.race([reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }),
+    new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 20_000))]);
+  await api("POST", "/api/push", sub.toJSON());
+  toast("Notificações ligadas neste aparelho");
+}
+// quiet: ao sair da conta, sem aviso na tela e sem travar se algo falhar
+async function pushOff(quiet) {
+  try {
+    const sub = await pushSub(); if (!sub) return;
+    await api("DELETE", "/api/push", { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe();
+    if (!quiet) toast("Notificações desligadas neste aparelho");
+  } catch (e) { if (!quiet) throw e; }
+}
+// ao abrir o site logado: se este aparelho já recebe, confirma o endereço com o servidor
+// (o navegador pode ter trocado sozinho enquanto o site estava fechado)
+let pushSynced = false; // uma vez por abertura do site basta
+async function pushSync() {
+  if (pushSynced || !ME || !PUSH_KEY || !pushOK() || Notification.permission !== "granted") return;
+  pushSynced = true;
+  try { const sub = await pushSub(); if (sub) await api("POST", "/api/push", sub.toJSON()); } catch {}
+}
+document.addEventListener("change", async e => {
+  if (!e.target.matches || !e.target.matches("[data-push-toggle]")) return;
+  const want = e.target.checked;
+  await refreshPushHTML(true);
+  try { await (want ? pushOn() : pushOff()); }
+  catch (err) { toast(err.status ? err.message : "Não deu para ligar as notificações. Tente de novo."); }
+  await refreshPushHTML();
+  const t = $("#adjPushBox [data-push-toggle]"); if (t) t.focus();
+});
+document.addEventListener("click", async e => {
+  const b = e.target.closest && e.target.closest("[data-push-test]"); if (!b) return;
+  b.disabled = true;
+  try { await api("POST", "/api/push/test"); toast("Notificação de teste enviada"); } catch (err) { toast(err.message); }
+  b.disabled = false;
+});
+
 // CONFORTO: as preferências de acessibilidade (texto maior, mais espaço entre linhas, sem
 // animações, modo foco, vidro líquido). Cada uma liga uma "classe" no <html>, e o styles.css
 // muda o visual quando a classe está ligada.
@@ -2756,11 +2836,13 @@ function openA11y() {
       ${sw("focus", "Modo foco", "Esconde painéis laterais e informações extras")}
       ${sw("calm", "Sem animações", "Remove transições e movimentos")}
       <div class="toggle"><span><b>Relógio Pomodoro</b><br><span class="hint">Blocos de foco e pausa, numa bolinha que fica no canto da tela</span></span><button class="btn sm" data-pomo-open="1">🍅 Abrir</button></div></section>
+    ${ME && PUSH_KEY ? `<section class="adj-group" aria-labelledby="adjPush"><h3 class="label" id="adjPush">Notificações</h3><div id="adjPushBox">${pushHTML(null)}</div></section>` : ""}
     <section class="adj-group" aria-labelledby="adjApp"><h3 class="label" id="adjApp">App</h3><div id="adjInstall">${installHTML()}</div></section>
     ${ga ? `<section class="adj-group" aria-labelledby="adjPriv"><h3 class="label" id="adjPriv">Privacidade</h3>${ga}</section>` : ""}
   </div>`;
   $("#a11yClose").focus();
   sheetDrag($("#layer .drawer"), closeA11y);
+  refreshPushHTML();
 }
 // BANDEIRAS do seletor de idioma: desenhos simples em SVG, recortados em círculo pelo CSS.
 // Latinoamérica usa a do México (não existe uma bandeira única da região).

@@ -188,6 +188,20 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - No máximo um e-mail por conversa a cada 15 minutos.
 - Cada pessoa escolhe em **Meu perfil**: Tudo, Só o importante (sem mensagens de conversa) ou Nenhum. Todo e-mail tem um link para mudar isso sem entrar na conta.
 
+## Notificações push (celular e computador)
+
+São os mesmos avisos do e-mail, aparecendo como notificação no aparelho, mesmo com o site fechado. Não custam nada: quem entrega são os serviços do próprio navegador (Google, Apple, Mozilla e Microsoft).
+
+1. No terminal do editor: `bash configurar-push.sh`. Ele cria as chaves no servidor (a privada nunca sai de lá) e reinicia o app.
+2. Entre no site, abra **Ajustes** e ligue **Notificações neste aparelho**. Toque em **Testar** para ver se chega.
+
+- Cada pessoa liga em cada aparelho que quiser. O navegador só pede a permissão quando ela liga o interruptor.
+- Seguem a mesma escolha de **Avisos** no perfil (Tudo, Só o importante ou Nenhum), a mesma espera de 2 minutos e o mesmo limite de um aviso por conversa a cada 15 minutos.
+- Tocar na notificação abre a conversa. Uma conversa tem uma notificação só: a nova substitui a anterior.
+- iPhone e iPad (iOS 16.4 em diante) só recebem com o app adicionado à Tela de Início. Android, Chrome, Edge, Firefox e Safari no Mac recebem direto pelo site.
+- Ao sair da conta, o aparelho para de receber.
+- Rodar o script de novo não troca as chaves. Trocar (`TROCAR=1 bash configurar-push.sh`) desliga as notificações de todo mundo.
+
 ## Selo de verificado (laudo médico com ICP-Brasil)
 
 Freelancers podem, se quiserem, enviar um laudo em PDF **assinado digitalmente por médico** com certificado ICP-Brasil. Se passar, aparece um selo verde ao lado do nome.
@@ -217,6 +231,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `src/db.js`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
 - `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
 - `src/mail.js`: o carteiro que manda e-mails.
+- `src/push.js`: o carteiro das notificações push (assina e lacra cada notificação, sem pacotes de fora).
 - `src/oauth.js`: o "Entrar com Google/GitHub/LinkedIn/Adobe".
 - `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
 
@@ -236,6 +251,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `instalar.sh`: monta tudo no servidor em 7 passos (Node.js, serviço, nginx, HTTPS).
 - `configurar-https-cloudflare.sh`: envia ao servidor o certificado de origem da Cloudflare, para a conexão Cloudflare → servidor também ser segura.
 - `configurar-email.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
+- `configurar-push.sh`: cria no servidor as chaves das notificações push e liga o recurso.
 - `configurar-admin.sh`: diz quais e-mails podem abrir o painel do dono em `/#panorama` (números gerais, evolução por semana, funil, dinheiro e o que está parado). A página não aparece em nenhum menu e, para as outras pessoas, responde como se não existisse.
 - `scripts/seed.js`: cria pessoas e vagas de exemplo.
 - `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
@@ -251,6 +267,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
 - Recuperar senha por e-mail
 - Avisos por e-mail, com escolha de quanto receber
+- Notificações push no celular e no computador, ligadas por aparelho em Ajustes
 - Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
 - Arquivos no briefing da vaga: até 6 por vaga, 10 MB cada (PDF, imagens, PSD, AI, Office e texto), só para quem tem conta
 - Arquivos nas propostas (até 6), nas mensagens e nas etapas do contrato (até 10 por etapa), com os mesmos tipos e o limite de 10 MB. Esses anexos são particulares: só o cliente e o freela envolvidos conseguem abrir

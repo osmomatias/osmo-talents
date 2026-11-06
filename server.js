@@ -31,6 +31,7 @@ const oauth = require("./src/oauth");
 const mail = require("./src/mail");
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
+const push = require("./src/push"); // notificações push (celular e computador)
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -404,9 +405,10 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 
 // "QUEM SOU EU?": o site pergunta isso ao abrir. Devolvemos a pessoa logada (ou ninguém) e
 // também como a plataforma está configurada: pagamentos ligados? quais botões de login?
-// e-mail ligado? e a versão dos arquivos (para o site perceber quando saiu versão nova).
+// e-mail ligado? a chave pública das notificações push? e a versão dos arquivos (para o site
+// perceber quando saiu versão nova).
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
@@ -1790,7 +1792,8 @@ function notifySweep() {
       ORDER BY m.id`, p.thread_id, p.user_id, p.read_at, p.last_at || "1970-01-01");
     if (!msgs.length || msgs.some(m => m.created_at > new Date(Date.now() - 120e3).toISOString().replace("T", " ").slice(0, 19))) continue;
     run("INSERT INTO notify_log (thread_id, user_id, last_at) VALUES (?,?,datetime('now')) ON CONFLICT(thread_id, user_id) DO UPDATE SET last_at = excluded.last_at", p.thread_id, p.user_id);
-    sendNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "aviso", e.message));
+    if (mail.ENABLED) sendNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "aviso", e.message));
+    if (push.ENABLED) pushNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "push", e.message));
   }
 }
 async function sendNotice(p, msgs) {
@@ -1814,7 +1817,68 @@ ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px
 <p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">${escHtml(T("Mudar ou desligar estes avisos"))}</a></p></div>`;
   await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
 }
-if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
+// NOTIFICAÇÃO PUSH: o mesmo aviso do e-mail, curtinho, em cada aparelho onde a pessoa ligou as
+// notificações. Título = quem escreveu e sobre o quê; texto = a última mensagem; tocar abre a conversa.
+// tag = uma notificação por conversa: a nova substitui a anterior em vez de empilhar.
+async function pushNotice(p, msgs) {
+  const subs = all("SELECT id, endpoint, p256dh, auth FROM push_subs WHERE user_id = ?", p.user_id);
+  if (!subs.length) return;
+  const T = (k, ...a) => i18n.T(p.lang, k, ...a);
+  const about = p.job_title ? `"${p.job_title}"` : T("sua conversa");
+  const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
+  const title = people.length && msgs.every(m => m.sender) ? T("{1} mandou mensagem sobre {2}", people[0], about) : T("Novidade em {1}", about);
+  const last = msgs[msgs.length - 1], text = last.sender_id == null ? i18n.tx(p.lang, last.body) : last.body;
+  const more = msgs.length - 1;
+  const body = (more ? T(more > 1 ? "(e mais {1} mensagens antes)" : "(e mais {1} mensagem antes)", more) + "\n" : "") + (text.length > 160 ? text.slice(0, 160) + "…" : text);
+  await pushToSubs(subs, { title, body, url: `/mensagens/${p.thread_id}`, tag: `thread-${p.thread_id}` }, { topic: `t${p.thread_id}` });
+}
+// Manda para cada aparelho; o que a agência disser que sumiu (404/410) sai da lista.
+async function pushToSubs(subs, data, opts) {
+  let ok = 0;
+  await Promise.all(subs.map(async s => {
+    try {
+      const status = await push.send(s, data, opts);
+      if (status === 404 || status === 410) run("DELETE FROM push_subs WHERE id = ?", s.id);
+      else if (status >= 200 && status < 300) ok++;
+      else console.error(new Date().toISOString(), "push", status, new URL(s.endpoint).hostname);
+    } catch (e) { console.error(new Date().toISOString(), "push", e.message); }
+  }));
+  return ok;
+}
+if (mail.ENABLED || push.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
+
+// LIGAR E DESLIGAR AS NOTIFICAÇÕES deste aparelho (Ajustes). O navegador entrega o endereço da
+// agência e as chaves do aparelho; guardamos ligados à pessoa logada. Se o mesmo aparelho já era
+// de outra conta (alguém trocou de conta no mesmo navegador), ele passa para a conta atual.
+route("POST", "/api/push", ({ user, body, req }) => {
+  if (!push.ENABLED) fail(503, "As notificações ainda não estão ligadas na plataforma.");
+  limit("push:" + user.id, 30, 3600_000);
+  const endpoint = str(body.endpoint, 1000), keys = body.keys || {};
+  const p256dh = str(keys.p256dh, 200), auth = str(keys.auth, 100);
+  if (!push.validEndpoint(endpoint)) fail(400, "Este navegador não é compatível com as notificações.");
+  if (!/^[A-Za-z0-9_-]{80,100}$/.test(p256dh) || !/^[A-Za-z0-9_-]{16,32}$/.test(auth)) fail(400, "Este navegador não é compatível com as notificações.");
+  if (one("SELECT COUNT(*) n FROM push_subs WHERE user_id = ? AND endpoint != ?", user.id, endpoint).n >= 10)
+    run("DELETE FROM push_subs WHERE id = (SELECT id FROM push_subs WHERE user_id = ? ORDER BY created_at LIMIT 1)", user.id); // no máximo 10 aparelhos
+  const device = str(req.headers["user-agent"], 300);
+  run(`INSERT INTO push_subs (user_id, endpoint, p256dh, auth, device) VALUES (?,?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, device = excluded.device`, user.id, endpoint, p256dh, auth, device);
+  return { ok: true };
+});
+route("DELETE", "/api/push", ({ user, body }) => {
+  run("DELETE FROM push_subs WHERE user_id = ? AND endpoint = ?", user.id, str(body.endpoint, 1000));
+  return { ok: true };
+});
+// TESTE: manda uma notificação para os aparelhos da pessoa, para ela ver como fica.
+route("POST", "/api/push/test", async ({ user }) => {
+  if (!push.ENABLED) fail(503, "As notificações ainda não estão ligadas na plataforma.");
+  limit("pushtest:" + user.id, 5, 600_000);
+  const subs = all("SELECT id, endpoint, p256dh, auth FROM push_subs WHERE user_id = ?", user.id);
+  if (!subs.length) fail(400, "Ligue as notificações neste aparelho primeiro.");
+  const lang = one("SELECT lang FROM users WHERE id = ?", user.id).lang;
+  const ok = await pushToSubs(subs, { title: "Osmo Talents", body: i18n.T(lang, "As notificações estão funcionando neste aparelho."), url: "/", tag: "teste" }, { ttl: 600 });
+  if (!ok) fail(502, "Não deu para entregar a notificação agora. Tente de novo em alguns minutos.");
+  return { sent: ok };
+});
 
 // Rotas desse link do rodapé: ver e trocar a preferência de avisos.
 // preferências pelo link do e-mail (sem precisar entrar na conta)
