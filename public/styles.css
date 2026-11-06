@@ -130,6 +130,9 @@ main{padding-block:32px 80px}
 .cat{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px; cursor:pointer; text-align:left; display:flex; flex-direction:column; gap:4px}
 .cat:hover{border-color:var(--accent)}
 .cat b{font-family:var(--f-display); font-size:1.05rem}
+.cat-ico{width:40px; height:40px; border-radius:12px; display:grid; place-items:center; margin-bottom:8px; color:var(--accent); background:var(--accent-soft); transition:background .2s ease, color .2s ease}
+.cat-ico svg{width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+.cat:hover .cat-ico,.cat:focus-visible .cat-ico{background:var(--accent); color:var(--accent-ink)}
 .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:var(--gap); counter-reset:s}
 .step{counter-increment:s; display:flex; flex-direction:column; gap:8px}
 .step::before{content:counter(s); font-family:var(--f-mono); font-weight:600; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent)}

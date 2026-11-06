@@ -55,6 +55,18 @@ let CATS = [
   { id: "texto", n: "Escrita e conteúdo", c: "Copy, roteiro, revisão" },
   { id: "dados", n: "Dados e análise", c: "Painéis, planilhas, pesquisa" },
 ];
+// ícones das áreas (mesma família: 24×24, traço 1.8, pontas arredondadas)
+const CAT_ICONS = {
+  ia: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/><path d="M12 9l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>',
+  dev: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 8.5h18"/><path d="M10 12l-2.5 2.5L10 17M14 12l2.5 2.5L14 17"/>',
+  design: '<path d="M10.5 13.5L18.6 5.4a1.6 1.6 0 0 1 2.3 2.3l-8.1 8.1"/><path d="M8.5 14c-2 0-3.5 1.5-3.5 3.5 0 1.2-.7 2-2 2.5 1 .7 2.4 1 3.8 1 2.6 0 4.2-1.6 4.2-3.8 0-1.8-1.1-3.2-2.5-3.2z"/>',
+  marketing: '<path d="M3.5 10v4a1 1 0 0 0 1 1H7l8.5 4.5v-15L7 9H4.5a1 1 0 0 0-1 1z"/><path d="M7 15l1.2 5h2.6L9.8 15.8"/><path d="M19 9.5a3.5 3.5 0 0 1 0 5"/>',
+  dados: '<path d="M4 4v14a2 2 0 0 0 2 2h14"/><path d="M8.5 16v-3M12.5 16V8M16.5 16v-5"/>',
+  admin: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19v.5a2.5 2.5 0 0 1-2.5 2.5H13"/>',
+  texto: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+  eng: '<path d="M4 20V4l16 16z"/><path d="M8 16v-4.5l4.5 4.5z"/><path d="M4 8h2M4 12h2M4 16h2"/>',
+  _: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+};
 let SKILLS = { all: [], byCat: {} };
 async function loadTaxonomy() {
   try {
@@ -553,7 +565,7 @@ V.inicio = async () => {
 </section>
 <section class="stack" style="margin-top:32px">
   <h2>Explore por área</h2>
-  <div class="cats">${CATS.map(c => `<button class="cat" data-cat="${c.id}"><b>${c.n}</b><span class="muted">${c.c}</span></button>`).join("")}</div>
+  <div class="cats">${CATS.map(c => `<button class="cat" data-cat="${c.id}"><span class="cat-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${CAT_ICONS[c.id] || CAT_ICONS._}</svg></span><b>${c.n}</b><span class="muted">${c.c}</span></button>`).join("")}</div>
 </section>
 <section class="stack" style="margin-top:56px">
   <h2>Como funciona</h2>
