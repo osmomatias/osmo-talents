@@ -29,6 +29,7 @@ const { one, all, run, tx } = require("./src/db");
 const asaas = require("./src/asaas");
 const oauth = require("./src/oauth");
 const mail = require("./src/mail");
+const push = require("./src/push"); // notificações no celular e no computador (Web Push)
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 
@@ -406,7 +407,7 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 // também como a plataforma está configurada: pagamentos ligados? quais botões de login?
 // e-mail ligado? e a versão dos arquivos (para o site perceber quando saiu versão nova).
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
@@ -1763,7 +1764,9 @@ route("DELETE", "/api/squads/:id/leave", ({ user, params }) => {
 // - não mandou e-mail daquela conversa nos últimos 15 minutos;
 // - a pessoa quer avisos ("importante" = só avisos do sistema, sem conversa das pessoas).
 // O link do rodapé usa um código pessoal (notifyToken) para mudar os avisos sem precisar entrar.
-/* ---------------- avisos por e-mail ---------------- */
+// O MESMO carteiro também manda a notificação no aparelho (push), quando a pessoa ligou em algum:
+// as mesmas regras valem para os dois (juntar, esperar, não repetir, respeitar "importante"/"nada").
+/* ---------------- avisos por e-mail e no aparelho ---------------- */
 // Uma varredura por minuto: quem tem mensagens não lidas numa conversa recebe um e-mail só, com o resumo.
 // Espera 2 minutos sem mensagens novas (junta tudo que chegou junto), pula quem já leu
 // e manda no máximo um e-mail por conversa a cada 15 minutos.
@@ -1784,26 +1787,36 @@ function notifySweep() {
     WHERE t.updated_at > datetime('now', '-30 minutes') AND u.notify_level != 'nada'
       AND (n.last_at IS NULL OR n.last_at < datetime('now', '-15 minutes'))`);
   for (const p of pairs) {
+    // aparelhos inscritos dessa pessoa; sem e-mail ligado e sem aparelho, não há por onde avisar
+    const subs = push.ENABLED ? all("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?", p.user_id) : [];
+    if (!mail.ENABLED && !subs.length) continue;
     const msgs = all(`SELECT m.body, m.sender_id, m.created_at, s.name sender FROM messages m LEFT JOIN users s ON s.id = m.sender_id
       WHERE m.thread_id = ? AND (m.sender_id IS NULL OR m.sender_id != ?) AND m.created_at > ? AND m.created_at > ?
         AND m.created_at > datetime('now', '-30 minutes') ${p.notify_level === "importante" ? "AND m.sender_id IS NULL" : ""}
       ORDER BY m.id`, p.thread_id, p.user_id, p.read_at, p.last_at || "1970-01-01");
     if (!msgs.length || msgs.some(m => m.created_at > new Date(Date.now() - 120e3).toISOString().replace("T", " ").slice(0, 19))) continue;
     run("INSERT INTO notify_log (thread_id, user_id, last_at) VALUES (?,?,datetime('now')) ON CONFLICT(thread_id, user_id) DO UPDATE SET last_at = excluded.last_at", p.thread_id, p.user_id);
-    sendNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "aviso", e.message));
+    if (mail.ENABLED) sendNotice(p, msgs).catch(e => console.error(new Date().toISOString(), "aviso", e.message));
+    if (subs.length) sendPushNotice(p, msgs, subs).catch(e => console.error(new Date().toISOString(), "push", e.message));
   }
 }
-async function sendNotice(p, msgs) {
-  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
+// O "resumo" de um aviso, igual no e-mail e na notificação: título (quem mandou, sobre qual vaga)
+// e as linhas das mensagens, tudo no idioma de quem recebe.
+function noticeParts(p, msgs, max = 400) {
   const people = [...new Set(msgs.filter(m => m.sender).map(m => m.sender))];
   // tudo no idioma de quem recebe; mensagens do sistema ("Proposta aceita...") também são traduzidas
   const T = (k, ...a) => i18n.T(p.lang, k, ...a);
   const about = p.job_title ? `"${p.job_title}"` : T("sua conversa");
   const subject = people.length && msgs.every(m => m.sender) ? T("{1} mandou mensagem sobre {2}", people[0], about) : T("Novidade em {1}", about);
-  const shown = msgs.slice(-5), more = msgs.length - shown.length;
   const body = m => m.sender_id == null ? i18n.tx(p.lang, m.body) : m.body; // só as do sistema; o que as pessoas escrevem fica como está
-  const line = m => (m.sender ? `${m.sender}: ` : "") + (body(m).length > 400 ? body(m).slice(0, 400) + "…" : body(m));
+  const line = m => (m.sender ? `${m.sender}: ` : "") + (body(m).length > max ? body(m).slice(0, max) + "…" : body(m));
+  return { T, subject, line };
+}
+async function sendNotice(p, msgs) {
+  const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
+  const { T, subject, line } = noticeParts(p, msgs);
+  const shown = msgs.slice(-5), more = msgs.length - shown.length;
   const first = p.name.split(" ")[0];
   const moreTxt = more ? T(more > 1 ? "(e mais {1} mensagens antes)" : "(e mais {1} mensagem antes)", more) : "";
   const text = `${T("Olá, {1}.", first)}\n\n${more ? moreTxt + "\n" : ""}${shown.map(line).join("\n\n")}\n\n${T("Abrir a conversa:")} ${link}\n\n--\nOsmo Talents. ${T("Para mudar ou desligar estes avisos:")} ${prefs}`;
@@ -1814,7 +1827,23 @@ ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px
 <p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">${escHtml(T("Mudar ou desligar estes avisos"))}</a></p></div>`;
   await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
 }
-if (mail.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
+// A notificação é curtinha: o mesmo título do e-mail e as últimas 3 mensagens, cada uma com até
+// 120 letras (o pacote do push tem limite de tamanho, e a tela do celular também).
+// "tag" com o número da conversa: um aviso novo da mesma conversa SUBSTITUI o anterior em vez de empilhar.
+async function sendPushNotice(p, msgs, subs) {
+  const { subject, line } = noticeParts(p, msgs, 120);
+  await pushTo(subs, { title: subject, body: msgs.slice(-3).map(line).join("\n"), url: `/mensagens/${p.thread_id}`, tag: `thread-${p.thread_id}` });
+}
+// Entrega para cada aparelho. O correio respondeu 404/410? A inscrição morreu (notificações
+// desligadas, app desinstalado): apagamos a linha para não tentar de novo. Deu certo? Anotamos a data.
+async function pushTo(subs, data) {
+  await Promise.all(subs.map(async s => {
+    const status = await push.send(s, data).catch(e => { console.error(new Date().toISOString(), "push", e.message); return 0; });
+    if (status === 404 || status === 410) run("DELETE FROM push_subscriptions WHERE id = ?", s.id);
+    else if (status >= 200 && status < 300) run("UPDATE push_subscriptions SET last_ok_at = datetime('now') WHERE id = ?", s.id);
+  }));
+}
+if (mail.ENABLED || push.ENABLED) setInterval(() => { try { notifySweep(); } catch (e) { console.error("aviso", e); } }, 60_000).unref();
 
 // Rotas desse link do rodapé: ver e trocar a preferência de avisos.
 // preferências pelo link do e-mail (sem precisar entrar na conta)
@@ -1831,6 +1860,34 @@ route("POST", "/api/notify", ({ body }) => {
   run("UPDATE users SET notify_level = ? WHERE id = ?", body.level, u.id);
   return { level: body.level };
 }, { auth: false });
+
+// NOTIFICAÇÕES NESTE APARELHO: o site manda a inscrição que o navegador criou (endereço + chaves).
+// Guardamos (ou passamos para esta conta, se o navegador já era de outra) e deixamos no máximo
+// 10 aparelhos por pessoa: os mais antigos saem. A escolha tudo/importante/nada continua valendo.
+route("POST", "/api/push/subscribe", ({ user, body }) => {
+  if (!push.ENABLED) fail(503, "As notificações ainda não estão ativas na plataforma.");
+  const s = body.subscription;
+  if (!push.validSubscription(s)) fail(400, "Este navegador mandou uma inscrição que não reconhecemos.");
+  run(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, device) VALUES (?,?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, device = excluded.device`,
+    user.id, s.endpoint, s.keys.p256dh, s.keys.auth, str(body.device, 40));
+  run(`DELETE FROM push_subscriptions WHERE user_id = ? AND id NOT IN (SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 10)`, user.id, user.id);
+  return { ok: true };
+});
+// desligar neste aparelho (ou ao sair da conta): apaga só a inscrição deste navegador
+route("POST", "/api/push/unsubscribe", ({ user, body }) => {
+  run("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?", user.id, str(body.endpoint, 1000));
+  return { ok: true };
+});
+// "Enviar um teste": manda uma notificação na hora (sem esperar o carteiro) só para este aparelho
+route("POST", "/api/push/test", async ({ user, body }) => {
+  limit("push-test:" + user.id, 5, 600_000);
+  const s = one("SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND endpoint = ?", user.id, str(body.endpoint, 1000));
+  if (!s) fail(404, "Este aparelho não está inscrito. Ative as notificações de novo.");
+  const T = (k, ...a) => i18n.T(user.lang, k, ...a);
+  await pushTo([s], { title: "Osmo Talents", body: T("As notificações estão funcionando neste aparelho."), url: "/perfil", tag: "teste" });
+  return { ok: !!one("SELECT 1 FROM push_subscriptions WHERE id = ?", s.id) };
+});
 
 // O CAMINHO DO "ENTRAR COM GOOGLE" (a parte do servidor):
 // - /auth/google: guarda o bilhete secreto (state) no banco e num cookie e manda a pessoa ao Google;

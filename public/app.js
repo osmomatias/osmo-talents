@@ -200,7 +200,7 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 // - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
 //   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false;
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PUSH = ""; // PUSH = chave pública do push ("" = desligado)
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 // vidro líquido vem ligado, exceto para quem pediu menos transparência no sistema
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
@@ -228,7 +228,7 @@ async function checkVersion() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; GA_ID = d.analytics || ""; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
   renderChrome(); gaLoad(); gaBanner();
 }
 
@@ -1795,6 +1795,97 @@ const NOTIFY_OPTS = [["tudo", "Tudo", "Propostas, contratos, etapas, pagamentos 
   ["importante", "Só o importante", "Propostas, contratos, etapas e pagamentos. Sem mensagens de conversa"], ["nada", "Nenhum", "Não mandar e-mails de aviso"]];
 const notifyOpts = cur => `<div class="field" role="radiogroup" aria-label="Avisos por e-mail">${NOTIFY_OPTS.map(([v, t, d]) =>
   `<label class="check"><input type="radio" name="notify" value="${v}" ${cur === v ? "checked" : ""}><span><b>${t}</b><br><span class="hint">${d}</span></span></label>`).join("")}</div>`;
+
+// NOTIFICAÇÕES NESTE APARELHO (push): o aviso que aparece no celular ou no computador mesmo
+// com o site fechado. Regras combinadas:
+// - a permissão do navegador SÓ é pedida quando a pessoa toca em "Ativar" (nunca ao abrir o site);
+// - mostramos em que pé está: ativado, bloqueado no navegador, não suportado ou "instale primeiro"
+//   (no iPhone e no iPad, a Apple só deixa receber com o site instalado na tela de início);
+// - a escolha tudo / só o importante / nenhum vale também aqui: "Nenhum" desliga as notificações.
+// Cada aparelho se inscreve separado; o servidor guarda uma linha por aparelho.
+/* ---------- notificações neste aparelho (push) ---------- */
+// isIOS e isInstalled moram lá embaixo, junto com o "app instalável"
+const pushKey = () => Uint8Array.from(atob(PUSH.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+const deviceName = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) || isIOS() ? "iPad" : /Android/.test(u) ? "Android" : /Mac/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows" : /Linux/.test(u) ? "Linux" : ""; };
+// o ajudante (sw.js) registrado e já ligado; sem ele não existe push
+async function swReady() {
+  if (!(await navigator.serviceWorker.getRegistration())) await navigator.serviceWorker.register("/sw.js");
+  return navigator.serviceWorker.ready;
+}
+// em que pé estão as notificações NESTE navegador (sem pedir nada à pessoa)
+async function pushState() {
+  if (isIOS() && !isInstalled()) return { s: "ios" };
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return { s: "unsupported" };
+  if (Notification.permission === "denied") return { s: "denied" };
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = reg && await reg.pushManager.getSubscription();
+  return { s: sub && Notification.permission === "granted" && sameKey(sub) ? "on" : "off", sub };
+}
+// a inscrição foi feita com a chave atual do servidor? (se a Osmo trocar as chaves, as antigas param de funcionar)
+function sameKey(sub) {
+  const old = sub.options && sub.options.applicationServerKey && new Uint8Array(sub.options.applicationServerKey), key = pushKey();
+  return !old || (old.length === key.length && old.every((b, i) => b === key[i]));
+}
+const pushFieldHTML = () => `<div class="field"><span class="flabel">Notificações neste aparelho</span>
+  <div id="pushBox" class="stack" style="gap:8px" aria-live="polite"><p class="hint">Verificando este aparelho…</p></div></div>`;
+async function refreshPushBox() {
+  const box = $("#pushBox"); if (!box) return;
+  let st; try { st = await pushState(); } catch { st = { s: "unsupported" }; }
+  const btn = (act, label, cls = "") => `<button type="button" class="btn sm ${cls}" data-act="${act}">${label}</button>`;
+  const same = `<p class="hint">Vale a mesma escolha de cima: “Nenhum” desliga também as notificações.</p>`;
+  box.innerHTML = {
+    on: `<p><span class="status ok">Ativadas neste aparelho</span></p><div class="row">${btn("push-test", "Enviar um teste")}${btn("push-off", "Desativar", "ghost")}</div>${same}`,
+    off: `<p class="hint">Receba no celular ou no computador os mesmos avisos do e-mail, mesmo com o site fechado.</p><div class="row">${btn("push-on", "Ativar notificações neste aparelho", "hl")}</div>${same}`,
+    denied: `<p><span class="status wait">Bloqueadas no navegador</span></p><p class="hint">Para receber, libere as notificações deste site nas configurações do navegador e volte aqui.</p>`,
+    unsupported: `<p class="hint">Este navegador não recebe notificações. Tente o Chrome, o Edge, o Firefox ou o Safari atualizado.</p>`,
+    ios: `<p class="hint">No iPhone e no iPad, as notificações só funcionam com a Osmo instalada na tela de início. Toque em Compartilhar e depois em “Adicionar à Tela de Início”. Depois abra a Osmo pelo ícone novo e ative aqui.</p>`,
+  }[st.s];
+  // já inscrito: reenvia a inscrição em silêncio (o servidor pode ter apagado, ou outra conta usou este navegador)
+  if (st.s === "on") api("POST", "/api/push/subscribe", { subscription: st.sub.toJSON(), device: deviceName() }).catch(() => {});
+}
+after.perfil = () => { if (PUSH) refreshPushBox(); };
+async function pushOn() {
+  try {
+    const perm = await Notification.requestPermission(); // o pedido do navegador aparece só agora, depois do toque
+    if (perm !== "granted") { if (perm === "denied") toast("Notificações bloqueadas no navegador"); return; }
+    const reg = await swReady(), key = pushKey();
+    let sub = await reg.pushManager.getSubscription();
+    // se a chave do servidor mudou, a inscrição antiga não serve mais: desfaz e faz de novo
+    if (sub && !sameKey(sub)) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await api("POST", "/api/push/subscribe", { subscription: sub.toJSON(), device: deviceName() });
+    toast("Notificações ativadas neste aparelho");
+  } catch (e) { toast(e.status ? e.message : "Não deu para ativar as notificações neste navegador."); }
+  finally { refreshPushBox(); }
+}
+// desliga neste aparelho (também usado ao sair da conta, para o próximo a usar o navegador não receber os seus avisos)
+async function pushOff(quiet) {
+  try {
+    const reg = "serviceWorker" in navigator && await navigator.serviceWorker.getRegistration();
+    const sub = reg && reg.pushManager && await reg.pushManager.getSubscription();
+    if (!sub) return;
+    await api("POST", "/api/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe();
+    if (!quiet) toast("Notificações desativadas neste aparelho");
+  } catch {} finally { if (!quiet) refreshPushBox(); }
+}
+async function pushTest() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(), sub = reg && await reg.pushManager.getSubscription();
+    if (!sub) return refreshPushBox();
+    const r = await api("POST", "/api/push/test", { endpoint: sub.endpoint });
+    toast(r.ok ? "Teste enviado. Deve aparecer em instantes." : "O navegador não aceitou o teste. Ative as notificações de novo.");
+    if (!r.ok) { await sub.unsubscribe().catch(() => {}); refreshPushBox(); }
+  } catch (e) { toast(e.message); }
+}
+// tocar numa notificação com o site já aberto: o sw.js manda o endereço e a própria aba vai até lá
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => {
+  const p = e.data && e.data.type === "osmo-open" && e.data.path;
+  if (typeof p !== "string" || !p.startsWith("/") || p.startsWith("//")) return;
+  if (p !== location.pathname + location.search + location.hash) history.pushState(null, "", p);
+  route();
+});
+
 V.avisos = async () => {
   const token = curH().split("-")[1] || "";
   const d = await api("GET", "/api/notify?token=" + encodeURIComponent(token));
@@ -1934,7 +2025,8 @@ V.perfil = async () => {
       + f("w_foco", "Ritmo", p.how.foco, 'placeholder="Ex.: Entregas a cada 2 ou 3 dias"')
       + f("p_tag", "Identificação (opcional)", p.tag, 'placeholder="Ex.: TDAH · entregas curtas"', "Só preencha se quiser. Aparece como um selo no seu perfil.")
       + save, "Aparece no seu perfil e nas suas propostas. Quem contrata lê antes de chamar.") : ""}
-    ${MAIL ? sec("avisos", "Avisos por e-mail", notifyOpts(ME.notify || "tudo") + save, "Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.") : ""}
+    ${MAIL || PUSH ? sec("avisos", PUSH ? "Avisos" : "Avisos por e-mail", notifyOpts(ME.notify || "tudo") + (PUSH ? pushFieldHTML() : "") + save,
+      MAIL ? "Mandamos um e-mail só quando você ainda não viu a novidade no site, juntando tudo que chegou junto." : "Avisamos só quando você ainda não viu a novidade no site, juntando tudo que chegou junto.") : ""}
     <div id="profErr" class="err" role="alert" hidden></div>
   </form>
   ${isF ? `<div class="stack" style="margin-top:18px">
@@ -2134,7 +2226,10 @@ document.addEventListener("click", async e => {
   const busy = fn => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
     case "switch-role": return busy(() => switchRole(act.dataset.role, act.dataset.back))();
-    case "logout": if (menuOpen) closeMenu(false); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
+    case "push-on": return pushOn();
+    case "push-off": return pushOff();
+    case "push-test": return pushTest();
+    case "logout": if (menuOpen) closeMenu(false); if (PUSH) await pushOff(true); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
     case "oauth-role": return busy(async () => {
       try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }
       catch (err) { const b = $("#roleErr"); if (b) { b.textContent = err.message; b.hidden = false; } else toast(err.message); }
