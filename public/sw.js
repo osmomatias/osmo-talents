@@ -12,6 +12,7 @@
 //    portfólio NUNCA é guardado. Passa direto, como se o ajudante não existisse;
 // 4. NOTIFICAÇÕES: quando o servidor manda um aviso (push), é ele que acorda,
 //    mesmo com o site fechado, e mostra a notificação. Tocar nela abre a conversa.
+//    Ele também pinta a bolinha vermelha com o número de não lidas no ícone do app.
 // Fica na raiz do site (/sw.js) porque o ajudante só cuida da pasta onde mora
 // e das que estão abaixo dela.
 // Trocar VERSION apaga as cópias antigas de todo mundo na próxima visita.
@@ -64,6 +65,11 @@ self.addEventListener("fetch", e => {
 self.addEventListener("push", e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : "" }; }
+  // BOLINHA VERMELHA NO ÍCONE (como a do Mail no iPhone): o servidor manda o total de não lidas.
+  // Só existe no app instalado (tela de início, Dock ou barra de tarefas); onde não existe, ignoramos.
+  if (typeof d.badge === "number" && self.navigator.setAppBadge) {
+    (d.badge > 0 ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {});
+  }
   e.waitUntil(self.registration.showNotification(d.title || "Osmo Talents", {
     body: d.body || "", tag: d.tag || undefined, renotify: !!d.tag,
     icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", lang: d.lang || undefined,

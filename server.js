@@ -406,12 +406,15 @@ route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
 // "QUEM SOU EU?": o site pergunta isso ao abrir. Devolvemos a pessoa logada (ou ninguém) e
 // também como a plataforma está configurada: pagamentos ligados? quais botões de login?
 // e-mail ligado? e a versão dos arquivos (para o site perceber quando saiu versão nova).
+// Quantas mensagens a pessoa ainda não leu (em todas as conversas). É o número vermelho do
+// menu, da barra de baixo e do ícone do app instalado (como o do Mail no iPhone).
+const unreadCount = id => one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
+    WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
+    AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id).n;
 route("GET", "/api/me", ({ user }) => {
   const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
-  const unread = one(`SELECT COUNT(*) n FROM messages m JOIN threads t ON t.id = m.thread_id
-    WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
-    AND (m.sender_id IS NULL OR m.sender_id != ?)`, user.id, user.id, user.id).n;
+  const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
   return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
@@ -1830,9 +1833,10 @@ ${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px
 // A notificação é curtinha: o mesmo título do e-mail e as últimas 3 mensagens, cada uma com até
 // 120 letras (o pacote do push tem limite de tamanho, e a tela do celular também).
 // "tag" com o número da conversa: um aviso novo da mesma conversa SUBSTITUI o anterior em vez de empilhar.
+// "badge" leva o total de não lidas, para o ícone do app mostrar a bolinha vermelha com o número.
 async function sendPushNotice(p, msgs, subs) {
   const { subject, line } = noticeParts(p, msgs, 120);
-  await pushTo(subs, { title: subject, body: msgs.slice(-3).map(line).join("\n"), url: `/mensagens/${p.thread_id}`, tag: `thread-${p.thread_id}` });
+  await pushTo(subs, { title: subject, body: msgs.slice(-3).map(line).join("\n"), url: `/mensagens/${p.thread_id}`, tag: `thread-${p.thread_id}`, badge: unreadCount(p.user_id) });
 }
 // Entrega para cada aparelho. O correio respondeu 404/410? A inscrição morreu (notificações
 // desligadas, app desinstalado): apagamos a linha para não tentar de novo. Deu certo? Anotamos a data.

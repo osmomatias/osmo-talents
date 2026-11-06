@@ -309,8 +309,17 @@ async function switchRole(to, back) {
   // freela que acabou de virar cliente começa publicando; cliente que virou freela começa pelo perfil
   return go(back || (r.added ? (r.role === "cliente" ? "publicar" : "perfil") : "painel"));
 }
+// BOLINHA VERMELHA NO ÍCONE DO APP (igual à do Mail no iPhone): o número de mensagens não lidas.
+// Funciona com o site instalado (tela de início do iPhone/Android, Dock do Mac, barra do Windows).
+// Atualiza sempre que o site pergunta "quem sou eu?" (ao abrir, a cada 30 s e depois de ler uma
+// conversa); com o app fechado, quem atualiza é o sw.js, quando chega uma notificação.
+function appBadge(n) {
+  if (!("setAppBadge" in navigator)) return;
+  (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+}
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
+  appBadge(unread);
   $$("[data-unread]").forEach(b => { b.hidden = !unread; b.textContent = unread; });
   const top = $("#topActions");
   const pub = !ME || ME.role === "cliente" ? `<button class="btn sm hl" data-go="publicar">Publicar<span class="only-d"> vaga</span></button>` : "";
