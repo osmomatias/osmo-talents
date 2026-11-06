@@ -861,9 +861,8 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
    - iMac (1800 px e 2300 px ou mais): a letra e a coluna crescem juntas, para o site não virar
      uma faixa estreita e miudinha no meio de uma tela enorme. */
 /* ---------- telas maiores: iPad (em pé e deitado), MacBook e iMac ---------- */
-/* áreas: 4 colunas com a primeira em destaque (2 + 1 + 1 / 1 + 1 + 1 + 1 fecha as 7 sem sobra); 2 colunas no celular */
+/* áreas: 8 áreas fecham perfeitamente 2 linhas de 4 colunas (e 4 linhas de 2 no celular) */
 .cats{grid-template-columns:repeat(4,minmax(0,1fr))}
-.cats .cat:first-child{grid-column:span 2; background-image:linear-gradient(135deg, var(--accent-soft), transparent 70%)}
 @media (max-width:700px){ .cats{grid-template-columns:repeat(2,minmax(0,1fr))} }
 
 /* iPad em pé (768 a 900 px): filtros e painéis voltam para o lado, em vez de empilhar */

@@ -967,6 +967,142 @@
      ]
     }
    ]
+  },
+  {
+   "id": "eng",
+   "nome": "Engenharias e arquitetura",
+   "resumo": "Plantas, projetos, CAD, 3D",
+   "especialidades": [
+    {
+     "nome": "Arquitetura",
+     "fonte": "https://www.upwork.com/hire/architects/",
+     "habilidades": [
+      "Projeto arquitetônico",
+      "Planta baixa",
+      "AutoCAD",
+      "Revit",
+      "SketchUp",
+      "Desenho arquitetônico",
+      "Arquitetura residencial",
+      "Arquitetura comercial",
+      "BIM",
+      "Modelagem 3D"
+     ]
+    },
+    {
+     "nome": "Design de interiores",
+     "fonte": "https://www.upwork.com/hire/interior-designers/",
+     "habilidades": [
+      "Design de interiores",
+      "Layout de interiores",
+      "SketchUp",
+      "Renderização 3D",
+      "Decoração",
+      "Iluminação",
+      "Marcenaria e detalhamento",
+      "Moodboard",
+      "AutoCAD"
+     ]
+    },
+    {
+     "nome": "Modelagem e renderização 3D",
+     "fonte": "https://www.upwork.com/hire/3d-modelers/",
+     "habilidades": [
+      "Modelagem 3D",
+      "Renderização 3D",
+      "Renderização fotorrealista",
+      "V-Ray",
+      "Lumion",
+      "Corona Renderer",
+      "3ds Max",
+      "Blender",
+      "Enscape"
+     ]
+    },
+    {
+     "nome": "CAD e desenho técnico",
+     "fonte": "https://www.upwork.com/hire/cad-designers/",
+     "habilidades": [
+      "AutoCAD",
+      "Desenho técnico",
+      "CAD 2D",
+      "CAD 3D",
+      "Detalhamento técnico",
+      "SolidWorks",
+      "Conversão de arquivos CAD",
+      "As-built"
+     ]
+    },
+    {
+     "nome": "BIM (Modelagem da Informação)",
+     "fonte": "https://www.upwork.com/hire/bim-specialists/",
+     "habilidades": [
+      "BIM",
+      "Revit",
+      "Navisworks",
+      "Coordenação BIM",
+      "Modelagem BIM",
+      "Compatibilização de projetos",
+      "Famílias Revit",
+      "IFC"
+     ]
+    },
+    {
+     "nome": "Engenharia civil e estrutural",
+     "fonte": "https://www.upwork.com/hire/civil-engineers/",
+     "habilidades": [
+      "Engenharia civil",
+      "Cálculo estrutural",
+      "Estruturas de concreto",
+      "Estruturas metálicas",
+      "Fundações",
+      "Análise estrutural",
+      "Eberick",
+      "TQS",
+      "Ftool"
+     ]
+    },
+    {
+     "nome": "Engenharia mecânica",
+     "fonte": "https://www.upwork.com/hire/mechanical-engineers/",
+     "habilidades": [
+      "Engenharia mecânica",
+      "Projeto mecânico",
+      "SolidWorks",
+      "Projeto de produto",
+      "Prototipagem",
+      "Impressão 3D",
+      "Análise por elementos finitos (FEA)",
+      "Autodesk Inventor"
+     ]
+    },
+    {
+     "nome": "Engenharia elétrica",
+     "fonte": "https://www.upwork.com/hire/electrical-engineers/",
+     "habilidades": [
+      "Engenharia elétrica",
+      "Projeto elétrico",
+      "Instalações elétricas",
+      "Automação predial",
+      "Automação residencial",
+      "Painéis elétricos",
+      "Diagramas unifilares",
+      "AutoCAD elétrico"
+     ]
+    },
+    {
+     "nome": "Engenharia hidrossanitária e PPCI",
+     "fonte": "https://www.upwork.com/hire/plumbing-designers/",
+     "habilidades": [
+      "Projeto hidrossanitário",
+      "Instalações hidráulicas",
+      "Rede de esgoto e águas pluviais",
+      "Projeto de prevenção contra incêndio (PPCI)",
+      "AutoCAD",
+      "Revit MEP"
+     ]
+    }
+   ]
   }
  ]
 }
