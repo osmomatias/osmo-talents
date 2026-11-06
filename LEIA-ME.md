@@ -188,19 +188,26 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 - No máximo um e-mail por conversa a cada 15 minutos.
 - Cada pessoa escolhe em **Meu perfil**: Tudo, Só o importante (sem mensagens de conversa) ou Nenhum. Todo e-mail tem um link para mudar isso sem entrar na conta.
 
-## Notificações push (celular e computador)
+## Notificações no celular e no computador (push)
 
-São os mesmos avisos do e-mail, aparecendo como notificação no aparelho, mesmo com o site fechado. Não custam nada: quem entrega são os serviços do próprio navegador (Google, Apple, Mozilla e Microsoft).
+Os mesmos avisos do e-mail (mensagem nova, proposta recebida ou aceita, etapa paga, entregue, aprovada ou com ajustes pedidos, anexos novos) podem aparecer como notificação no aparelho, mesmo com o site fechado. Funciona sem e-mail configurado, e sem bibliotecas externas (`src/push.js` faz o carimbo VAPID e o cadeado aes128gcm só com `node:crypto`).
 
-1. No terminal do editor: `bash configurar-push.sh`. Ele cria as chaves no servidor (a privada nunca sai de lá) e reinicia o app.
-2. Entre no site, abra **Ajustes** e ligue **Notificações neste aparelho**. Toque em **Testar** para ver se chega.
+Para ligar:
 
-- Cada pessoa liga em cada aparelho que quiser. O navegador só pede a permissão quando ela liga o interruptor.
-- Seguem a mesma escolha de **Avisos** no perfil (Tudo, Só o importante ou Nenhum), a mesma espera de 2 minutos e o mesmo limite de um aviso por conversa a cada 15 minutos.
-- Tocar na notificação abre a conversa. Uma conversa tem uma notificação só: a nova substitui a anterior.
-- iPhone e iPad (iOS 16.4 em diante) só recebem com o app adicionado à Tela de Início. Android, Chrome, Edge, Firefox e Safari no Mac recebem direto pelo site.
-- Ao sair da conta, o aparelho para de receber.
-- Rodar o script de novo não troca as chaves. Trocar (`TROCAR=1 bash configurar-push.sh`) desliga as notificações de todo mundo.
+1. No terminal do editor: `bash configurar-push.sh`. Ele gera as chaves no seu Mac, grava no `.env` do servidor e reinicia o app.
+2. Abra **Meu perfil → Avisos → Notificações neste aparelho**, toque em **Ativar** e depois em **Enviar um teste**.
+
+Como funciona:
+
+- O navegador só pede permissão quando a pessoa toca em **Ativar**, nunca ao abrir o site.
+- Cada aparelho se inscreve separado (até 10 por pessoa). Sair da conta desliga as notificações daquele aparelho.
+- Valem as mesmas regras do e-mail: espera 2 minutos e junta tudo, no máximo um aviso por conversa a cada 15 minutos, e a escolha Tudo / Só o importante / Nenhum vale também para o push ("Nenhum" corta tudo).
+- Tocar na notificação abre a conversa (ou traz para a frente a aba que já estava aberta).
+- O texto sai no idioma da pessoa (`users.lang`), como os e-mails.
+- **iPhone e iPad:** só funciona com o site instalado na tela de início (Compartilhar → Adicionar à Tela de Início), iOS 16.4 ou mais novo. O perfil explica isso quando a pessoa abre pelo Safari.
+- Quando o correio de avisos responde que a inscrição morreu (404 ou 410), ela é apagada sozinha.
+- Para testar no computador: `bash configurar-push.sh --local` mostra as linhas para colar no `.env` local. O push precisa de `https` ou de `localhost`.
+- Não troque as chaves à toa: com chaves novas, todo mundo precisa ativar de novo.
 
 ## Selo de verificado (laudo médico com ICP-Brasil)
 
@@ -231,7 +238,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `src/db.js`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
 - `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
 - `src/mail.js`: o carteiro que manda e-mails.
-- `src/push.js`: o carteiro das notificações push (assina e lacra cada notificação, sem pacotes de fora).
+- `src/push.js`: o carteiro das notificações no celular e no computador (Web Push).
 - `src/oauth.js`: o "Entrar com Google/GitHub/LinkedIn/Adobe".
 - `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
 
@@ -250,8 +257,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `publicar.sh`: empacota a pasta e leva para o servidor.
 - `instalar.sh`: monta tudo no servidor em 7 passos (Node.js, serviço, nginx, HTTPS).
 - `configurar-https-cloudflare.sh`: envia ao servidor o certificado de origem da Cloudflare, para a conexão Cloudflare → servidor também ser segura.
-- `configurar-email.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
-- `configurar-push.sh`: cria no servidor as chaves das notificações push e liga o recurso.
+- `configurar-email.sh`, `configurar-push.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
 - `configurar-admin.sh`: diz quais e-mails podem abrir o painel do dono em `/#panorama` (números gerais, evolução por semana, funil, dinheiro e o que está parado). A página não aparece em nenhum menu e, para as outras pessoas, responde como se não existisse.
 - `scripts/seed.js`: cria pessoas e vagas de exemplo.
 - `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
@@ -267,7 +273,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - Cadastro e login como freelancer ou cliente (senhas com hash scrypt, sessão em cookie HttpOnly)
 - Recuperar senha por e-mail
 - Avisos por e-mail, com escolha de quanto receber
-- Notificações push no celular e no computador, ligadas por aparelho em Ajustes
+- Notificações no celular e no computador (push), com as mesmas regras dos avisos por e-mail
 - Portfólio com até 12 projetos, cada um com imagem e link opcionais (imagens reduzidas no navegador e guardadas no próprio banco)
 - Arquivos no briefing da vaga: até 6 por vaga, 10 MB cada (PDF, imagens, PSD, AI, Office e texto), só para quem tem conta
 - Arquivos nas propostas (até 6), nas mensagens e nas etapas do contrato (até 10 por etapa), com os mesmos tipos e o limite de 10 MB. Esses anexos são particulares: só o cliente e o freela envolvidos conseguem abrir
@@ -299,6 +305,6 @@ O site é escrito em português e traduzido na hora para inglês (EUA), espanhol
 - **Onde ficam as traduções:** `public/i18n/en-US.json`, `es-419.json` e `fr-CA.json`. Cada linha é `"frase em português": "tradução"`. Frase sem tradução aparece em português, sem quebrar nada.
 - **Lacunas:** `{1}` é qualquer texto (nome, título de vaga) e `{#1}` é um número. Ex.: `"há {#1} min": "{1} min ago"`.
 - **Texto novo no app.js:** escreva em português como sempre e acrescente a frase nos três arquivos `.json`.
-- **E-mails** (senha nova e avisos de conversa) saem no idioma que a pessoa usou por último no site (coluna `users.lang`, criada sozinha ao ligar o servidor).
+- **E-mails e notificações** (senha nova e avisos de conversa) saem no idioma que a pessoa usou por último no site (coluna `users.lang`, criada sozinha ao ligar o servidor).
 - **Privacidade e Termos** têm as quatro versões dentro do próprio arquivo HTML. As traduções são de cortesia: em caso de divergência, vale o português (o aviso aparece no topo). Vale pedir revisão de um advogado.
 - O que as pessoas escrevem (mensagens, propostas, bio, títulos de vaga) não é traduzido.

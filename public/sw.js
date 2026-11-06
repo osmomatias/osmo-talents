@@ -3,18 +3,21 @@
 // ============================================================================
 // É o "service worker": um ajudante que o navegador deixa morando no aparelho,
 // entre o app e a internet. É ele que transforma o site em app instalável.
-// Ele faz três coisas:
+// Ele faz quatro coisas:
 // 1. PÁGINAS: sempre tenta buscar a versão nova na internet. Se a internet
 //    sumiu, mostra a página offline.html em vez do erro do navegador;
 // 2. ARQUIVOS DO VISUAL (CSS, JS, ícones, fontes): usa a cópia guardada para
 //    abrir rápido e, ao mesmo tempo, busca a versão nova para a próxima vez;
 // 3. DADOS PESSOAIS: tudo o que é /api/, login, anexos, fotos de perfil e
-//    portfólio NUNCA é guardado. Passa direto, como se o ajudante não existisse.
+//    portfólio NUNCA é guardado. Passa direto, como se o ajudante não existisse;
+// 4. NOTIFICAÇÕES: quando o servidor manda um aviso (push), é ele que acorda,
+//    mesmo com o site fechado, e mostra a notificação. Tocar nela abre a conversa.
+//    Ele também pinta a bolinha vermelha com o número de não lidas no ícone do app.
 // Fica na raiz do site (/sw.js) porque o ajudante só cuida da pasta onde mora
 // e das que estão abaixo dela.
 // Trocar VERSION apaga as cópias antigas de todo mundo na próxima visita.
 
-const VERSION = "osmo-v4"; // v4: volta ao visual sem o vidro líquido 2 (v3: vidro líquido 2, v2: idiomas)
+const VERSION = "osmo-v5"; // v5: notificações no aparelho (v4: volta ao visual sem o vidro líquido 2 v3: vidro líquido 2, v2: idiomas)
 const PRECACHE = ["/offline.html", "/offline.js", "/favicon.svg", "/icons/icon-192.png", "/i18n-core.js", "/i18n.js"];
 // endereços que nunca passam pelo cache: dados de conta, sessão e arquivos enviados pelas pessoas
 const PRIVATE = /^\/(api|auth|arquivo|avatar|portfolio)\//;
@@ -56,40 +59,35 @@ self.addEventListener("fetch", e => {
   }
 });
 
-// NOTIFICAÇÕES PUSH: o servidor manda um envelope lacrado; o navegador abre e entrega aqui o
-// texto ({ title, body, url, tag }). Mostramos a notificação mesmo com o site fechado.
-// tag: uma por conversa; a nova substitui a anterior em vez de empilhar várias.
+// CHEGOU UM AVISO DO SERVIDOR: o pacote já chega destrancado pelo navegador. Dentro dele vem
+// título, texto, para onde ir ao tocar (url) e uma etiqueta (tag): um aviso novo da mesma
+// conversa substitui o anterior, e "renotify" faz o aparelho tocar de novo mesmo assim.
 self.addEventListener("push", e => {
   let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : "" }; }
+  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : "" }; }
+  // BOLINHA VERMELHA NO ÍCONE (como a do Mail no iPhone): o servidor manda o total de não lidas.
+  // Só existe no app instalado (tela de início, Dock ou barra de tarefas); onde não existe, ignoramos.
+  if (typeof d.badge === "number" && self.navigator.setAppBadge) {
+    (d.badge > 0 ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {});
+  }
   e.waitUntil(self.registration.showNotification(d.title || "Osmo Talents", {
-    body: d.body || "", icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
-    tag: d.tag || "osmo", data: { url: d.url || "/" },
+    body: d.body || "", tag: d.tag || undefined, renotify: !!d.tag,
+    icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", lang: d.lang || undefined,
+    data: { url: d.url || "/painel" },
   }));
 });
 
-// TOCAR NA NOTIFICAÇÃO: se o site já está aberto em alguma aba ou no app, vai para ela e abre
-// a conversa; se não, abre uma janela nova já na conversa.
+// TOCOU NA NOTIFICAÇÃO: se o site já está aberto numa aba ou janela, trazemos ela para a frente
+// e pedimos para ela mesma abrir a conversa (sem recarregar). Se não está aberto, abrimos.
+// Só aceitamos endereços do próprio site, por segurança.
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  const url = new URL((e.notification.data && e.notification.data.url) || "/", location.origin);
-  if (url.origin !== location.origin) return; // só endereços do próprio site
+  let url = new URL((e.notification.data && e.notification.data.url) || "/painel", location.origin);
+  if (url.origin !== location.origin) url = new URL("/painel", location.origin);
   e.waitUntil((async () => {
-    const wins = await clients.matchAll({ type: "window", includeUncontrolled: true });
-    const win = wins.find(w => new URL(w.url).origin === location.origin);
-    if (win) { await win.focus(); return win.navigate(url.href).catch(() => {}); }
-    return clients.openWindow(url.href);
-  })());
-});
-
-// O navegador às vezes troca o endereço de entrega sozinho (chaves vencidas, por exemplo).
-// Aí refazemos a inscrição com a mesma chave pública e avisamos o servidor do endereço novo.
-self.addEventListener("pushsubscriptionchange", e => {
-  e.waitUntil((async () => {
-    const opts = e.oldSubscription && e.oldSubscription.options;
-    const sub = e.newSubscription || (opts ? await self.registration.pushManager.subscribe(opts) : null);
-    const headers = { "Content-Type": "application/json", "x-osmo": "1" };
-    if (e.oldSubscription) await fetch("/api/push", { method: "DELETE", headers, credentials: "same-origin", body: JSON.stringify({ endpoint: e.oldSubscription.endpoint }) }).catch(() => {});
-    if (sub) await fetch("/api/push", { method: "POST", headers, credentials: "same-origin", body: JSON.stringify(sub.toJSON()) }).catch(() => {});
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const w = wins.find(c => new URL(c.url).origin === location.origin);
+    if (w) { await w.focus(); w.postMessage({ type: "osmo-open", path: url.pathname + url.search + url.hash }); return; }
+    await self.clients.openWindow(url.href);
   })());
 });

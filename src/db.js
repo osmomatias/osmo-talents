@@ -381,21 +381,23 @@ CREATE INDEX IF NOT EXISTS idx_squads_owner ON squads(owner_id, pos);
 CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id);
 `);
 
-// NOTIFICAÇÕES PUSH: cada aparelho (navegador) onde a pessoa ligou as notificações vira uma
-// linha. endpoint = o endereço da "agência" do navegador para aquele aparelho; p256dh e auth =
-// as chaves do aparelho para lacrar o texto. Uma pessoa pode ter várias (celular, computador).
-// Quando a agência diz que o aparelho não existe mais (404/410), a linha é apagada.
+// --- migrações (versão 15: notificações no aparelho, o "push")
+// Quando a pessoa liga as notificações num aparelho, o navegador entrega um endereço no "correio
+// de avisos" dele (endpoint) e duas chaves para trancar o conteúdo (p256dh e auth). Guardamos uma
+// linha por aparelho: a mesma pessoa pode ter o celular e o computador inscritos.
+// O endpoint é único: se outra conta entrar no mesmo navegador e ligar as notificações, a linha
+// passa a ser dela. Apagar a conta apaga as inscrições junto (ON DELETE CASCADE).
 db.exec(`
-CREATE TABLE IF NOT EXISTS push_subs (
+CREATE TABLE IF NOT EXISTS push_subscriptions (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   endpoint TEXT NOT NULL UNIQUE,
-  p256dh TEXT NOT NULL,
-  auth TEXT NOT NULL,
+  p256dh TEXT NOT NULL, auth TEXT NOT NULL,
   device TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_ok_at TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subs(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
 `);
 
 // Antes, o portfólio era só uma lista de textos dentro do perfil. Este laço passa cada texto
