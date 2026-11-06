@@ -24,6 +24,10 @@ EMAIL="${2:-}"
 APP_DIR="/var/www/osmo-talents"
 APP_USER="osmo"
 PORT="${PORT:-3000}"
+# APP_HOST: onde o app mora (padrão app.DOMÍNIO). MAIN_MODE=redirect manda o domínio principal
+# para o app; MAIN_MODE=app faz o domínio principal mostrar o app também, sem redirecionar.
+APP_HOST_IN="${APP_HOST:-}"
+MAIN_MODE="${MAIN_MODE:-redirect}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 say()  { printf "\n\033[1;35m==> %s\033[0m\n" "$*"; }
@@ -36,6 +40,7 @@ if [ "$(id -u)" -ne 0 ]; then echo "Rode como root (no terminal do navegador da 
 if [ -z "$DOMAIN" ]; then echo "Informe o domínio. Exemplo: bash instalar.sh osmo.com.br"; exit 1; fi
 if [ ! -f "$SRC_DIR/server.js" ]; then echo "Rode este script de dentro da pasta do Osmo Talents (onde está o server.js)."; exit 1; fi
 DOMAIN="${DOMAIN#http://}"; DOMAIN="${DOMAIN#https://}"; DOMAIN="${DOMAIN%%/*}"; DOMAIN="${DOMAIN#www.}"
+APP_HOST="${APP_HOST_IN:-app.$DOMAIN}"
 
 say "1/7 Atualizando o sistema e instalando ferramentas"
 export DEBIAN_FRONTEND=noninteractive
@@ -112,48 +117,96 @@ if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondend
 # NGINX, o porteiro da frente: recebe as visitas na porta 80 e repassa para o app na porta
 # 3000, contando o IP de verdade de quem visitou (X-Forwarded-For). Se outro programa (como
 # o Apache) estiver ocupando a porta 80, desliga ou avisa.
-say "5/7 Configurando o nginx para $DOMAIN"
+say "5/7 Configurando o nginx para $APP_HOST e $DOMAIN"
+# O app mora em app.osmo.com.br (APP_HOST). O osmo.com.br fica para o site da agência:
+# por enquanto ele só redireciona para o app, levando junto o caminho (osmo.com.br/vagas/12
+# vira app.osmo.com.br/vagas/12). Três coisas continuam respondendo no endereço antigo, sem
+# redirecionar: /api/ (os avisos do Asaas chegam ali, e aviso não segue redirecionamento),
+# /auth/ (retornos de login social já cadastrados) e /sw.js (o ajudante dos celulares que já
+# instalaram o app precisa conseguir se atualizar).
+# Segurança: só redireciona se o app. já existe no DNS e se o certificado cobre esse nome.
+# Senão, o app continua respondendo nos dois endereços e aparece um aviso.
 # Se o certificado de origem da Cloudflare já foi enviado (configurar-https-cloudflare.sh),
 # o nginx também atende na porta 443 com ele. A porta 80 continua funcionando: enquanto a
 # Cloudflare estiver no modo "Flexible" ela ainda chega por ali, e mandar para o https
 # criaria um vaivém sem fim.
 CF_CERT="/etc/ssl/cloudflare/$DOMAIN.pem"
 CF_KEY="/etc/ssl/cloudflare/$DOMAIN.key"
+HAS_CF=0; [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ] && HAS_CF=1
+APP_DNS="$(dig +short A "$APP_HOST" @1.1.1.1 | grep -E '^[0-9.]+$' | tail -n1 || true)"
+APP_SPLIT=0
+if [ "$MAIN_MODE" = "redirect" ] && [ "$APP_HOST" != "$DOMAIN" ]; then
+  if [ -z "$APP_DNS" ]; then
+    warn "$APP_HOST ainda não existe no DNS. Por enquanto o app segue em $DOMAIN."
+    warn "Crie o registro na Cloudflare (DNS → Add record → A, nome: ${APP_HOST%%.$DOMAIN}, IP deste servidor, nuvem laranja) e publique de novo."
+  elif [ "$HAS_CF" -eq 1 ] && ! openssl x509 -noout -checkhost "$APP_HOST" -in "$CF_CERT" 2>/dev/null | grep -q "does match"; then
+    warn "O certificado de origem não cobre $APP_HOST. Gere outro com osmo.com.br e *.osmo.com.br (veja o LEIA-ME)."
+  else
+    APP_SPLIT=1
+  fi
+fi
 LISTEN6="    listen [::]:80;"; LISTEN6_SSL="    listen [::]:443 ssl http2;"
 [ -f /proc/net/if_inet6 ] || { LISTEN6="    # IPv6 desativado neste servidor"; LISTEN6_SSL="$LISTEN6"; }
-PROXY="    server_name $DOMAIN www.$DOMAIN;
-    client_max_body_size 12m;
-
-    location / {
-        proxy_pass http://127.0.0.1:$PORT;
+TO="\$scheme"; [ "$HAS_CF" -eq 1 ] && TO="https"
+PASS="        proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }"
-cat > /etc/nginx/sites-available/osmo-talents <<EOF
+        proxy_set_header X-Forwarded-Proto \$scheme;"
+if [ "$APP_SPLIT" -eq 1 ]; then
+  BODIES=("    server_name $APP_HOST;
+    client_max_body_size 12m;
+
+    location / {
+$PASS
+    }" "    server_name $DOMAIN www.$DOMAIN;
+    client_max_body_size 12m;
+
+    location ~ ^/(api|auth)/ {
+$PASS
+    }
+    location = /sw.js {
+$PASS
+    }
+    location / {
+        return 301 $TO://$APP_HOST\$request_uri;
+    }")
+else
+  NAMES="$DOMAIN www.$DOMAIN"; [ -n "$APP_DNS" ] && [ "$APP_HOST" != "$DOMAIN" ] && NAMES="$APP_HOST $NAMES"
+  BODIES=("    server_name $NAMES;
+    client_max_body_size 12m;
+
+    location / {
+$PASS
+    }")
+fi
+: > /etc/nginx/sites-available/osmo-talents
+if [ "$HAS_CF" -eq 1 ] && command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then ufw allow 443/tcp >/dev/null; fi
+for B in "${BODIES[@]}"; do
+  cat >> /etc/nginx/sites-available/osmo-talents <<EOF
 server {
     listen 80;
 $LISTEN6
-$PROXY
+$B
 }
-EOF
-if [ -f "$CF_CERT" ] && [ -f "$CF_KEY" ]; then
-  # se o firewall do servidor (ufw) estiver ligado, abre a porta 443 para a Cloudflare chegar
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then ufw allow 443/tcp >/dev/null; fi
-  cat >> /etc/nginx/sites-available/osmo-talents <<EOF
 
+EOF
+  if [ "$HAS_CF" -eq 1 ]; then
+    cat >> /etc/nginx/sites-available/osmo-talents <<EOF
 server {
     listen 443 ssl http2;
 $LISTEN6_SSL
     ssl_certificate $CF_CERT;
     ssl_certificate_key $CF_KEY;
     ssl_protocols TLSv1.2 TLSv1.3;
-$PROXY
+$B
 }
+
 EOF
-fi
+  fi
+done
+if [ "$APP_SPLIT" -eq 1 ]; then ok "app em $APP_HOST; $DOMAIN redireciona para lá"; fi
 ln -sf /etc/nginx/sites-available/osmo-talents /etc/nginx/sites-enabled/osmo-talents
 rm -f /etc/nginx/sites-enabled/default
 nginx -t >/dev/null 2>&1 || { nginx -t; exit 1; }
@@ -209,6 +262,7 @@ elif [ "$CF_FRONT" -eq 1 ]; then
 elif [ -n "$SERVER_IP" ] && [ "$DNS_IP" = "$SERVER_IP" ]; then
   apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
   DOMS=(-d "$DOMAIN"); [ "$WWW_IP" = "$SERVER_IP" ] && DOMS+=(-d "www.$DOMAIN")
+  [ "$APP_DNS" = "$SERVER_IP" ] && [ "$APP_HOST" != "$DOMAIN" ] && DOMS+=(-d "$APP_HOST")
   if [ -n "$EMAIL" ]; then MAIL=(-m "$EMAIL"); else MAIL=(--register-unsafely-without-email); fi
   if certbot --nginx "${DOMS[@]}" "${MAIL[@]}" --agree-tos --non-interactive --redirect >/dev/null 2>&1; then
     sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' "$APP_DIR/.env"
@@ -226,8 +280,25 @@ else
   warn "Usa a Cloudflare? Então rode no seu computador: bash configurar-https-cloudflare.sh"
 fi
 
+# PUBLIC_URL é o endereço usado nos e-mails (recuperar senha, avisos) e nos retornos do
+# login social. Com o app no subdomínio, ele passa a ser https://app.osmo.com.br.
+if [ "$HTTPS" -eq 1 ]; then
+  WANT="https://$DOMAIN"; [ "$APP_SPLIT" -eq 1 ] && WANT="https://$APP_HOST"
+  if [ "$(grep -E '^PUBLIC_URL=' "$APP_DIR/.env" | cut -d= -f2-)" != "$WANT" ]; then
+    if grep -q '^PUBLIC_URL=' "$APP_DIR/.env"; then sed -i "s#^PUBLIC_URL=.*#PUBLIC_URL=$WANT#" "$APP_DIR/.env"; else echo "PUBLIC_URL=$WANT" >> "$APP_DIR/.env"; fi
+    systemctl restart osmo-talents
+    ok "PUBLIC_URL agora é $WANT"
+    for K in GOOGLE LINKEDIN ADOBE GITHUB; do
+      if grep -qE "^${K}_CLIENT_ID=.+" "$APP_DIR/.env"; then
+        k="$(echo "$K" | tr 'A-Z' 'a-z')"
+        warn "Login com $K: cadastre também este endereço de retorno no painel do $K: $WANT/auth/$k/callback"
+      fi
+    done
+  fi
+fi
+
 say "7/7 Pronto"
-if [ "$HTTPS" -eq 1 ]; then echo "    Abra: https://$DOMAIN"; else echo "    Por enquanto, teste pelo IP: http://${SERVER_IP:-SEU-IP}"; fi
+if [ "$HTTPS" -eq 1 ] && [ "$APP_SPLIT" -eq 1 ]; then echo "    Abra: https://$APP_HOST  (https://$DOMAIN redireciona para lá)"; elif [ "$HTTPS" -eq 1 ]; then echo "    Abra: https://$DOMAIN"; else echo "    Por enquanto, teste pelo IP: http://${SERVER_IP:-SEU-IP}"; fi
 echo
 echo "    Dados de demonstração (opcional):  cd $APP_DIR && sudo -u $APP_USER npm run seed"
 echo "    Ver se está rodando:               systemctl status osmo-talents"

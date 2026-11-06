@@ -104,6 +104,19 @@ Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e o
 
 ---
 
+## Endereço do app: app.osmo.com.br
+
+O app mora em `app.osmo.com.br`. O `osmo.com.br` fica reservado para o site da agência e, por enquanto, redireciona para o app levando o caminho junto (`osmo.com.br/vagas/12` → `app.osmo.com.br/vagas/12`). Continuam respondendo no endereço antigo, sem redirecionar: `/api/` (avisos do Asaas), `/auth/` (retornos de login) e `/sw.js`.
+
+1. Na Cloudflare, no site osmo.com.br: **DNS → Records → Add record**. Tipo `A`, nome `app`, IPv4 `46.202.147.229`, nuvem laranja ligada (Proxied). Salve.
+2. No terminal do editor: `bash publicar.sh`. O instalador confere se o `app.` já existe no DNS e se o certificado de origem cobre `*.osmo.com.br`; só então liga o redirecionamento e troca o `PUBLIC_URL` do `.env` do servidor para `https://app.osmo.com.br`. Se faltar algo, o app continua em `osmo.com.br` e aparece um aviso.
+3. Login social: se aparecer o aviso, cadastre o novo endereço de retorno (`https://app.osmo.com.br/auth/<provedor>/callback`) no painel do Google, LinkedIn, Adobe ou GitHub.
+4. Asaas: o aviso continua chegando em `osmo.com.br/api/webhooks/asaas`. Se quiser, troque no painel do Asaas para `https://app.osmo.com.br/api/webhooks/asaas`.
+
+Quem estava logado em `osmo.com.br` precisa entrar de novo uma vez, porque o login fica guardado por endereço.
+
+Para o `osmo.com.br` voltar a mostrar o app (sem redirecionar): `MAIN_MODE=app bash publicar.sh`.
+
 ## HTTPS entre a Cloudflare e o servidor
 
 Com a Cloudflare na frente, o cadeado do navegador cobre só o caminho até a Cloudflare. Para a conexão Cloudflare → servidor também ser segura:

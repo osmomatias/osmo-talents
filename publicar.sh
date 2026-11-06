@@ -13,16 +13,20 @@ set -e
 cd "$(dirname "$0")"
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
+# APP_HOST: endereço do app. MAIN_MODE=redirect faz o osmo.com.br levar até ele;
+# MAIN_MODE=app deixa o osmo.com.br mostrando o app também (sem redirecionar).
+APP_HOST="${APP_HOST:-app.$DOMAIN}"
+MAIN_MODE="${MAIN_MODE:-redirect}"
 ZIP="$(mktemp -t osmo).zip"
 rm -f "$ZIP"
 zip -qr "$ZIP" . -x "data/*" ".env" "node_modules/*" ".git/*" "*.DS_Store" "Claude outputs/*" ".claude/*"
 echo ""
-echo "Publicando em $DOMAIN ($IP)."
+echo "Publicando em $APP_HOST ($IP)."
 echo ""
 # ssh é um "túnel seguro" até o servidor. Mandamos o ZIP por ele e, do outro lado, uma
 # sequência de comandos: apagar a pasta velha de entrega, receber o ZIP, desempacotar
 # (instalando o unzip se faltar) e rodar o instalar.sh com o nome do site.
-LC_ALL=C.UTF-8 LANG=C.UTF-8 ssh -o StrictHostKeyChecking=accept-new -o SendEnv=- "root@$IP" "export LC_ALL=C.UTF-8 LANG=C.UTF-8; rm -rf /root/osmo-talents && mkdir -p /root/osmo-talents && cat > /root/osmo-talents.zip && cd /root/osmo-talents && (command -v unzip >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq unzip >/dev/null)) && unzip -oq /root/osmo-talents.zip && bash instalar.sh '$DOMAIN'" < "$ZIP"
+LC_ALL=C.UTF-8 LANG=C.UTF-8 ssh -o StrictHostKeyChecking=accept-new -o SendEnv=- "root@$IP" "export LC_ALL=C.UTF-8 LANG=C.UTF-8; rm -rf /root/osmo-talents && mkdir -p /root/osmo-talents && cat > /root/osmo-talents.zip && cd /root/osmo-talents && (command -v unzip >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq unzip >/dev/null)) && unzip -oq /root/osmo-talents.zip && APP_HOST='$APP_HOST' MAIN_MODE='$MAIN_MODE' bash instalar.sh '$DOMAIN'" < "$ZIP"
 rm -f "$ZIP"
 echo ""
 echo "Pronto. A versão nova está no ar."
