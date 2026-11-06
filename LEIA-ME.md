@@ -335,3 +335,36 @@ O site é escrito em português e traduzido na hora para inglês (EUA), espanhol
 - **E-mails e notificações** (senha nova e avisos de conversa) saem no idioma que a pessoa usou por último no site (coluna `users.lang`, criada sozinha ao ligar o servidor).
 - **Privacidade e Termos** têm as quatro versões dentro do próprio arquivo HTML. As traduções são de cortesia: em caso de divergência, vale o português (o aviso aparece no topo). Vale pedir revisão de um advogado.
 - O que as pessoas escrevem (mensagens, propostas, bio, títulos de vaga) não é traduzido.
+
+## Osmo TV: vídeos próprios (Osmo Originais)
+
+O app de TV (`app.osmo.com.br/tv/`) tem uma fileira **Osmo Originais** com vídeos seus, que tocam direto na TV.
+
+- **Jeito fácil:** dê dois cliques em `Enviar vídeo para a TV.command`, arraste o .mp4 para a janela e responda título/ano/sinopse.
+- **Jeito manual:** coloque os arquivos em `/var/www/osmo-talents/data/videos/` na VPS (depois rode `chown -R osmo:osmo /var/www/osmo-talents/data/videos`).
+  Nomes simples, sem espaço nem acento. Com o mesmo nome do vídeo podem ir:
+  `meu-curta.mp4` (vídeo, H.264 + AAC) · `meu-curta.jpg` (capa em pé) · `meu-curta-fundo.jpg` (fundo largo) ·
+  `meu-curta.vtt` (legenda) · `meu-curta.json` (`{"title":"…","year":"2026","overview":"…","order":1}`).
+- A pasta `data/` nunca é trocada pelo `publicar.sh`: os vídeos ficam lá entre uma publicação e outra.
+- Só vídeos seus ou com autorização de quem fez.
+
+## Biblioteca da casa (protótipo): filmes, séries e clipes do Mac na TV pelo Wi-Fi
+
+Igual ao Compartilhamento Doméstico da Apple TV antiga: os vídeos ficam no Mac e tocam na TV/celular da casa.
+
+1. Dê dois cliques em `Biblioteca da casa.command`. Ele cria e abre a pasta **Filmes do Mac › Osmo TV** e abre a biblioteca no navegador.
+2. Coloque os vídeos nas gavetas:
+   - `Filmes/Nome do Filme (2010).mp4`
+   - `Séries/Nome da Série/Temporada 1/Nome da Série S01E01.mp4` (também aceita `1x01`)
+   - `Clipes/Artista - Música.mp4`
+   Com o mesmo nome do vídeo: `.jpg` (capa), `-fundo.jpg` (fundo), `.srt`/`.vtt` (legenda). Na pasta da série: `poster.jpg`, `fundo.jpg`.
+3. Na TV/celular (mesmo Wi-Fi), abra o endereço `http://192.168…:8765` que aparece na janela.
+
+Com a chave do TMDB no `.env` (a mesma do Top 10), capas, sinopses e nomes dos episódios vêm sozinhos.
+Onde cada vídeo parou fica guardado no Mac (`Osmo TV/.osmo-tv/`), valendo para todos os aparelhos da casa.
+Formato mais garantido: MP4 (H.264 + AAC). Não vai para a VPS: o `publicar.sh` deixa a pasta `biblioteca/` de fora.
+
+### Biblioteca da casa na Google TV
+O app Osmo TV (versão 3.3.0+) acha o Mac sozinho pelo Wi-Fi (Bonjour, `_osmotv._tcp`).
+Com a `Biblioteca da casa.command` aberta no Mac, aparece a aba **⌂ Na sua casa** no Osmo TV; Voltar na biblioteca leva de volta ao Osmo TV.
+Para atualizar o app da TV: `Publicar.command` (a aba nova está no site) e depois `tv/Instalar na TV.command` (agora ele compila o app antes de instalar).

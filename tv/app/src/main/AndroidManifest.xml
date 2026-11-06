@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- O "RG" do app para o Android: diz que ele é feito para TV (leanback),
-     que não precisa de tela de toque e qual imagem aparece na tela inicial da TV (banner). -->
+     que não precisa de tela de toque e qual imagem aparece na tela inicial da TV (banner).
+     usesCleartextTraffic: a Biblioteca da casa (no Mac) fala "http" dentro do Wi-Fi; o app só abre
+     endereços da rede de casa além do site da Osmo (ver MainActivity). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -13,7 +15,8 @@
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

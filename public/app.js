@@ -225,7 +225,7 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 // - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
 //   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PUSH = ""; // PUSH = chave pública do push ("" = desligado)
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PHONE = [], PUSH = ""; // PUSH = chave pública do push ("" = desligado)
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 // vidro líquido vem ligado, exceto para quem pediu menos transparência no sistema
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
@@ -253,7 +253,7 @@ async function checkVersion() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PHONE = d.phone || []; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
   renderChrome(); gaLoad(); gaBanner();
 }
 
@@ -591,9 +591,16 @@ V.inicio = async () => {
 // estiverem ligados (SOCIAL) e traduz os códigos de erro da volta do Google em frases (OAUTH_ERR).
 /* ---------- entrar / criar conta ---------- */
 let authMode = "entrar";
+// CONFIRMAR O CELULAR NO CADASTRO (quando o servidor tem o envio de códigos ligado: PHONE
+// diz os canais, ex.: ["whatsapp","sms"]). "Criar conta" primeiro confere os dados, depois
+// manda o código e troca o formulário pela caixa do código. Acertou o código, a conta é criada.
+// REG guarda o número já confirmado (ticket), para não pedir outro código se algo falhar depois.
+let REG = null;
+const CHAN = { whatsapp: "WhatsApp", sms: "SMS" };
 V.entrar = async () => {
   if (ME) { go(S.next || "painel"); return; }
-  const reg = authMode === "criar";
+  const reg = authMode === "criar", tel = reg && PHONE.length > 0;
+  REG = null;
   return `<div class="auth stack">
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
@@ -605,10 +612,47 @@ V.entrar = async () => {
     ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>` : ""}
     <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" placeholder="voce@email.com" required></div>
     <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" placeholder="${reg ? "Mínimo de 8 caracteres" : "Sua senha"}" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
+    ${tel ? `<div class="field"><label for="a_phone">Celular</label><input class="input" id="a_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Ex.: 11 91234-5678" required><span class="hint">Vamos mandar um código para confirmar que o número é seu.</span></div>
+    ${PHONE.length > 1 ? `<div class="field"><span class="flabel">Receber o código por</span><div class="row" style="gap:20px">${PHONE.map((c, i) => `<label class="check"><input type="radio" name="pchan" value="${c}"${i ? "" : " checked"}><span>${CHAN[c]}</span></label>`).join("")}</div></div>` : ""}` : ""}
     <div id="authErr" class="err" role="alert" hidden></div>
     <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
   </form></div>`;
 };
+
+// caixa do código: aparece no lugar do formulário depois que o código sai
+const codeHTML = () => {
+  const other = PHONE.find(c => c !== REG.channel);
+  return `<form class="panel stack" id="codeForm" novalidate>
+    <div><p>Mandamos um código de 6 números pelo ${CHAN[REG.channel]} para:</p><p translate="no"><b>${esc(REG.pretty)}</b></p><span class="hint">O código vale por 10 minutos.</span></div>
+    <div class="field"><label for="a_code">Código</label><input class="input" id="a_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required></div>
+    <div id="codeErr" class="err" role="alert" hidden></div>
+    <button class="btn hl" type="submit">Confirmar e criar conta</button>
+    <div class="row" style="gap:20px; flex-wrap:wrap">
+      <button type="button" class="link-btn" data-act="code-resend" data-channel="${REG.channel}">Mandar de novo</button>
+      ${other ? `<button type="button" class="link-btn" data-act="code-resend" data-channel="${other}">Receber por ${CHAN[other]}</button>` : ""}
+      <button type="button" class="link-btn" data-act="code-back">Trocar o número</button>
+    </div></form>`;
+};
+// manda (ou manda de novo) o código e mostra a caixa do código
+async function sendCode(channel) {
+  const d = await api("POST", "/api/auth/phone/send", { phone: REG.input, channel });
+  Object.assign(REG, { phone: d.phone, pretty: d.pretty, channel: d.channel, ticket: "" });
+  const f = $("#authForm"); f.hidden = true;
+  $("#codeForm")?.remove();
+  f.insertAdjacentHTML("afterend", codeHTML());
+  $("#a_code").focus();
+}
+function authBody() {
+  const body = { email: $("#a_email").value, password: $("#a_pass").value };
+  if (authMode === "criar") { body.name = $("#a_name").value; body.role = ($('input[name="role"]:checked') || {}).value; }
+  return body;
+}
+async function authDone() {
+  await refreshMe();
+  toast(authMode === "criar" ? "Conta criada" : "Bem-vindo de volta");
+  const next = S.next; S.next = null;
+  return go(next || (authMode === "criar" ? (ME.role === "freela" ? "perfil" : "publicar") : "painel"));
+}
 
 const SOCIAL = {
   google: ["Google", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h6a5.1 5.1 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.2-4.8 3.2-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1-3.7 1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.1a11 11 0 0 0 0 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>'],
@@ -925,6 +969,38 @@ V.talentos = async () => `
   <div class="field" style="min-width:240px"><label for="tq" class="hint">Buscar talento</label><input class="input" id="tq" placeholder="Habilidade ou nome" value="${esc(S.tq || "")}"></div></div>
 <div class="tgrid" id="tgrid">${await talentsHTML(S.tq)}</div>`;
 
+// TOP 10: os 10 filmes e as 10 séries do momento (dados do TMDB, pedidos pelo nosso servidor).
+// Duas listas: "Em alta na semana" e "Mais bem avaliados". Cada linha anda para os lados;
+// na TV, as setas passam de cartaz em cartaz e o cartaz com foco cresce um pouco.
+// Sem cartaz, aparece o símbolo da Osmo (o mesmo desenho do logo do topo, recortado no "O").
+/* ---------- top 10 ---------- */
+const TOP10_TABS = [["em-alta", "Em alta", "O que mais se viu nesta semana"], ["melhores", "Mais bem avaliados", "As melhores notas de todos os tempos"]];
+const osmoMark = () => { const d = $(".brand svg path"); return d ? `<svg class="t10-mark" viewBox="0 0 30 30" aria-hidden="true"><path d="${esc(d.getAttribute("d"))}"/></svg>` : ""; };
+function top10Row(title, items) {
+  return `<section class="t10-sec" aria-label="${esc(title)}"><h2>${esc(title)}</h2>
+  <ol class="t10-row">${items.map(x => `<li><article class="t10-card" tabindex="0" aria-label="${x.rank}º lugar: ${esc(x.title)}${x.year ? ", " + esc(x.year) : ""}, nota ${x.rating.toFixed(1)}">
+    <div class="t10-art"><span class="t10-rank" aria-hidden="true">${x.rank}</span>
+    <div class="t10-poster">${x.poster ? `<img src="${esc(x.poster)}" alt="" loading="lazy" width="342" height="513">` : osmoMark()}</div></div>
+    <div class="t10-info"><b>${esc(x.title)}</b><span class="muted">${esc(x.year)}${x.year ? " · " : ""}<span class="t10-star" aria-hidden="true">★</span> ${x.rating.toFixed(1)}</span></div>
+  </article></li>`).join("")}</ol></section>`;
+}
+V.top10 = async () => {
+  const lista = S.top10 || "em-alta";
+  let d;
+  try { d = await api("GET", "/api/top10?lista=" + lista); }
+  catch (e) { return `<div class="t10">${top10Head(lista)}${emptyBox(e.status === 503 ? "O Top 10 ainda não está ligado." : "Não deu para carregar o Top 10.", e.status === 503 ? "Falta colocar a chave do TMDB (TMDB_TOKEN) no .env do servidor." : e.message)}</div>`; }
+  const when = new Date(d.updatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return `<div class="t10">${top10Head(lista)}
+    ${top10Row("Filmes", d.filmes)}${top10Row("Séries", d.series)}
+    <p class="t10-credit muted">Atualizado em ${esc(when)}. Dados e cartazes do <a href="https://www.themoviedb.org" rel="noopener">TMDB</a>. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</p></div>`;
+};
+const top10Head = lista => `<header class="t10-head"><span class="label">Filmes e séries · ${esc((TOP10_TABS.find(t => t[0] === lista) || TOP10_TABS[0])[2])}</span><h1>Top 10</h1>
+  <div class="seg" role="group" aria-label="Qual lista">${TOP10_TABS.map(([k, n]) => `<button type="button" data-top10="${k}" aria-pressed="${lista === k}">${n}</button>`).join("")}</div></header>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-top10]"); if (!b || b.getAttribute("aria-pressed") === "true") return;
+  S.top10 = b.dataset.top10; route().then(() => { const n = $(`[data-top10="${S.top10}"]`); if (n && DEVICE === "tv") n.focus({ preventScroll: true }); });
+});
+
 V.talento = async id => {
   const { talent: t } = await api("GET", "/api/talents/" + id);
   let myJobs = [];
@@ -969,38 +1045,6 @@ V.talento = async id => {
 //   - no celular ou no teclado: toque nas pessoas para marcar e depois toque no círculo.
 // Soltar no círculo tracejado "Novo squad" cria o squad já com essas pessoas dentro.
 // Tocar num círculo sem ninguém marcado abre os detalhes: nome, cor, quem está e o botão de apagar.
-// TOP 10: os 10 filmes e as 10 séries do momento (dados do TMDB, pedidos pelo nosso servidor).
-// Duas listas: "Em alta na semana" e "Mais bem avaliados". Cada linha anda para os lados;
-// na TV, as setas passam de cartaz em cartaz e o cartaz com foco cresce um pouco.
-// Sem cartaz, aparece o símbolo da Osmo (o mesmo desenho do logo do topo, recortado no "O").
-/* ---------- top 10 ---------- */
-const TOP10_TABS = [["em-alta", "Em alta", "O que mais se viu nesta semana"], ["melhores", "Mais bem avaliados", "As melhores notas de todos os tempos"]];
-const osmoMark = () => { const d = $(".brand svg path"); return d ? `<svg class="t10-mark" viewBox="0 0 30 30" aria-hidden="true"><path d="${esc(d.getAttribute("d"))}"/></svg>` : ""; };
-function top10Row(title, items) {
-  return `<section class="t10-sec" aria-label="${esc(title)}"><h2>${esc(title)}</h2>
-  <ol class="t10-row">${items.map(x => `<li><article class="t10-card" tabindex="0" aria-label="${x.rank}º lugar: ${esc(x.title)}${x.year ? ", " + esc(x.year) : ""}, nota ${x.rating.toFixed(1)}">
-    <div class="t10-art"><span class="t10-rank" aria-hidden="true">${x.rank}</span>
-    <div class="t10-poster">${x.poster ? `<img src="${esc(x.poster)}" alt="" loading="lazy" width="342" height="513">` : osmoMark()}</div></div>
-    <div class="t10-info"><b>${esc(x.title)}</b><span class="muted">${esc(x.year)}${x.year ? " · " : ""}<span class="t10-star" aria-hidden="true">★</span> ${x.rating.toFixed(1)}</span></div>
-  </article></li>`).join("")}</ol></section>`;
-}
-V.top10 = async () => {
-  const lista = S.top10 || "em-alta";
-  let d;
-  try { d = await api("GET", "/api/top10?lista=" + lista); }
-  catch (e) { return `<div class="t10">${top10Head(lista)}${emptyBox(e.status === 503 ? "O Top 10 ainda não está ligado." : "Não deu para carregar o Top 10.", e.status === 503 ? "Falta colocar a chave do TMDB (TMDB_TOKEN) no .env do servidor." : e.message)}</div>`; }
-  const when = new Date(d.updatedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  return `<div class="t10">${top10Head(lista)}
-    ${top10Row("Filmes", d.filmes)}${top10Row("Séries", d.series)}
-    <p class="t10-credit muted">Atualizado em ${esc(when)}. Dados e cartazes do <a href="https://www.themoviedb.org" rel="noopener">TMDB</a>. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</p></div>`;
-};
-const top10Head = lista => `<header class="t10-head"><span class="label">Filmes e séries · ${esc((TOP10_TABS.find(t => t[0] === lista) || TOP10_TABS[0])[2])}</span><h1>Top 10</h1>
-  <div class="seg" role="group" aria-label="Qual lista">${TOP10_TABS.map(([k, n]) => `<button type="button" data-top10="${k}" aria-pressed="${lista === k}">${n}</button>`).join("")}</div></header>`;
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-top10]"); if (!b || b.getAttribute("aria-pressed") === "true") return;
-  S.top10 = b.dataset.top10; route().then(() => { const n = $(`[data-top10="${S.top10}"]`); if (n && DEVICE === "tv") n.focus({ preventScroll: true }); });
-});
-
 /* ---------- squads ---------- */
 let SQ = { data: null, sel: new Set(), open: null, q: "", found: null, creating: false, bump: null };
 const SQ_COLORS = ["Vinho", "Ameixa", "Mostarda", "Coral", "Verde", "Laranja"];
@@ -2380,6 +2424,11 @@ document.addEventListener("click", async e => {
     })();
     case "port-move": return busy(async () => { ME.profile.portfolio = (await api("POST", `/api/me/portfolio/${id}/move`, { dir: Number(act.dataset.dir) })).portfolio; renderPort(); })();
     case "avatar-del": return busy(async () => { await api("DELETE", "/api/me/avatar"); ME.profile.avatar = ""; toast("Foto removida"); route(); })();
+    case "code-resend": return busy(async () => {
+      const box = $("#codeErr"); box.hidden = true;
+      try { await sendCode(act.dataset.channel); toast("Código novo enviado"); } catch (err) { box.textContent = err.message; box.hidden = false; }
+    })();
+    case "code-back": { $("#codeForm")?.remove(); const f = $("#authForm"); f.hidden = false; REG = null; $("#a_phone").focus(); return; }
     case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
@@ -2491,14 +2540,32 @@ document.addEventListener("submit", async e => {
   if (btn) btn.disabled = true;
   try {
     if (f.id === "authForm") {
-      const body = { email: $("#a_email").value, password: $("#a_pass").value };
-      if (authMode === "criar") { body.name = $("#a_name").value; body.role = ($('input[name="role"]:checked') || {}).value; }
+      const body = authBody(), ph = $("#a_phone");
+      $("#authErr").hidden = true;
+      if (ph) { // cadastro com celular: confere os dados, manda o código (ou usa o número já confirmado)
+        const input = ph.value.trim();
+        if (REG && REG.ticket && REG.input === input) body.phoneTicket = REG.ticket;
+        else {
+          try {
+            await api("POST", "/api/auth/register", { ...body, phone: input, check: true });
+            REG = { input };
+            await sendCode(($('input[name="pchan"]:checked') || {}).value || PHONE[0]);
+          } catch (err) { showErr("#authErr", err.message); }
+          return;
+        }
+      }
       try { await api("POST", authMode === "criar" ? "/api/auth/register" : "/api/auth/login", body); }
       catch (err) { return showErr("#authErr", err.message); }
-      await refreshMe();
-      toast(authMode === "criar" ? "Conta criada" : "Bem-vindo de volta");
-      const next = S.next; S.next = null;
-      return go(next || (authMode === "criar" ? (ME.role === "freela" ? "perfil" : "publicar") : "painel"));
+      return authDone();
+    }
+    if (f.id === "codeForm") {
+      $("#codeErr").hidden = true;
+      try { REG.ticket = (await api("POST", "/api/auth/phone/check", { phone: REG.phone, code: $("#a_code").value })).ticket; }
+      catch (err) { return showErr("#codeErr", err.message); }
+      // código certo: cria a conta. Se o cadastro falhar agora, volta ao formulário com o número já confirmado.
+      try { await api("POST", "/api/auth/register", { ...authBody(), phoneTicket: REG.ticket }); }
+      catch (err) { f.remove(); $("#authForm").hidden = false; return showErr("#authErr", err.message); }
+      return authDone();
     }
     if (f.id === "forgotForm") {
       const email = $("#f_email").value.trim();
@@ -2666,11 +2733,14 @@ const COOKIE_SVG = `<svg class="cookie-ico" viewBox="0 0 64 64" aria-hidden="tru
 // o aviso aparece para quem ainda não respondeu; a contagem já está valendo enquanto isso
 function gaBanner() {
   if (!GA_ID || gaChoice() || $("#consent")) return;
+  if (location.hostname === "app.osmo.com.br") return; // no subdomínio do app o aviso não aparece
   const b = document.createElement("div");
   b.id = "consent"; b.className = "consent"; b.setAttribute("role", "region"); b.setAttribute("aria-label", "Aviso de cookies");
   b.innerHTML = `${COOKIE_SVG}<p><b>Usamos cookies de estatística.</b> O Google Analytics conta as visitas para entendermos quais telas ajudam e quais confundem. Nada de anúncios nem dos seus dados de conta. <a href="/privacidade">Privacidade</a></p>
     <div class="row consent-actions"><button class="btn sm" data-consent="nao">Não quero</button><button class="btn sm hl" data-consent="sim">Entendi</button></div>`;
   document.body.appendChild(b);
+  // na TV o aviso cobre a tela: o foco vai direto para ele (e fica preso nele, ver focusables) até a pessoa responder
+  if (document.documentElement.dataset.device === "tv") b.querySelector("[data-consent]").focus({ preventScroll: true });
 }
 document.addEventListener("click", e => { const c = e.target.closest("[data-consent]"); if (c) { gaSet(c.dataset.consent); if (typeof tvFocusFirst === "function") tvFocusFirst(); toast(c.dataset.consent === "sim" ? "Obrigado!" : "Pronto, cookies de estatística desligados"); } });
 document.addEventListener("change", e => { if (e.target.id === "gaSw") gaSet(e.target.checked ? "sim" : "nao"); });
@@ -2738,8 +2808,6 @@ function pomoRender() {
   if (!el) { el = document.createElement("div"); el.id = "pomo"; document.body.appendChild(el); }
   el.className = "pomo " + (POMO.open ? "is-open" : "is-bubble") + (POMO.side === "left" ? " on-left" : "");
   el.innerHTML = pomoHTML(); pomoPlace(); pomoWake();
-  // na TV o aviso cobre a tela: o foco vai direto para ele (e fica preso nele, ver focusables) até a pessoa responder
-  if (document.documentElement.dataset.device === "tv") b.querySelector("[data-consent]").focus({ preventScroll: true });
   if (!pomoTick) pomoTick = setInterval(pomoStep, 1000);
 }
 // a cada segundo: atualiza o número e o anel (sem redesenhar tudo) e confere se o tempo acabou
@@ -2877,6 +2945,7 @@ function spatialMove(dir) {
 }
 function tvFocusFirst() {
   if (DEVICE !== "tv" || $("#layer").children.length) return;
+  const consent = $("#consent [data-consent]"); if (consent) { consent.focus({ preventScroll: true }); return; } // aviso de cookies ainda sem resposta
   // começa num botão ou link, nunca num campo de texto (na TV isso abriria o teclado da tela sem a pessoa pedir)
   const first = [...$("#view").querySelectorAll(FOCUSABLE)].find(el => el.getBoundingClientRect().height > 0 && !isTyping(el));
   if (first) first.focus({ preventScroll: true });
@@ -2944,7 +3013,6 @@ function installHTML() {
   if (installPrompt) return row("Ícone na tela inicial, abre em janela própria e sem a barra do navegador", `<button class="btn sm" data-install="1">Instalar</button>`);
   if (isIOS()) return row("No iPhone ou iPad, toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.");
   if (isMacSafari()) return row("No Safari do Mac, use o menu <b>Arquivo → Adicionar ao Dock</b>. O app abre em janela própria.");
-  const consent = $("#consent [data-consent]"); if (consent) { consent.focus({ preventScroll: true }); return; } // aviso de cookies ainda sem resposta
   return row("Se o seu navegador permitir, procure no menu dele a opção <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.");
 }
 function refreshInstallHTML() { const box = $("#adjInstall"); if (box) box.innerHTML = installHTML(); }

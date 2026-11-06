@@ -1,0 +1,117 @@
+/* BIBLIOTECA DA CASA: as mesmas cores e letras do Osmo TV (app.osmo.com.br/tv/):
+   vinho, rosa, laranja do foco e dourado da nota. Tudo medido em vw/vh para caber em qualquer TV. */
+:root{
+  --brand:#7A0B3C; --brand-deep:#610930; --pink:#FF7597; --orange:#EA580C; --on-brand:#FFFFFF;
+  --bg:#170810; --surface:#22101A; --sunken:#12060C; --line:#3A1E2B;
+  --fg:#F6E9EE; --muted:#B99AA7; --sun:#E5B456;
+  --f:"DIN Pro", "Barlow", "DIN Alternate", "Helvetica Neue", system-ui, sans-serif;
+  --r:16px; --pad:4.2vw; --card:10.4vw; --wide:19vw; --gap:1.6vw;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:var(--f)}
+body{display:flex; flex-direction:column}
+button{font:inherit; color:inherit}
+:focus{outline:none}
+
+/* FUNDO: a imagem larga do que está com foco, com degradê para o texto ficar legível */
+.bg{position:fixed; inset:0; z-index:0; background:var(--brand-deep) radial-gradient(ellipse at 70% 30%, transparent 0%, rgb(0 0 0 / .55) 100%)}
+.bg-img{position:absolute; inset:0 0 0 30%; background-size:cover; background-position:center top; opacity:0; transition:opacity .6s ease}
+.bg-img.on{opacity:1}
+.bg-shade{position:absolute; inset:0; background:
+  linear-gradient(90deg, var(--bg) 28%, rgb(23 8 16 / .82) 48%, rgb(23 8 16 / .25) 75%, transparent),
+  linear-gradient(0deg, var(--bg) 8%, rgb(23 8 16 / .7) 45%, transparent 75%)}
+
+/* TOPO */
+.bar{position:relative; z-index:2; display:flex; align-items:center; gap:2vw; padding:2.6vh var(--pad) 0; min-height:6vh}
+.brand{display:flex; align-items:center; gap:.6vw; color:var(--on-brand)}
+.brand svg{height:2.1vw; min-height:20px; width:auto; fill:currentColor}
+.brand b{font-size:1.6vw; letter-spacing:.04em}
+.brand .sub{font-weight:700; font-size:.95vw; letter-spacing:.18em; color:var(--pink); padding-left:.8vw; border-left:1px solid rgb(255 255 255 / .3)}
+.where{font-weight:700; font-size:1.05vw; padding:.5vw 1.3vw; border-radius:999px; background:#fff; color:var(--brand-deep)}
+.crumb{font-weight:600; font-size:1.05vw; color:var(--muted)}
+.crumb::before{content:"‹ Voltar  ·  "; color:var(--pink)}
+
+main{position:relative; z-index:1; flex:1; display:flex; flex-direction:column; min-height:0}
+
+/* DESTAQUE */
+.hero{padding:3vh var(--pad) 2vh; max-width:52vw; min-height:34vh; display:flex; flex-direction:column; justify-content:flex-end; gap:1vh}
+.eyebrow{font-size:1vw; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--pink)}
+.hero h1{margin:0; font-size:3.4vw; line-height:1.05; letter-spacing:-.01em; font-weight:700; text-wrap:balance;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.meta{margin:0; font-size:1.2vw; font-weight:600}
+.meta .star{color:var(--sun)}
+.overview{margin:0; font-size:1.1vw; line-height:1.5; color:var(--muted); max-width:44vw;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden}
+
+/* FILEIRAS */
+.rows{flex:1; min-height:0; overflow:hidden; padding-bottom:6vh}
+.row{padding:1.2vh 0 1.6vh}
+.row h2{margin:0 0 .4vh; padding:0 var(--pad); font-size:1.4vw; font-weight:700}
+.track{list-style:none; margin:0; display:flex; gap:var(--gap); overflow-x:auto; scrollbar-width:none; padding:1.4vh var(--pad)}
+.track::-webkit-scrollbar{display:none}
+.card{position:relative; flex:none; width:var(--card); cursor:pointer}
+.card.wide{width:var(--wide)}
+.art{position:relative; aspect-ratio:2/3; border-radius:var(--r); overflow:hidden; background:var(--sunken); border:1px solid var(--line);
+  display:grid; place-items:center; transition:transform .18s ease, box-shadow .18s ease}
+.card.wide .art{aspect-ratio:16/9}
+.art img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block}
+.art svg{width:34%; max-width:5vw; fill:var(--muted); opacity:.45}
+.art .name{position:absolute; left:8%; right:8%; bottom:8%; font-weight:700; font-size:1vw; line-height:1.2; text-align:center}
+.art .seen{position:absolute; left:0; bottom:0; height:.35vw; min-height:3px; background:var(--pink)}
+.cap{margin:.7vh 0 0; font-size:.95vw; font-weight:600; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.cap b{color:var(--fg); font-weight:700}
+.card.focus .art{transform:scale(1.07); box-shadow:0 0 0 .25vw var(--orange), 0 0 0 .8vw rgb(232 101 15 / .25), 0 1.2vw 2.4vw rgb(0 0 0 / .5)}
+.card.focus .cap{color:var(--fg); transform:translateY(.7vw)}
+.cap{transition:transform .18s ease}
+
+/* TEMPORADAS: botões redondos */
+.track.pills{padding-top:.6vh; padding-bottom:.6vh}
+.pill{flex:none; border-radius:999px; padding:.7vw 1.6vw; font-weight:700; font-size:1.1vw; cursor:pointer;
+  background:rgb(255 255 255 / .12); box-shadow:inset 0 0 0 1px rgb(255 255 255 / .18); color:rgb(255 255 255 / .85)}
+.pill.on{background:#fff; color:var(--brand-deep)}
+.pill.focus{outline:.25vw solid var(--orange); outline-offset:.25vw}
+
+.state{margin:2vh var(--pad); padding:2vw; max-width:60vw; border-radius:var(--r); background:var(--surface); border:1px solid var(--line); font-size:1.15vw; line-height:1.6}
+.state b{display:block; font-size:1.4vw; margin-bottom:.5vw}
+.state code{font-family:ui-monospace, monospace; font-size:.95em; color:var(--pink)}
+.credit{position:fixed; z-index:2; right:var(--pad); bottom:1.6vh; margin:0; font-size:.75vw; color:rgb(255 255 255 / .45); max-width:40vw; text-align:right}
+
+/* PLAYER */
+body.playing .bar, body.playing main, body.playing .credit{visibility:hidden}
+.player{position:fixed; inset:0; z-index:10; background:#000; cursor:pointer}
+.player[hidden]{display:none}
+.player video{width:100%; height:100%; object-fit:contain; display:block; background:#000}
+.player video::cue{font-family:var(--f); font-size:2.2vw; background:rgb(0 0 0 / .6)}
+.pbar{position:absolute; left:0; right:0; bottom:0; padding:8vh var(--pad) 5vh; background:linear-gradient(0deg, rgb(0 0 0 / .85), transparent);
+  display:flex; flex-direction:column; gap:1.4vh; opacity:0; transition:opacity .3s ease}
+.player.ui .pbar{opacity:1}
+.phead{display:flex; align-items:flex-end; justify-content:space-between; gap:2vw}
+.phead small{display:block; font-size:1vw; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--pink); margin-bottom:.4vh}
+.phead b{font-size:2vw; font-weight:700}
+.pclose{border:0; border-radius:999px; background:rgb(255 255 255 / .16); padding:.6vw 1.4vw; font-weight:700; font-size:1vw; cursor:pointer}
+.ptrack{height:.5vw; min-height:4px; border-radius:999px; background:rgb(255 255 255 / .25); overflow:hidden}
+.ptrack i{display:block; height:100%; width:0; background:var(--orange)}
+.pfoot{display:flex; justify-content:space-between; font-size:1.1vw; font-weight:600; color:rgb(255 255 255 / .85)}
+.phint{color:rgb(255 255 255 / .55)}
+.pstate{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); margin:0; padding:1.2vw 2vw; border-radius:var(--r);
+  background:rgb(0 0 0 / .7); font-size:1.4vw; font-weight:600; text-align:center; max-width:60vw}
+.pstate[hidden],.pnext[hidden]{display:none}
+.pnext{position:absolute; right:var(--pad); bottom:22vh; padding:1.2vw 1.6vw; border-radius:var(--r); background:var(--surface); border:1px solid var(--line);
+  display:flex; flex-direction:column; gap:.3vw; font-size:1vw; box-shadow:0 0 0 .25vw var(--orange)}
+.pnext span{color:var(--pink); font-weight:700; text-transform:uppercase; letter-spacing:.1em}
+.pnext b{font-size:1.4vw}
+.pnext i{font-style:normal; color:var(--muted)}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+/* tela em pé (celular) */
+@media (max-aspect-ratio: 1/1){
+  :root{--card:30vw; --wide:62vw; --pad:5vw}
+  .hero{max-width:none; min-height:28vh} .eyebrow{font-size:2.8vw} .hero h1{font-size:7vw} .meta{font-size:3.6vw} .overview{font-size:3.4vw; max-width:none}
+  .brand svg{height:6vw} .brand b{font-size:4.5vw} .brand .sub{font-size:2.6vw} .where,.crumb{font-size:3vw}
+  .row h2{font-size:4.2vw} .cap,.art .name{font-size:3vw} .pill{font-size:3.4vw; padding:2vw 4vw}
+  .credit{font-size:2.4vw; max-width:none; left:var(--pad)} .state{max-width:none; font-size:3.4vw} .state b{font-size:4vw}
+  .phead b{font-size:5vw} .phead small,.pfoot,.pclose{font-size:3.2vw} .phint{display:none} .pstate{font-size:3.6vw}
+  .pnext{font-size:3vw; left:var(--pad)} .pnext b{font-size:4vw}
+  html,body{overflow:auto} .rows{overflow:visible}
+}

@@ -412,6 +412,21 @@ for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfo
   db.prepare("UPDATE profiles SET portfolio = '[]' WHERE user_id = ?").run(p.user_id);
 }
 
+// Celular confirmado no cadastro (código pelo WhatsApp ou SMS). O mesmo celular só vale para
+// uma conta. phone_tickets é o "comprovante" entre acertar o código e terminar o cadastro
+// (vale 30 minutos e serve uma vez só).
+// --- migrações (celular confirmado)
+addColumn("users", "phone", "TEXT NOT NULL DEFAULT ''");
+addColumn("users", "phone_verified_at", "TEXT NOT NULL DEFAULT ''");
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone != '';
+CREATE TABLE IF NOT EXISTS phone_tickets (
+  token_hash TEXT PRIMARY KEY,
+  phone TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+`);
+
 // Conversas de SUPORTE: o admin da Osmo e um cliente (contratante) trocam mensagens pelo mesmo
 // sistema de conversas. kind = '' é a conversa normal (cliente e freela); 'suporte' é com a Osmo.
 // Nelas, client_id é o cliente e freela_id guarda a conta do admin.

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<!-- BIBLIOTECA DA CASA (protótipo do Osmo TV na rede de casa): filmes, séries e clipes que estão no Mac,
+     tocando na TV/celular pelo Wi-Fi. Feito para o controle remoto: setas andam, OK escolhe, Voltar volta. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Osmo TV · Na sua casa</title>
+<meta name="theme-color" content="#170810">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="bg-img" id="bgA"></div><div class="bg-img" id="bgB"></div><div class="bg-shade"></div></div>
+
+<header class="bar">
+  <span class="brand" aria-label="Osmo TV"><svg viewBox="0 0 30 30" aria-hidden="true"><path d="M15.12,10.53c-2.49,0-4.5,2.02-4.5,4.5s2.02,4.5,4.5,4.5,4.5-2.02,4.5-4.5-2.02-4.5-4.5-4.5ZM25.84,4.36C22.9,1.45,19.32,0,15.09,0S7.29,1.45,4.37,4.36C1.46,7.27,0,10.8,0,14.97s1.46,7.74,4.37,10.66,6.49,4.37,10.72,4.37,7.79-1.46,10.73-4.37c.65-.65,1.22-1.33,1.73-2.04-1.76-2.49-2.65-5.36-2.65-8.62s.89-6.11,2.66-8.59c-.51-.7-1.07-1.38-1.72-2.03ZM21.93,21.94c-1.89,1.92-4.18,2.89-6.86,2.89s-4.96-.96-6.84-2.87c-1.88-1.91-2.82-4.24-2.82-6.99s.94-5.01,2.82-6.93c1.88-1.91,4.16-2.87,6.84-2.87s4.97.96,6.86,2.87c1.89,1.91,2.84,4.22,2.84,6.93s-.95,5.05-2.84,6.97Z"/></svg><b>OSMO</b><span class="sub">TV</span></span>
+  <span class="where" id="where">Na sua casa</span>
+  <span class="crumb" id="crumb" hidden></span>
+</header>
+
+<main>
+  <section class="hero" id="hero" aria-live="polite">
+    <span class="eyebrow" id="hEyebrow">Na sua casa</span>
+    <h1 id="hTitle">Carregando…</h1>
+    <p class="meta" id="hMeta"></p>
+    <p class="overview" id="hOverview"></p>
+  </section>
+  <div class="rows" id="rows"></div>
+</main>
+
+<!-- PLAYER: cobre a tela toda; a barra some sozinha enquanto o vídeo toca -->
+<div class="player" id="player" hidden>
+  <video id="pv" playsinline preload="metadata"></video>
+  <p class="pstate" id="pState" role="status" hidden></p>
+  <div class="pnext" id="pNext" hidden><span>Próximo episódio</span><b id="pNextTitle"></b><i id="pNextCount"></i></div>
+  <div class="pbar">
+    <div class="phead"><div><small id="pSub"></small><b id="pTitle"></b></div><button type="button" id="pClose" class="pclose">Fechar</button></div>
+    <div class="ptrack"><i id="pFill"></i></div>
+    <div class="pfoot"><span id="pTime">0:00 / 0:00</span><span class="phint">OK pausa · ◀ ▶ 10 s · ▲ legenda · Voltar fecha</span></div>
+  </div>
+</div>
+
+<p class="credit" id="credit">Capas e sinopses: TMDB. Este produto usa a API do TMDB, mas não é endossado nem certificado pelo TMDB.</p>
+<script src="/app.js" defer></script>
+</body>
+</html>

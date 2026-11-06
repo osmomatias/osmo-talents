@@ -66,7 +66,7 @@ NODE_BIN="$(command -v node)"
 # os segredos, só pode ser lido pelo administrador e pelo app.
 say "3/7 Copiando o app para $APP_DIR"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$APP_USER"
-mkdir -p "$APP_DIR/data"
+mkdir -p "$APP_DIR/data" "$APP_DIR/data/videos" # data/videos: os vídeos dos Osmo Originais (app de TV)
 if [ "$SRC_DIR" != "$APP_DIR" ]; then
   rsync -a --delete --exclude data --exclude .env --exclude node_modules "$SRC_DIR"/ "$APP_DIR"/
 fi

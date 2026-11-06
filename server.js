@@ -32,6 +32,7 @@ const mail = require("./src/mail");
 const push = require("./src/push"); // notificações no celular e no computador (Web Push)
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
+const sms = require("./src/sms"); // código de confirmação do celular (WhatsApp ou SMS)
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -154,7 +155,7 @@ function currentUser(req) {
   if (!tok) return null;
   const s = one("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?", sha(tok));
   if (!s || s.expires_at < new Date().toISOString()) return null;
-  const u = one("SELECT id, name, email, role, roles, energy, notify_level notify, lang FROM users WHERE id = ?", s.user_id);
+  const u = one("SELECT id, name, email, role, roles, energy, notify_level notify, lang, phone FROM users WHERE id = ?", s.user_id);
   if (!u) return null;
   u.roles = rolesOf(u);
   return u;
@@ -275,8 +276,48 @@ const route = (method, pattern, handler, opts = {}) => {
 };
 
 // --- autenticação
+// CONFIRMAR O CELULAR (antes de criar a conta, quando o envio de códigos está ligado):
+// 1. phone/send: a pessoa diz o número e o canal (WhatsApp ou SMS); mandamos um código;
+// 2. phone/check: ela digita o código; se estiver certo, entregamos um "comprovante"
+//    (ticket) que vale 30 minutos e serve uma vez só;
+// 3. register: o cadastro só sai com esse comprovante, e o celular fica guardado na conta.
+// Os "limit" seguram robôs: cada mensagem custa dinheiro e pode virar spam para um número alheio.
+const PHONE_TICKET_MIN = 30;
+const phoneTaken = phone => !!one("SELECT 1 FROM users WHERE phone = ?", phone);
+function phoneOf(raw) {
+  const phone = sms.normalize(raw);
+  if (!phone) fail(400, "Esse celular não parece válido. Escreva com DDD, por exemplo 11 91234-5678.");
+  return phone;
+}
+route("POST", "/api/auth/phone/send", async ({ req, body, ip }) => {
+  if (!sms.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
+  const phone = phoneOf(body.phone), channel = sms.CHANNELS.includes(body.channel) ? body.channel : sms.CHANNELS[0];
+  if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
+  limit("phone:" + ip, 8, 3600_000);
+  limit("phone-to:" + phone, 5, 3600_000);
+  try { await sms.start(phone, channel, i18n.pick(req.headers["x-osmo-lang"]) || "pt-BR"); }
+  catch (e) { if (e instanceof sms.SmsError) fail(e.status, e.message); console.error(new Date().toISOString(), "phone send", e.message); fail(502, "Não deu para mandar o código agora. Tente de novo em instantes."); }
+  return { ok: true, phone, pretty: sms.pretty(phone), channel };
+}, { auth: false });
+route("POST", "/api/auth/phone/check", async ({ body, ip }) => {
+  if (!sms.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
+  limit("phone-chk:" + ip, 20, 600_000);
+  const phone = phoneOf(body.phone);
+  let ok;
+  try { ok = await sms.check(phone, body.code); }
+  catch (e) { if (e instanceof sms.SmsError) fail(e.status, e.message); console.error(new Date().toISOString(), "phone check", e.message); fail(502, "Não deu para conferir o código agora. Tente de novo em instantes."); }
+  if (!ok) fail(400, "Esse código não confere ou já venceu. Confira os números ou peça um código novo.");
+  const ticket = crypto.randomBytes(24).toString("hex");
+  run("DELETE FROM phone_tickets WHERE expires_at < ?", new Date().toISOString());
+  run("INSERT INTO phone_tickets (token_hash, phone, expires_at) VALUES (?,?,?)", sha(ticket), phone, new Date(Date.now() + PHONE_TICKET_MIN * 60e3).toISOString());
+  return { ok: true, ticket };
+}, { auth: false });
+
 // CADASTRO: confere nome, e-mail e senha (mínimo 8 letras), vê se o e-mail já existe,
 // cria a pessoa e o perfil vazio JUNTOS (tx = tudo ou nada) e já entrega o crachá.
+// Com a confirmação por celular ligada, também exige o comprovante do código (phoneTicket).
+// check:true só confere os dados, sem criar nada (o site usa antes de mandar o código,
+// para não gastar uma mensagem com um e-mail que já tem conta).
 // O "limit" impede alguém de criar mil contas seguidas do mesmo endereço.
 route("POST", "/api/auth/register", ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
@@ -286,9 +327,22 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
   if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
   if (one("SELECT 1 FROM users WHERE email = ?", email)) fail(409, "Já existe uma conta com esse e-mail. Tente entrar.");
+  if (sms.ENABLED && body.check) {
+    const phone = phoneOf(body.phone);
+    if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
+    return { ok: true };
+  }
+  let phone = "";
+  if (sms.ENABLED) {
+    const t = /^[a-f0-9]{48}$/.test(String(body.phoneTicket || "")) && one("SELECT phone FROM phone_tickets WHERE token_hash = ? AND expires_at > ?", sha(body.phoneTicket), new Date().toISOString());
+    if (!t) fail(400, "Confirme seu celular com o código antes de criar a conta.");
+    phone = t.phone;
+    if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
+  }
   const id = tx(() => {
-    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", name, email, hashPassword(password), role).lastInsertRowid);
+    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, hashPassword(password), role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
     run("INSERT INTO profiles (user_id) VALUES (?)", uid);
+    if (phone) run("DELETE FROM phone_tickets WHERE phone = ?", phone);
     return uid;
   });
   createSession(res, id);
@@ -412,7 +466,7 @@ const unreadCount = id => one(`SELECT COUNT(*) n FROM messages m JOIN threads t 
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id).n;
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: sms.ENABLED ? sms.CHANNELS : [], push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
@@ -2039,6 +2093,125 @@ async function handleAuth(req, res, url, ip) {
   return redirect(res, "/painel");
 }
 
+// TOP 10 DE FILMES E SÉRIES: os dados vêm do TMDB (themoviedb.org), que tem API oficial e gratuita.
+// - lista "em-alta": o que mais está sendo visto na semana; "melhores": os mais bem avaliados;
+// - pedimos filmes e séries ao mesmo tempo e guardamos a resposta por 6 horas (TOP10_TTL),
+//   para a página abrir rápido e não gastar o limite de pedidos do TMDB;
+// - a chave fica só aqui no servidor (TMDB_TOKEN no .env), nunca vai para o navegador.
+const TMDB_TOKEN = process.env.TMDB_TOKEN || "";
+const TOP10_TTL = 6 * 3600e3;
+const TOP10_LISTS = { "em-alta": ["trending/movie/week", "trending/tv/week"], melhores: ["movie/top_rated", "tv/top_rated"] };
+const top10Cache = new Map();
+async function tmdb(pathname) {
+  const r = await fetch(`https://api.themoviedb.org/3/${pathname}?language=pt-BR&region=BR`, {
+    headers: { Authorization: `Bearer ${TMDB_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`TMDB ${r.status}`);
+  return r.json();
+}
+const top10Item = (x, i) => ({
+  rank: i + 1, id: x.id,
+  title: x.title || x.name || "",
+  year: String(x.release_date || x.first_air_date || "").slice(0, 4),
+  rating: Math.round((x.vote_average || 0) * 10) / 10,
+  poster: x.poster_path ? `https://image.tmdb.org/t/p/w342${x.poster_path}` : "",
+  backdrop: x.backdrop_path ? `https://image.tmdb.org/t/p/w1280${x.backdrop_path}` : "", // imagem larga (fundo do app de TV em /tv/)
+  overview: String(x.overview || "").slice(0, 280),
+});
+route("GET", "/api/top10", async ({ query }) => {
+  if (!TMDB_TOKEN) fail(503, "O Top 10 ainda não está ligado: falta a chave do TMDB no servidor.");
+  const lista = TOP10_LISTS[query.get("lista")] ? query.get("lista") : "em-alta";
+  const hit = top10Cache.get(lista);
+  if (hit && Date.now() - hit.at < TOP10_TTL) return hit.data;
+  try {
+    const [movies, tv] = await Promise.all(TOP10_LISTS[lista].map(tmdb));
+    const data = { lista, updatedAt: new Date().toISOString(), filmes: movies.results.slice(0, 10).map(top10Item), series: tv.results.slice(0, 10).map(top10Item) };
+    top10Cache.set(lista, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    console.error(new Date().toISOString(), "top10", e.message);
+    if (hit) return hit.data; // o TMDB caiu: mostra a última lista boa que temos
+    fail(502, "Não deu para buscar o Top 10 agora. Tente de novo em instantes.");
+  }
+}, { auth: false });
+
+// OSMO ORIGINAIS (vídeos próprios no app de TV /tv/). Como para uma criança:
+// - os vídeos moram numa pasta do servidor (data/videos), fora do código: publicar.sh não mexe nela;
+// - cada vídeo é um arquivo .mp4 (ou .webm/.m4v). Junto dele, com o MESMO nome, podem ir:
+//     nome.jpg/.png/.webp      -> a capa em pé (cartaz)
+//     nome-fundo.jpg/.png/.webp -> a imagem larga do fundo
+//     nome.vtt                 -> legenda
+//     nome.json                -> {"title":"...","year":"2026","overview":"...","order":1}
+//   sem o .json, o título vem do nome do arquivo ("meu-curta_2026.mp4" vira "Meu curta 2026");
+// - o vídeo é entregue "em pedaços" (HTTP Range): começa a tocar logo e dá para pular para
+//   qualquer ponto sem baixar tudo;
+// - só nomes simples (letras, números, ponto, traço) são aceitos: ninguém sai da pasta com "../".
+const VIDEO_DIR = path.resolve(process.env.VIDEO_DIR || path.join(__dirname, "data", "videos"));
+const VIDEO_EXT = { ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm" };
+const VIDEO_IMG = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+const VIDEO_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,150}$/;
+function videoFile(name) {
+  if (!VIDEO_NAME.test(name) || name.includes("..")) return null;
+  const file = path.join(VIDEO_DIR, name);
+  return path.dirname(file) === VIDEO_DIR ? file : null;
+}
+function listVideos() {
+  let names;
+  try { names = fs.readdirSync(VIDEO_DIR); } catch { return []; }
+  const set = new Set(names);
+  const pick = (stem, exts) => exts.map(e => stem + e).find(n => set.has(n));
+  const imgs = Object.keys(VIDEO_IMG);
+  return names.filter(n => VIDEO_EXT[path.extname(n).toLowerCase()] && VIDEO_NAME.test(n)).map(n => {
+    const stem = n.slice(0, -path.extname(n).length);
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(path.join(VIDEO_DIR, stem + ".json"), "utf8")) || {}; } catch {}
+    const st = fs.statSync(path.join(VIDEO_DIR, n));
+    const url = f => f ? "/video/" + encodeURIComponent(f) + "?v=" + Math.floor(fs.statSync(path.join(VIDEO_DIR, f)).mtimeMs).toString(36) : "";
+    const nice = stem.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    return {
+      id: stem, order: Number(meta.order) || 999, added: st.mtimeMs,
+      title: String(meta.title || (nice.charAt(0).toUpperCase() + nice.slice(1))).slice(0, 120),
+      year: String(meta.year || "").slice(0, 4),
+      overview: String(meta.overview || "").slice(0, 400),
+      src: "/video/" + encodeURIComponent(n),
+      poster: url(pick(stem, imgs)), backdrop: url(pick(stem + "-fundo", imgs)) || url(pick(stem, imgs)),
+      subtitles: url(pick(stem, [".vtt"])),
+    };
+  }).filter(v => !v.id.endsWith("-fundo"))
+    .sort((a, b) => a.order - b.order || b.added - a.added)
+    .map(({ order, added, ...v }) => v);
+}
+route("GET", "/api/videos", () => ({ videos: listVideos() }), { auth: false });
+// entrega o vídeo (em pedaços), a capa, o fundo ou a legenda
+function serveVideo(req, res, rawName) {
+  let name; try { name = decodeURIComponent(rawName); } catch { return notFound(res); }
+  const file = videoFile(name); if (!file) return notFound(res);
+  const ext = path.extname(name).toLowerCase();
+  const type = VIDEO_EXT[ext] || VIDEO_IMG[ext] || (ext === ".vtt" ? "text/vtt; charset=utf-8" : null);
+  if (!type) return notFound(res);
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) return notFound(res);
+    const size = st.size;
+    const etag = `"${size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    const base = { ...SECURITY_HEADERS, "Content-Type": type, "Accept-Ranges": "bytes", "ETag": etag,
+      "Cache-Control": VIDEO_EXT[ext] ? "public, max-age=3600" : "public, max-age=86400" };
+    if (req.headers["if-none-match"] === etag && !req.headers.range) { res.writeHead(304, base); return res.end(); }
+    let start = 0, end = size - 1, status = 200;
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
+    if (m && size > 0) {
+      if (m[1] === "" && m[2] !== "") { start = Math.max(0, size - Number(m[2])); }
+      else { start = Number(m[1] || 0); if (m[2] !== "") end = Math.min(end, Number(m[2])); }
+      if (start > end || start >= size) { res.writeHead(416, { ...base, "Content-Range": `bytes */${size}` }); return res.end(); }
+      status = 206;
+    }
+    res.writeHead(status, { ...base, "Content-Length": end - start + 1, ...(status === 206 ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) });
+    if (req.method === "HEAD" || size === 0) return res.end();
+    const stream = fs.createReadStream(file, { start, end });
+    stream.on("error", () => res.destroy());
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
+  });
+}
+
 // MIME: a "etiqueta" que diz ao navegador que tipo de arquivo está chegando (página, estilo,
 // script, imagem...). Sem a etiqueta certa, o navegador pode não saber o que fazer.
 /* ---------------- servidor ---------------- */
@@ -2093,47 +2266,6 @@ function readBody(req, max = 200_000) {
 // ARQUIVOS DO SITE (HTML, CSS, JS): serveStatic entrega o arquivo pedido da pasta public.
 // - "/" e os endereços das telas do app (/vagas, /vagas/12, /painel...: lista APP_PATH, igual à do app.js)
 //   recebem o index.html; o app.js desenha a tela certa;
-// TOP 10 DE FILMES E SÉRIES: os dados vêm do TMDB (themoviedb.org), que tem API oficial e gratuita.
-// - lista "em-alta": o que mais está sendo visto na semana; "melhores": os mais bem avaliados;
-// - pedimos filmes e séries ao mesmo tempo e guardamos a resposta por 6 horas (TOP10_TTL),
-//   para a página abrir rápido e não gastar o limite de pedidos do TMDB;
-// - a chave fica só aqui no servidor (TMDB_TOKEN no .env), nunca vai para o navegador.
-const TMDB_TOKEN = process.env.TMDB_TOKEN || "";
-const TOP10_TTL = 6 * 3600e3;
-const TOP10_LISTS = { "em-alta": ["trending/movie/week", "trending/tv/week"], melhores: ["movie/top_rated", "tv/top_rated"] };
-const top10Cache = new Map();
-async function tmdb(pathname) {
-  const r = await fetch(`https://api.themoviedb.org/3/${pathname}?language=pt-BR&region=BR`, {
-    headers: { Authorization: `Bearer ${TMDB_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
-  if (!r.ok) throw new Error(`TMDB ${r.status}`);
-  return r.json();
-}
-const top10Item = (x, i) => ({
-  rank: i + 1, id: x.id,
-  title: x.title || x.name || "",
-  year: String(x.release_date || x.first_air_date || "").slice(0, 4),
-  rating: Math.round((x.vote_average || 0) * 10) / 10,
-  poster: x.poster_path ? `https://image.tmdb.org/t/p/w342${x.poster_path}` : "",
-  backdrop: x.backdrop_path ? `https://image.tmdb.org/t/p/w1280${x.backdrop_path}` : "", // imagem larga (fundo do app de TV em /tv/)
-  overview: String(x.overview || "").slice(0, 280),
-});
-route("GET", "/api/top10", async ({ query }) => {
-  if (!TMDB_TOKEN) fail(503, "O Top 10 ainda não está ligado: falta a chave do TMDB no servidor.");
-  const lista = TOP10_LISTS[query.get("lista")] ? query.get("lista") : "em-alta";
-  const hit = top10Cache.get(lista);
-  if (hit && Date.now() - hit.at < TOP10_TTL) return hit.data;
-  try {
-    const [movies, tv] = await Promise.all(TOP10_LISTS[lista].map(tmdb));
-    const data = { lista, updatedAt: new Date().toISOString(), filmes: movies.results.slice(0, 10).map(top10Item), series: tv.results.slice(0, 10).map(top10Item) };
-    top10Cache.set(lista, { at: Date.now(), data });
-    return data;
-  } catch (e) {
-    console.error(new Date().toISOString(), "top10", e.message);
-    if (hit) return hit.data; // o TMDB caiu: mostra a última lista boa que temos
-    fail(502, "Não deu para buscar o Top 10 agora. Tente de novo em instantes.");
-  }
-}, { auth: false });
-
 //   endereço que não existe recebe a 404.html com código 404, para o Google não guardar página vazia;
 // - path.normalize + startsWith impede truques como "/../../senhas" para sair da pasta;
 // - ETag é a "impressão digital" do arquivo: se o navegador já tem a mesma, respondemos
@@ -2202,6 +2334,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
+  const vm = url.pathname.match(/^\/video\/([^/]+)$/);
+  if (vm && (req.method === "GET" || req.method === "HEAD")) return serveVideo(req, res, vm[1]);
   const fm = url.pathname.match(/^\/arquivo\/(a\/)?(\d+)$/);
   if (fm && (req.method === "GET" || req.method === "HEAD")) return fm[1] ? serveAttachment(req, res, Number(fm[2])) : serveFile(req, res, Number(fm[2]));
   const av = url.pathname.match(/^\/(avatar|portfolio)\/(\d+)$/);
