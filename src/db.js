@@ -412,14 +412,22 @@ for (const p of db.prepare("SELECT user_id, portfolio FROM profiles WHERE portfo
   db.prepare("UPDATE profiles SET portfolio = '[]' WHERE user_id = ?").run(p.user_id);
 }
 
-// Celular confirmado no cadastro (código pelo WhatsApp ou SMS). O mesmo celular só vale para
-// uma conta. phone_tickets é o "comprovante" entre acertar o código e terminar o cadastro
-// (vale 30 minutos e serve uma vez só).
+// Celular confirmado no cadastro (a pessoa manda um código pelo WhatsApp). O mesmo celular só
+// vale para uma conta. phone_checks é a "sala de espera" do código (pending até a mensagem
+// chegar; ok ou taken depois). phone_tickets é o "comprovante" entre confirmar o celular e
+// terminar o cadastro (vale 30 minutos e serve uma vez só).
 // --- migrações (celular confirmado)
 addColumn("users", "phone", "TEXT NOT NULL DEFAULT ''");
 addColumn("users", "phone_verified_at", "TEXT NOT NULL DEFAULT ''");
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone != '';
+CREATE TABLE IF NOT EXISTS phone_checks (
+  token_hash TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL DEFAULT 'pending',
+  phone TEXT NOT NULL DEFAULT '',
+  expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS phone_tickets (
   token_hash TEXT PRIMARY KEY,
   phone TEXT NOT NULL,

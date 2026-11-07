@@ -225,7 +225,7 @@ const eyeBtn = () => `<button type="button" class="eye-btn" data-act="toggle-pas
 // - renderSeq: um contador para ignorar respostas atrasadas (se você clicou em outra tela
 //   antes da primeira terminar de carregar, a primeira é descartada).
 /* ---------- estado ---------- */
-let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PHONE = [], PUSH = ""; // PUSH = chave pública do push ("" = desligado)
+let ME = null, PAY = { enabled: false, fee: 10, autoRelease: 7 }, OAUTH = [], MAIL = false, PHONE = false, PUSH = ""; // PUSH = chave pública do push ("" = desligado)
 const S = { q: "", cat: "", clear: false, async: false, flex: false, sort: "recentes", aud: "freela", next: null };
 // vidro líquido vem ligado, exceto para quem pediu menos transparência no sistema
 const PREFS = Object.assign({ big: false, airy: false, calm: false, focus: false, glass: !matchMedia("(prefers-reduced-transparency: reduce)").matches }, store.get("prefs", {}));
@@ -253,8 +253,9 @@ async function checkVersion() {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
 // Pergunta ao servidor "quem sou eu?" e redesenha o cabeçalho com o que voltar.
 async function refreshMe() {
-  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PHONE = d.phone || []; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
+  try { const d = await api("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PHONE = !!d.phone; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
   renderChrome(); gaLoad(); gaBanner();
+  if (ME && ME.needPhone) phoneModal();
 }
 
 // CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
@@ -591,15 +592,15 @@ V.inicio = async () => {
 // estiverem ligados (SOCIAL) e traduz os códigos de erro da volta do Google em frases (OAUTH_ERR).
 /* ---------- entrar / criar conta ---------- */
 let authMode = "entrar";
-// CONFIRMAR O CELULAR NO CADASTRO (quando o servidor tem o envio de códigos ligado: PHONE
-// diz os canais, ex.: ["whatsapp","sms"]). "Criar conta" primeiro confere os dados, depois
-// manda o código e troca o formulário pela caixa do código. Acertou o código, a conta é criada.
-// REG guarda o número já confirmado (ticket), para não pedir outro código se algo falhar depois.
-let REG = null;
-const CHAN = { whatsapp: "WhatsApp", sms: "SMS" };
+// CONFIRMAR O CELULAR NO CADASTRO PELO WHATSAPP (quando o servidor tem isso ligado: PHONE).
+// "Criar conta" primeiro confere os dados e troca o formulário pela caixa do WhatsApp: um botão
+// abre o WhatsApp com a mensagem pronta para a Osmo. Enquanto isso o site pergunta ao servidor
+// "já chegou?" (waPoll). Chegou, a conta é criada com o comprovante (ticket).
+// REG guarda o comprovante, para não pedir outra mensagem se algo falhar depois.
+let REG = null, waTimer = 0;
 V.entrar = async () => {
   if (ME) { go(S.next || "painel"); return; }
-  const reg = authMode === "criar", tel = reg && PHONE.length > 0;
+  const reg = authMode === "criar", tel = reg && PHONE;
   REG = null;
   return `<div class="auth stack">
   <div><span class="label">Osmo Talents</span><h1 style="font-size:clamp(1.8rem,4vw,2.4rem); margin-top:8px">${reg ? "Criar conta" : "Entrar"}</h1></div>
@@ -612,36 +613,53 @@ V.entrar = async () => {
     ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>` : ""}
     <div class="field"><label for="a_email">E-mail</label><input class="input" id="a_email" type="email" autocomplete="email" placeholder="voce@email.com" required></div>
     <div class="field"><label for="a_pass">Senha</label><div class="pass-wrap"><input class="input" id="a_pass" type="password" autocomplete="${reg ? "new-password" : "current-password"}" minlength="8" placeholder="${reg ? "Mínimo de 8 caracteres" : "Sua senha"}" required>${eyeBtn()}</div>${reg ? `<span class="hint">Pelo menos 8 caracteres.</span>` : MAIL ? `<button type="button" class="link-btn" data-act="forgot">Esqueci minha senha</button>` : ""}</div>
-    ${tel ? `<div class="field"><label for="a_phone">Celular</label><input class="input" id="a_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Ex.: 11 91234-5678" required><span class="hint">Vamos mandar um código para confirmar que o número é seu.</span></div>
-    ${PHONE.length > 1 ? `<div class="field"><span class="flabel">Receber o código por</span><div class="row" style="gap:20px">${PHONE.map((c, i) => `<label class="check"><input type="radio" name="pchan" value="${c}"${i ? "" : " checked"}><span>${CHAN[c]}</span></label>`).join("")}</div></div>` : ""}` : ""}
     <div id="authErr" class="err" role="alert" hidden></div>
-    <button class="btn hl" type="submit">${reg ? "Criar conta" : "Entrar"}</button>
+    <button class="btn hl" type="submit">${reg ? (tel ? "Continuar" : "Criar conta") : "Entrar"}</button>
+    ${tel ? `<span class="hint">No próximo passo você confirma seu celular mandando uma mensagem pelo WhatsApp.</span>` : ""}
   </form></div>`;
 };
 
-// caixa do código: aparece no lugar do formulário depois que o código sai
-const codeHTML = () => {
-  const other = PHONE.find(c => c !== REG.channel);
-  return `<form class="panel stack" id="codeForm" novalidate>
-    <div><p>Mandamos um código de 6 números pelo ${CHAN[REG.channel]} para:</p><p translate="no"><b>${esc(REG.pretty)}</b></p><span class="hint">O código vale por 10 minutos.</span></div>
-    <div class="field"><label for="a_code">Código</label><input class="input" id="a_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required></div>
-    <div id="codeErr" class="err" role="alert" hidden></div>
-    <button class="btn hl" type="submit">Confirmar e criar conta</button>
+// caixa do WhatsApp: aparece no lugar do formulário depois que os dados conferem
+const waHTML = d => `<form class="panel stack" id="waForm" novalidate>
+    <div><b>Confirme seu celular pelo WhatsApp</b><p class="muted" style="margin-top:6px">Toque no botão: o WhatsApp abre com a mensagem pronta para a Osmo. É só enviar e voltar para esta tela.</p></div>
+    <a class="btn hl" href="${esc(d.link)}" target="_blank" rel="noopener">Abrir o WhatsApp</a>
+    <details><summary>O WhatsApp está em outro aparelho?</summary>
+      <p class="hint" style="margin-top:6px">Mande do seu celular esta mensagem para <b translate="no">${esc(d.number)}</b>:</p>
+      <p translate="no"><b style="font-size:1.2rem; letter-spacing:.05em">${esc(d.code)}</b></p></details>
+    <p id="waState" class="muted" role="status" aria-live="polite">Esperando a sua mensagem… O código vale por ${d.minutes} minutos.</p>
+    <div id="waErr" class="err" role="alert" hidden></div>
     <div class="row" style="gap:20px; flex-wrap:wrap">
-      <button type="button" class="link-btn" data-act="code-resend" data-channel="${REG.channel}">Mandar de novo</button>
-      ${other ? `<button type="button" class="link-btn" data-act="code-resend" data-channel="${other}">Receber por ${CHAN[other]}</button>` : ""}
-      <button type="button" class="link-btn" data-act="code-back">Trocar o número</button>
+      ${d.dev ? `<button type="button" class="link-btn" data-act="wa-sim" data-code="${esc(d.code)}">Simular a mensagem (teste)</button>` : ""}
+      <button type="button" class="link-btn" data-act="wa-back">Voltar</button>
     </div></form>`;
-};
-// manda (ou manda de novo) o código e mostra a caixa do código
-async function sendCode(channel) {
-  const d = await api("POST", "/api/auth/phone/send", { phone: REG.input, channel });
-  Object.assign(REG, { phone: d.phone, pretty: d.pretty, channel: d.channel, ticket: "" });
+// pede um código novo e mostra a caixa do WhatsApp
+async function waStart() {
+  const d = await api("POST", "/api/auth/phone/start");
+  REG = { pid: d.pid, code: d.code, ticket: "" };
   const f = $("#authForm"); f.hidden = true;
-  $("#codeForm")?.remove();
-  f.insertAdjacentHTML("afterend", codeHTML());
-  $("#a_code").focus();
+  $("#waForm")?.remove();
+  f.insertAdjacentHTML("afterend", waHTML(d));
+  waPoll();
 }
+// "Já chegou?": pergunta a cada 2,5 segundos enquanto a caixa estiver na tela.
+// Ao voltar do WhatsApp (a aba fica visível de novo), pergunta na hora.
+async function waPoll() {
+  clearTimeout(waTimer);
+  const box = $("#waForm"); if (!box || !REG || !REG.pid) return;
+  let d; try { d = await api("GET", "/api/auth/phone/status?pid=" + REG.pid); } catch { d = { state: "pending" }; }
+  if (!$("#waForm") || box !== $("#waForm")) return;
+  const say = (msg, err) => { const st = $("#waState"), e = $("#waErr"); if (err) { e.innerHTML = msg; e.hidden = false; st.hidden = true; } else st.textContent = msg; };
+  if (d.state === "pending") { waTimer = setTimeout(waPoll, document.hidden ? 6000 : 2500); return; }
+  REG.pid = "";
+  if (d.state === "expired") return say(`O código venceu. <button type="button" class="link-btn" data-act="wa-new">Gerar outro código</button>`, true);
+  if (d.state === "taken") return say(`O celular ${esc(d.pretty)} já está em outra conta. Tente entrar, ou <button type="button" class="link-btn" data-act="wa-new">mande de outro número</button>.`, true);
+  REG.ticket = d.ticket;
+  say(`Celular ${d.pretty} confirmado. Criando a sua conta…`);
+  try { await api("POST", "/api/auth/register", { ...authBody(), phoneTicket: REG.ticket }); }
+  catch (err) { box.remove(); $("#authForm").hidden = false; const e = $("#authErr"); e.textContent = err.message; e.hidden = false; return; }
+  authDone();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && REG && REG.pid && $("#waForm")) waPoll(); });
 function authBody() {
   const body = { email: $("#a_email").value, password: $("#a_pass").value };
   if (authMode === "criar") { body.name = $("#a_name").value; body.role = ($('input[name="role"]:checked') || {}).value; }
@@ -2424,11 +2442,9 @@ document.addEventListener("click", async e => {
     })();
     case "port-move": return busy(async () => { ME.profile.portfolio = (await api("POST", `/api/me/portfolio/${id}/move`, { dir: Number(act.dataset.dir) })).portfolio; renderPort(); })();
     case "avatar-del": return busy(async () => { await api("DELETE", "/api/me/avatar"); ME.profile.avatar = ""; toast("Foto removida"); route(); })();
-    case "code-resend": return busy(async () => {
-      const box = $("#codeErr"); box.hidden = true;
-      try { await sendCode(act.dataset.channel); toast("Código novo enviado"); } catch (err) { box.textContent = err.message; box.hidden = false; }
-    })();
-    case "code-back": { $("#codeForm")?.remove(); const f = $("#authForm"); f.hidden = false; REG = null; $("#a_phone").focus(); return; }
+    case "wa-new": return busy(async () => { try { await waStart(); } catch (err) { const e = $("#waErr"); if (e) { e.textContent = err.message; e.hidden = false; } } })();
+    case "wa-back": { clearTimeout(waTimer); $("#waForm")?.remove(); const f = $("#authForm"); f.hidden = false; REG = null; $("#a_name")?.focus(); return; }
+    case "wa-sim": return busy(async () => { await api("POST", "/api/auth/phone/simulate", { code: act.dataset.code, phone: prompt("Celular que mandou a mensagem (teste):", "11 91234-5678") || "" }); waPoll(); })();
     case "forgot": S.forgotEmail = ($("#a_email") || {}).value || ""; return go("esqueci");
     case "wnext": if (!wizValid()) return; W.step = Math.min(3, W.step + 1); saveDraft(); return rerenderWiz();
     case "wprev": W.step = Math.max(0, W.step - 1); saveDraft(); return rerenderWiz();
@@ -2540,31 +2556,18 @@ document.addEventListener("submit", async e => {
   if (btn) btn.disabled = true;
   try {
     if (f.id === "authForm") {
-      const body = authBody(), ph = $("#a_phone");
+      const body = authBody();
       $("#authErr").hidden = true;
-      if (ph) { // cadastro com celular: confere os dados, manda o código (ou usa o número já confirmado)
-        const input = ph.value.trim();
-        if (REG && REG.ticket && REG.input === input) body.phoneTicket = REG.ticket;
+      if (authMode === "criar" && PHONE) { // cadastro com celular: confere os dados e pede o WhatsApp (ou usa o celular já confirmado)
+        if (REG && REG.ticket) body.phoneTicket = REG.ticket;
         else {
-          try {
-            await api("POST", "/api/auth/register", { ...body, phone: input, check: true });
-            REG = { input };
-            await sendCode(($('input[name="pchan"]:checked') || {}).value || PHONE[0]);
-          } catch (err) { showErr("#authErr", err.message); }
+          try { await api("POST", "/api/auth/register", { ...body, check: true }); await waStart(); }
+          catch (err) { showErr("#authErr", err.message); }
           return;
         }
       }
       try { await api("POST", authMode === "criar" ? "/api/auth/register" : "/api/auth/login", body); }
       catch (err) { return showErr("#authErr", err.message); }
-      return authDone();
-    }
-    if (f.id === "codeForm") {
-      $("#codeErr").hidden = true;
-      try { REG.ticket = (await api("POST", "/api/auth/phone/check", { phone: REG.phone, code: $("#a_code").value })).ticket; }
-      catch (err) { return showErr("#codeErr", err.message); }
-      // código certo: cria a conta. Se o cadastro falhar agora, volta ao formulário com o número já confirmado.
-      try { await api("POST", "/api/auth/register", { ...authBody(), phoneTicket: REG.ticket }); }
-      catch (err) { f.remove(); $("#authForm").hidden = false; return showErr("#authErr", err.message); }
       return authDone();
     }
     if (f.id === "forgotForm") {
@@ -2654,6 +2657,75 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
     sheetDrag(panel, () => done(false));
     panel.querySelector('[data-sheet="no"]').focus(); // o foco começa no caminho seguro
   });
+}
+
+// CONFIRMAR O CELULAR DE QUEM ENTROU COM LOGIN SOCIAL (Google, Microsoft...): quem criou a conta
+// com e-mail já confirmou no cadastro; quem usou um botão de login social vê esta caixa ao entrar.
+// Mesmo jeito do cadastro: o botão abre o WhatsApp com a mensagem pronta e a caixa pergunta ao
+// servidor "já chegou?" (a cada 2,5 s, e na hora ao voltar do WhatsApp). Chegou, o celular vai
+// para a conta (/api/me/phone). "Agora não" fecha até a próxima vez que a pessoa abrir o site.
+let phoneBox = null;
+function phoneModal() {
+  try { if (phoneBox || sessionStorage.getItem("osmo-phone-later")) return; } catch {}
+  const back = document.activeElement, box = document.createElement("div");
+  phoneBox = box;
+  let pid = "", timer = 0, closed = false;
+  box.innerHTML = `<div class="scrim"></div><div class="drawer sheet" role="dialog" aria-modal="true" aria-labelledby="phT" aria-describedby="phD">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <h2 id="phT">Confirme seu celular</h2>
+    <p class="muted" id="phD">Falta só um passo: toque no botão e o WhatsApp abre com a mensagem pronta para a Osmo. É só enviar e voltar para cá.</p>
+    <div id="phBody"><p class="muted" role="status">Preparando…</p></div>
+    <div class="sheet-actions" id="phActs"><button type="button" class="btn" data-ph="later">Agora não</button></div></div>`;
+  document.body.appendChild(box);
+  const panel = box.querySelector(".sheet"), body = box.querySelector("#phBody"), acts = box.querySelector("#phActs");
+  const done = later => {
+    if (closed) return; closed = true; clearTimeout(timer);
+    document.removeEventListener("keydown", onKey, true); document.removeEventListener("visibilitychange", onVis);
+    if (later) { try { sessionStorage.setItem("osmo-phone-later", "1"); } catch {} }
+    box.remove(); phoneBox = null; if (back && back.focus) back.focus();
+  };
+  const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(true); } else trapFocus(e, panel); };
+  const onVis = () => { if (!document.hidden && pid) poll(); };
+  const fail = msg => { body.innerHTML = `<div class="err" role="alert">${msg}</div>`; acts.insertAdjacentHTML("afterbegin", `<button type="button" class="btn hl" data-ph="new">Tentar de novo</button>`); };
+  async function start() {
+    acts.querySelector('[data-ph="new"]')?.remove();
+    body.innerHTML = `<p class="muted" role="status">Preparando…</p>`;
+    let d; try { d = await api("POST", "/api/auth/phone/start"); } catch (err) { return fail(esc(err.message)); }
+    if (closed) return;
+    pid = d.pid;
+    body.innerHTML = `<div class="stack">
+      <a class="btn hl" href="${esc(d.link)}" target="_blank" rel="noopener">Abrir o WhatsApp</a>
+      <details><summary>O WhatsApp está em outro aparelho?</summary>
+        <p class="hint" style="margin-top:6px">Mande do seu celular esta mensagem para <b translate="no">${esc(d.number)}</b>:</p>
+        <p translate="no"><b style="font-size:1.2rem; letter-spacing:.05em">${esc(d.code)}</b></p></details>
+      <p class="muted" id="phState" role="status" aria-live="polite">Esperando a sua mensagem… O código vale por ${d.minutes} minutos.</p>
+      ${d.dev ? `<button type="button" class="link-btn" data-ph="sim" data-code="${esc(d.code)}">Simular a mensagem (teste)</button>` : ""}</div>`;
+    body.querySelector("a.btn").focus();
+    poll();
+  }
+  async function poll() {
+    clearTimeout(timer);
+    if (closed || !pid) return;
+    let d; try { d = await api("GET", "/api/auth/phone/status?pid=" + pid); } catch { d = { state: "pending" }; }
+    if (closed) return;
+    if (d.state === "pending") { timer = setTimeout(poll, document.hidden ? 6000 : 2500); return; }
+    pid = "";
+    if (d.state === "expired") return fail("O código venceu.");
+    if (d.state === "taken") return fail(`O celular ${esc(d.pretty)} já está em outra conta. Mande a mensagem de outro número.`);
+    try { await api("POST", "/api/me/phone", { ticket: d.ticket }); } catch (err) { return fail(esc(err.message)); }
+    ME.needPhone = false; done(false); toast(`Celular ${d.pretty} confirmado`);
+  }
+  document.addEventListener("keydown", onKey, true);
+  document.addEventListener("visibilitychange", onVis);
+  box.addEventListener("click", async e => {
+    if (e.target.classList.contains("scrim")) return done(true);
+    const b = e.target.closest("[data-ph]"); if (!b) return;
+    if (b.dataset.ph === "later") return done(true);
+    if (b.dataset.ph === "new") return start();
+    if (b.dataset.ph === "sim") { await api("POST", "/api/auth/phone/simulate", { code: b.dataset.code, phone: prompt("Celular que mandou a mensagem (teste):", "11 91234-5678") || "" }).catch(err => toast(err.message)); poll(); }
+  });
+  sheetDrag(panel, () => done(true));
+  start();
 }
 
 // FOTO AMPLIADA: tocar numa foto de perfil abre a foto grande no meio da tela, com o fundo escurecido.

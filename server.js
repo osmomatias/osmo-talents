@@ -32,7 +32,7 @@ const mail = require("./src/mail");
 const push = require("./src/push"); // notificações no celular e no computador (Web Push)
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
-const sms = require("./src/sms"); // código de confirmação do celular (WhatsApp ou SMS)
+const wa = require("./src/whatsapp"); // confirmar o celular no cadastro pelo WhatsApp (de graça)
 const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
 
 // Configurações gerais:
@@ -277,48 +277,75 @@ const route = (method, pattern, handler, opts = {}) => {
 };
 
 // --- autenticação
-// CONFIRMAR O CELULAR (antes de criar a conta, quando o envio de códigos está ligado):
-// 1. phone/send: a pessoa diz o número e o canal (WhatsApp ou SMS); mandamos um código;
-// 2. phone/check: ela digita o código; se estiver certo, entregamos um "comprovante"
-//    (ticket) que vale 30 minutos e serve uma vez só;
-// 3. register: o cadastro só sai com esse comprovante, e o celular fica guardado na conta.
-// Os "limit" seguram robôs: cada mensagem custa dinheiro e pode virar spam para um número alheio.
-const PHONE_TICKET_MIN = 30;
+// CONFIRMAR O CELULAR PELO WHATSAPP, DE GRAÇA ("WhatsApp ao contrário", ver src/whatsapp.js):
+// 1. phone/start: criamos um código (OSMO-XXXXXX) e um "número de espera" (pid) secreto do navegador;
+// 2. a pessoa manda o código pelo WhatsApp para o número da Osmo; a Meta avisa o webhook
+//    /api/webhooks/whatsapp, que anota o celular de quem mandou;
+// 3. phone/status: o site pergunta de tempos em tempos "já chegou?". Chegou, entregamos um
+//    "comprovante" (ticket) que vale 30 minutos e serve uma vez só;
+// 4. register: o cadastro só sai com esse comprovante, e o celular fica guardado na conta.
+const PHONE_TICKET_MIN = 30, PHONE_CODE_MIN = 15;
 const phoneTaken = phone => !!one("SELECT 1 FROM users WHERE phone = ?", phone);
-function phoneOf(raw) {
-  const phone = sms.normalize(raw);
-  if (!phone) fail(400, "Esse celular não parece válido. Escreva com DDD, por exemplo 11 91234-5678.");
-  return phone;
-}
-route("POST", "/api/auth/phone/send", async ({ req, body, ip }) => {
-  if (!sms.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
-  const phone = phoneOf(body.phone), channel = sms.CHANNELS.includes(body.channel) ? body.channel : sms.CHANNELS[0];
-  if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
-  limit("phone:" + ip, 8, 3600_000);
-  limit("phone-to:" + phone, 5, 3600_000);
-  try { await sms.start(phone, channel, i18n.pick(req.headers["x-osmo-lang"]) || "pt-BR"); }
-  catch (e) { if (e instanceof sms.SmsError) fail(e.status, e.message); console.error(new Date().toISOString(), "phone send", e.message); fail(502, "Não deu para mandar o código agora. Tente de novo em instantes."); }
-  return { ok: true, phone, pretty: sms.pretty(phone), channel };
+const nowISO = () => new Date().toISOString();
+route("POST", "/api/auth/phone/start", ({ ip }) => {
+  if (!wa.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
+  limit("phone:" + ip, 10, 3600_000);
+  run("DELETE FROM phone_checks WHERE expires_at < ?", nowISO());
+  let code; do code = wa.newCode(); while (one("SELECT 1 FROM phone_checks WHERE code = ?", code));
+  const pid = crypto.randomBytes(24).toString("hex");
+  run("INSERT INTO phone_checks (token_hash, code, expires_at) VALUES (?,?,?)", sha(pid), code, new Date(Date.now() + PHONE_CODE_MIN * 60e3).toISOString());
+  return { pid, code, link: wa.link(code), message: wa.message(code), number: wa.pretty("+" + wa.NUMBER), minutes: PHONE_CODE_MIN, dev: wa.DEV };
 }, { auth: false });
-route("POST", "/api/auth/phone/check", async ({ body, ip }) => {
-  if (!sms.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
-  limit("phone-chk:" + ip, 20, 600_000);
-  const phone = phoneOf(body.phone);
-  let ok;
-  try { ok = await sms.check(phone, body.code); }
-  catch (e) { if (e instanceof sms.SmsError) fail(e.status, e.message); console.error(new Date().toISOString(), "phone check", e.message); fail(502, "Não deu para conferir o código agora. Tente de novo em instantes."); }
-  if (!ok) fail(400, "Esse código não confere ou já venceu. Confira os números ou peça um código novo.");
+// "Já chegou a mensagem?" O site pergunta a cada poucos segundos enquanto espera.
+route("GET", "/api/auth/phone/status", ({ query, ip }) => {
+  limit("phone-st:" + ip, 900, 600_000);
+  const pid = String(query.get("pid") || "");
+  const c = /^[a-f0-9]{48}$/.test(pid) && one("SELECT * FROM phone_checks WHERE token_hash = ?", sha(pid));
+  if (!c || c.expires_at < nowISO()) return { state: "expired" };
+  if (c.state !== "ok") return { state: c.state, pretty: c.phone ? wa.pretty(c.phone) : "" };
+  if (phoneTaken(c.phone)) { run("UPDATE phone_checks SET state = 'taken' WHERE token_hash = ?", c.token_hash); return { state: "taken", pretty: wa.pretty(c.phone) }; }
   const ticket = crypto.randomBytes(24).toString("hex");
-  run("DELETE FROM phone_tickets WHERE expires_at < ?", new Date().toISOString());
-  run("INSERT INTO phone_tickets (token_hash, phone, expires_at) VALUES (?,?,?)", sha(ticket), phone, new Date(Date.now() + PHONE_TICKET_MIN * 60e3).toISOString());
-  return { ok: true, ticket };
+  run("DELETE FROM phone_tickets WHERE expires_at < ?", nowISO());
+  tx(() => {
+    run("INSERT INTO phone_tickets (token_hash, phone, expires_at) VALUES (?,?,?)", sha(ticket), c.phone, new Date(Date.now() + PHONE_TICKET_MIN * 60e3).toISOString());
+    run("DELETE FROM phone_checks WHERE token_hash = ?", c.token_hash);
+  });
+  return { state: "ok", ticket, pretty: wa.pretty(c.phone) };
+}, { auth: false });
+// Chegou uma mensagem com código: anota o celular de quem mandou (e responde, se der).
+function phoneArrived({ from, waId, code }) {
+  const c = one("SELECT token_hash, state FROM phone_checks WHERE code = ? AND expires_at > ?", code, nowISO());
+  if (!c || c.state !== "pending") return;
+  const taken = phoneTaken(from);
+  run("UPDATE phone_checks SET state = ?, phone = ? WHERE token_hash = ?", taken ? "taken" : "ok", from, c.token_hash);
+  wa.reply(waId, taken ? "Este celular já está em outra conta da Osmo. Volte ao site para entrar ou usar outro número." : "Pronto! Seu celular foi confirmado. Pode voltar para a Osmo para terminar o cadastro.");
+}
+// WEBHOOK DA META: GET liga o aviso (a Meta manda a senha VERIFY_TOKEN e um "desafio" que
+// devolvemos); POST traz as mensagens. Só aceitamos avisos com a assinatura certa da Meta.
+route("GET", "/api/webhooks/whatsapp", ({ query, res }) => {
+  if (!wa.VERIFY_TOKEN || query.get("hub.mode") !== "subscribe" || query.get("hub.verify_token") !== wa.VERIFY_TOKEN) fail(403, "Senha do webhook não confere.");
+  send(res, 200, String(query.get("hub.challenge") || ""), { "Content-Type": "text/plain; charset=utf-8" });
+}, { auth: false });
+route("POST", "/api/webhooks/whatsapp", ({ req, body }) => {
+  if (!wa.signatureOk(body, req.headers["x-hub-signature-256"])) fail(401, "Assinatura inválida.");
+  let data; try { data = JSON.parse(body.toString("utf8")); } catch { fail(400, "JSON inválido."); }
+  for (const m of wa.incoming(data)) phoneArrived(m);
+  return { received: true };
+}, { auth: false, raw: 1_000_000 });
+// Só no teste (PHONE_DEV): faz de conta que a mensagem chegou de um celular.
+route("POST", "/api/auth/phone/simulate", ({ body }) => {
+  if (!wa.DEV) fail(404, "Rota não encontrada.");
+  const from = wa.normalize(body.phone || "11912345678"), code = wa.findCode(body.code);
+  if (!from || !code) fail(400, "Faltou o celular ou o código.");
+  phoneArrived({ from, waId: "", code });
+  return { ok: true };
 }, { auth: false });
 
 // CADASTRO: confere nome, e-mail e senha (mínimo 8 letras), vê se o e-mail já existe,
 // cria a pessoa e o perfil vazio JUNTOS (tx = tudo ou nada) e já entrega o crachá.
 // Com a confirmação por celular ligada, também exige o comprovante do código (phoneTicket).
-// check:true só confere os dados, sem criar nada (o site usa antes de mandar o código,
-// para não gastar uma mensagem com um e-mail que já tem conta).
+// check:true só confere os dados, sem criar nada (o site usa antes de pedir o WhatsApp,
+// para a pessoa não confirmar o celular à toa com um e-mail que já tem conta).
 // O "limit" impede alguém de criar mil contas seguidas do mesmo endereço.
 route("POST", "/api/auth/register", ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
@@ -328,15 +355,11 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
   if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
   if (one("SELECT 1 FROM users WHERE email = ?", email)) fail(409, "Já existe uma conta com esse e-mail. Tente entrar.");
-  if (sms.ENABLED && body.check) {
-    const phone = phoneOf(body.phone);
-    if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
-    return { ok: true };
-  }
+  if (wa.ENABLED && body.check) return { ok: true };
   let phone = "";
-  if (sms.ENABLED) {
+  if (wa.ENABLED) {
     const t = /^[a-f0-9]{48}$/.test(String(body.phoneTicket || "")) && one("SELECT phone FROM phone_tickets WHERE token_hash = ? AND expires_at > ?", sha(body.phoneTicket), new Date().toISOString());
-    if (!t) fail(400, "Confirme seu celular com o código antes de criar a conta.");
+    if (!t) fail(400, "Confirme seu celular pelo WhatsApp antes de criar a conta.");
     phone = t.phone;
     if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
   }
@@ -467,14 +490,30 @@ const unreadCount = id => one(`SELECT COUNT(*) n FROM messages m JOIN threads t 
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id).n;
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: sms.ENABLED ? sms.CHANNELS : [], push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
-  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null },
+  // needPhone: entrou com login social (Google, Microsoft...) e ainda não confirmou o celular
+  const needPhone = wa.ENABLED && !user.phone && !!one("SELECT 1 FROM oauth_identities WHERE user_id = ?", user.id);
+  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null, needPhone },
     ...pub };
 }, { auth: false });
+
+// CELULAR DE QUEM JÁ ESTÁ NA CONTA (ex.: entrou com login social): mesmo caminho do cadastro
+// (phone/start, a mensagem no WhatsApp, phone/status), e aqui o comprovante vira o celular da conta.
+route("POST", "/api/me/phone", ({ user, body }) => {
+  if (!wa.ENABLED) fail(503, "A confirmação por celular ainda não está ativa.");
+  const t = /^[a-f0-9]{48}$/.test(String(body.ticket || "")) && one("SELECT phone FROM phone_tickets WHERE token_hash = ? AND expires_at > ?", sha(body.ticket), new Date().toISOString());
+  if (!t) fail(400, "Esse comprovante venceu. Mande a mensagem pelo WhatsApp de novo.");
+  if (one("SELECT 1 FROM users WHERE phone = ? AND id != ?", t.phone, user.id)) fail(409, "Esse celular já está em outra conta.");
+  tx(() => {
+    run("UPDATE users SET phone = ?, phone_verified_at = ? WHERE id = ?", t.phone, new Date().toISOString(), user.id);
+    run("DELETE FROM phone_tickets WHERE phone = ?", t.phone);
+  });
+  return { ok: true, pretty: wa.pretty(t.phone) };
+});
 
 // TROCAR DE PAPEL: a mesma conta pode ser de freelancer e de cliente. Aqui a pessoa escolhe qual
 // papel está usando agora (o site inteiro se ajusta a ele). Se ainda não tinha o outro papel,
@@ -2356,7 +2395,7 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)
-    if (req.method !== "GET" && req.headers["x-osmo"] !== "1" && url.pathname !== "/api/webhooks/asaas") fail(403, "Requisição recusada.");
+    if (req.method !== "GET" && req.headers["x-osmo"] !== "1" && !url.pathname.startsWith("/api/webhooks/")) fail(403, "Requisição recusada.");
     const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
     if (!r) fail(404, "Rota não encontrada.");
     const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
@@ -2368,7 +2407,7 @@ const server = http.createServer(async (req, res) => {
     if (r.role && user.role !== r.role) fail(403, r.role === "cliente" ? "Esta ação é para contas de cliente." : "Esta ação é para contas de freelancer.");
     const body = req.method === "GET" ? {} : r.raw ? await readRaw(req, r.raw) : await readBody(req, url.pathname === "/api/me/avatar" ? 800_000 : url.pathname.startsWith("/api/me/portfolio") ? 2_200_000 : 200_000);
     const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
-    send(res, 200, out ?? { ok: true });
+    if (!res.headersSent) send(res, 200, out ?? { ok: true }); // a rota pode ter respondido sozinha (ex.: texto puro)
   } catch (e) {
     if (e instanceof HttpError) return send(res, e.status, { error: e.message });
     console.error(new Date().toISOString(), req.method, url.pathname, e);

@@ -223,6 +223,23 @@ Como funciona:
 - Para testar no computador: `bash configurar-push.sh --local` mostra as linhas para colar no `.env` local. O push precisa de `https` ou de `localhost`.
 - Não troque as chaves à toa: com chaves novas, todo mundo precisa ativar de novo.
 
+## Confirmar o celular no cadastro pelo WhatsApp (grátis)
+
+No cadastro com e-mail, depois de nome, e-mail e senha, a pessoa confirma o celular mandando uma mensagem pelo WhatsApp. É o "WhatsApp ao contrário": em vez de a Osmo mandar um código (o que custa por mensagem), o site mostra um botão que abre o WhatsApp com a mensagem pronta (ex.: `OSMO-4K7P2Q`) para o número da Osmo. A pessoa toca em Enviar, a Meta avisa o servidor, e o número de quem mandou fica confirmado na conta. Cada celular vale para uma conta só.
+
+Receber mensagens na API oficial do WhatsApp (WhatsApp Cloud API) não tem custo, e a resposta automática "Pronto, confirmado" também não, porque é resposta a quem escreveu primeiro.
+
+1. Em developers.facebook.com, crie um app do tipo Empresa e adicione o produto **WhatsApp**. Ligue um número só para isso (ele não pode estar em uso no aplicativo WhatsApp comum).
+2. Em WhatsApp > Configuração > Webhook, coloque `https://SEU-SITE/api/webhooks/whatsapp`, invente uma senha de verificação e assine o campo **messages**.
+3. No `.env` do servidor, preencha `WHATSAPP_NUMBER`, `WHATSAPP_APP_SECRET` e `WHATSAPP_VERIFY_TOKEN` (e, se quiser a resposta automática, `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_ID`). Veja o `.env.example`.
+4. Reinicie o app. Sem as três primeiras chaves, o cadastro segue sem celular.
+
+Para testar no computador sem a Meta, use `PHONE_DEV=true`: a tela ganha o botão "Simular a mensagem (teste)".
+
+Quem entra por login social (Google, Microsoft etc.) e ainda não tem celular na conta vê, ao entrar, uma caixa "Confirme seu celular" com o mesmo botão do WhatsApp. "Agora não" fecha a caixa até a próxima vez que a pessoa abrir o site.
+
+Ainda não confirma o celular: quem criou a conta com e-mail antes desta versão.
+
 ## Selo de verificado (laudo médico com ICP-Brasil)
 
 Freelancers podem, se quiserem, enviar um laudo em PDF **assinado digitalmente por médico** com certificado ICP-Brasil. Se passar, aparece um selo verde ao lado do nome.
@@ -252,6 +269,7 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `src/db.js`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
 - `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
 - `src/mail.js`: o carteiro que manda e-mails.
+- `src/whatsapp.js`: a caixa de correio do WhatsApp que confirma o celular no cadastro.
 - `src/push.js`: o carteiro das notificações no celular e no computador (Web Push).
 - `src/oauth.js`: o "Entrar com Google/Microsoft/GitHub/LinkedIn/Adobe".
 - `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
