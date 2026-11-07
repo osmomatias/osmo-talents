@@ -2393,7 +2393,7 @@ document.addEventListener("click", async e => {
     case "push-on": return pushOn();
     case "push-off": return pushOff();
     case "push-test": return pushTest();
-    case "logout": if (menuOpen) closeMenu(false); if (PUSH) await pushOff(true); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
+    case "logout": if (phoneClose) phoneClose(); if (menuOpen) closeMenu(false); if (PUSH) await pushOff(true); await api("POST", "/api/auth/logout"); ME = null; renderChrome(); toast("Você saiu da conta"); return go("inicio");
     case "oauth-role": return busy(async () => {
       try { const r = await api("POST", "/api/auth/oauth/complete", { token: act.dataset.token, role: act.dataset.role }); await refreshMe(); toast("Conta criada"); go(r.role === "freela" ? "perfil" : "publicar"); }
       catch (err) { const b = $("#roleErr"); if (b) { b.textContent = err.message; b.hidden = false; } else toast(err.message); }
@@ -2659,32 +2659,32 @@ function confirmSheet({ title, text = "", ok = "Confirmar" }) {
   });
 }
 
-// CONFIRMAR O CELULAR DE QUEM ENTROU COM LOGIN SOCIAL (Google, Microsoft...): quem criou a conta
-// com e-mail já confirmou no cadastro; quem usou um botão de login social vê esta caixa ao entrar.
+// CELULAR OBRIGATÓRIO: toda conta sem celular confirmado (login social, contas antigas) fica
+// presa nesta caixa ao entrar, até confirmar. Não fecha com Esc, nem tocando fora, nem
+// arrastando: o único outro caminho é "Sair da conta".
 // Mesmo jeito do cadastro: o botão abre o WhatsApp com a mensagem pronta e a caixa pergunta ao
 // servidor "já chegou?" (a cada 2,5 s, e na hora ao voltar do WhatsApp). Chegou, o celular vai
-// para a conta (/api/me/phone). "Agora não" fecha até a próxima vez que a pessoa abrir o site.
-let phoneBox = null;
+// para a conta (/api/me/phone) e a caixa some.
+let phoneBox = null, phoneClose = null;
 function phoneModal() {
-  try { if (phoneBox || sessionStorage.getItem("osmo-phone-later")) return; } catch {}
+  if (phoneBox) return;
   const back = document.activeElement, box = document.createElement("div");
   phoneBox = box;
   let pid = "", timer = 0, closed = false;
   box.innerHTML = `<div class="scrim"></div><div class="drawer sheet" role="dialog" aria-modal="true" aria-labelledby="phT" aria-describedby="phD">
-    <div class="sheet-grip" aria-hidden="true"></div>
     <h2 id="phT">Confirme seu celular</h2>
-    <p class="muted" id="phD">Falta só um passo: toque no botão e o WhatsApp abre com a mensagem pronta para a Osmo. É só enviar e voltar para cá.</p>
+    <p class="muted" id="phD">Para continuar usando a Osmo, confirme seu celular pelo WhatsApp. Toque no botão: o WhatsApp abre com a mensagem pronta para a Osmo. É só enviar e voltar para cá.</p>
     <div id="phBody"><p class="muted" role="status">Preparando…</p></div>
-    <div class="sheet-actions" id="phActs"><button type="button" class="btn" data-ph="later">Agora não</button></div></div>`;
+    <div class="sheet-actions" id="phActs"><button type="button" class="btn" data-act="logout">Sair da conta</button></div></div>`;
   document.body.appendChild(box);
   const panel = box.querySelector(".sheet"), body = box.querySelector("#phBody"), acts = box.querySelector("#phActs");
-  const done = later => {
+  const done = () => {
     if (closed) return; closed = true; clearTimeout(timer);
     document.removeEventListener("keydown", onKey, true); document.removeEventListener("visibilitychange", onVis);
-    if (later) { try { sessionStorage.setItem("osmo-phone-later", "1"); } catch {} }
-    box.remove(); phoneBox = null; if (back && back.focus) back.focus();
+    box.remove(); phoneBox = phoneClose = null; if (back && back.focus) back.focus();
   };
-  const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(true); } else trapFocus(e, panel); };
+  phoneClose = done;
+  const onKey = e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); } else trapFocus(e, panel); };
   const onVis = () => { if (!document.hidden && pid) poll(); };
   const fail = msg => { body.innerHTML = `<div class="err" role="alert">${msg}</div>`; acts.insertAdjacentHTML("afterbegin", `<button type="button" class="btn hl" data-ph="new">Tentar de novo</button>`); };
   async function start() {
@@ -2713,18 +2713,15 @@ function phoneModal() {
     if (d.state === "expired") return fail("O código venceu.");
     if (d.state === "taken") return fail(`O celular ${esc(d.pretty)} já está em outra conta. Mande a mensagem de outro número.`);
     try { await api("POST", "/api/me/phone", { ticket: d.ticket }); } catch (err) { return fail(esc(err.message)); }
-    ME.needPhone = false; done(false); toast(`Celular ${d.pretty} confirmado`);
+    ME.needPhone = false; done(); toast(`Celular ${d.pretty} confirmado`);
   }
   document.addEventListener("keydown", onKey, true);
   document.addEventListener("visibilitychange", onVis);
   box.addEventListener("click", async e => {
-    if (e.target.classList.contains("scrim")) return done(true);
     const b = e.target.closest("[data-ph]"); if (!b) return;
-    if (b.dataset.ph === "later") return done(true);
     if (b.dataset.ph === "new") return start();
     if (b.dataset.ph === "sim") { await api("POST", "/api/auth/phone/simulate", { code: b.dataset.code, phone: prompt("Celular que mandou a mensagem (teste):", "11 91234-5678") || "" }).catch(err => toast(err.message)); poll(); }
   });
-  sheetDrag(panel, () => done(true));
   start();
 }
 

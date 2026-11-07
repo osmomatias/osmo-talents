@@ -495,8 +495,9 @@ route("GET", "/api/me", ({ user }) => {
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
   const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
-  // needPhone: entrou com login social (Google, Microsoft...) e ainda não confirmou o celular
-  const needPhone = wa.ENABLED && !user.phone && !!one("SELECT 1 FROM oauth_identities WHERE user_id = ?", user.id);
+  // needPhone: a conta ainda não tem celular confirmado (login social ou conta antiga).
+  // Com o WhatsApp ligado, o site trava numa caixa até a pessoa confirmar.
+  const needPhone = wa.ENABLED && !user.phone;
   return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null, needPhone },
     ...pub };
 }, { auth: false });

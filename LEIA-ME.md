@@ -236,9 +236,7 @@ Receber mensagens na API oficial do WhatsApp (WhatsApp Cloud API) não tem custo
 
 Para testar no computador sem a Meta, use `PHONE_DEV=true`: a tela ganha o botão "Simular a mensagem (teste)".
 
-Quem entra por login social (Google, Microsoft etc.) e ainda não tem celular na conta vê, ao entrar, uma caixa "Confirme seu celular" com o mesmo botão do WhatsApp. "Agora não" fecha a caixa até a próxima vez que a pessoa abrir o site.
-
-Ainda não confirma o celular: quem criou a conta com e-mail antes desta versão.
+**O celular é obrigatório para todas as contas.** Quem já tem conta sem celular confirmado (login social com Google, Microsoft etc., ou conta antiga com e-mail) fica preso, ao entrar, numa caixa "Confirme seu celular" com o mesmo botão do WhatsApp. A caixa não fecha com Esc nem tocando fora: o único outro caminho é "Sair da conta". Confirmou, a caixa some e o celular fica na conta.
 
 ## Selo de verificado (laudo médico com ICP-Brasil)
 
