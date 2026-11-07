@@ -23,7 +23,12 @@ const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || ""; // senha que a Met
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET || ""; // assina cada aviso da Meta (confere que veio dela)
 const TOKEN = process.env.WHATSAPP_TOKEN || ""; // opcional: para responder "Pronto, confirmado"
 const PHONE_ID = process.env.WHATSAPP_PHONE_ID || ""; // opcional: id do número na Meta (para responder)
-const LIVE = !!(NUMBER && VERIFY_TOKEN && APP_SECRET);
+// Só liga com um número completo (DDI + DDD + número, 10 a 15 algarismos) e chaves que não
+// sejam os exemplos do LEIA-ME: com o número errado, ninguém conseguiria confirmar e todo
+// mundo ficaria preso na caixa do celular.
+const EXEMPLOS = ["a-chave-secreta-do-app", "uma-senha-que-voce-inventa", "a-senha-que-voce-inventou"];
+const LIVE = /^[1-9]\d{9,14}$/.test(NUMBER) && !!VERIFY_TOKEN && !!APP_SECRET && !EXEMPLOS.includes(APP_SECRET) && !EXEMPLOS.includes(VERIFY_TOKEN);
+if ((NUMBER || VERIFY_TOKEN || APP_SECRET) && !LIVE) console.error(new Date().toISOString(), "whatsapp: configuração incompleta ou com valores de exemplo; confirmação do celular DESLIGADA");
 const DEV = process.env.PHONE_DEV === "true" && !LIVE;
 const ENABLED = LIVE || DEV;
 const SHOWN = NUMBER || "5511900000000"; // no teste, um número de mentira só para a tela
