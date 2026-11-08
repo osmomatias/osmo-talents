@@ -1,0 +1,349 @@
+// ============================================================================
+// EXPLICANDO COMO PARA UMA CRIANÇA: o que é este arquivo?
+// ============================================================================
+// É o "detetive de carimbos". Quem quiser o selo verde de verificado manda um laudo
+// médico em PDF. Mas qualquer um consegue fazer um PDF falso no computador, né?
+// Por isso só aceitamos laudos com ASSINATURA DIGITAL de médico, que é como um
+// carimbo mágico impossível de falsificar:
+// - o médico tem um "cartão de identidade digital" (certificado) dado por uma
+//   autoridade oficial do Brasil (a ICP-Brasil);
+// - quando ele assina o PDF, uma conta matemática "cola" a assinatura no conteúdo;
+// - se alguém mudar uma vírgula do PDF depois, a conta não fecha mais.
+// O detetive confere tudo isso sozinho, passo a passo (a lista logo abaixo).
+// Detalhe importante: o detetive NÃO lê o laudo (diagnóstico, nome). Ele só confere
+// que é um laudo de verdade assinado por um médico de verdade.
+// Confere laudos em PDF assinados digitalmente por médicos (ICP-Brasil), só com node:crypto.
+//
+// O que é conferido, nesta ordem:
+//  1. o PDF tem uma assinatura digital (PAdES / CMS destacado) e ela cobre o arquivo inteiro
+//     (nada foi acrescentado ou alterado depois de assinar);
+//  2. o resumo (hash) do conteúdo bate com o que foi assinado e a assinatura confere com a chave do certificado;
+//  3. o certificado encadeia até uma das raízes oficiais da ICP-Brasil (certs/icp-brasil) e estava válido na data da assinatura;
+//  4. é um certificado de pessoa da ICP-Brasil (política 2.16.76.1.2.*) com uso para assinatura;
+//  5. o certificado é de médico: traz o registro no CRM (OID 2.16.76.1.4.2.2.*, atribuído pelo ITI ao Conselho Federal de Medicina)
+//     ou foi emitido pela Autoridade de Registro do CFM/CRM ("AR CFM" na OU, gravada pela AC). Muitos certificados
+//     do programa do CFM para médicos saem pela AR CFM sem o número do CRM; nesse caso não sabemos qual é o CRM;
+//  6. o certificado não aparece na lista de revogados (LCR) da AC emissora, quando a lista pode ser baixada.
+// Não dá para conferir o conteúdo do laudo (diagnóstico, nome do paciente): isso fica como declaração da pessoa.
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { PROJECT_ROOT } from "./paths.js";
+
+interface DerNode {
+  buf: Buffer; tag: number; cls: number; cons: boolean; num: number;
+  start: number; hstart: number; end: number; vend: number; _kids?: DerNode[];
+}
+export interface CertificateInfo {
+  x: crypto.X509Certificate; der: Buffer; serial: string; issuerRaw: Buffer; ski: string;
+  crm: string; crmUf: string; policies: string[]; keyUsage: number; crlUrls: string[];
+  name: string; medicalAr: string;
+}
+export interface PdfSignature {
+  range: [number, number, number, number]; cms: Buffer; whole: boolean; pdfTime: Date | null;
+}
+export interface CertificateTrust { roots: crypto.X509Certificate[]; inter: crypto.X509Certificate[] }
+export interface VerificationOptions { trust?: CertificateTrust; skipRevocation?: boolean }
+export type RevocationStatus = "revogado" | "ok" | "indisponivel";
+export interface SignatureVerification {
+  crm: string; uf: string; ar: string; doctor: string; signedAt: Date; revocation: Exclude<RevocationStatus, "revogado">;
+}
+export interface MedicalVerification extends SignatureVerification { sha256: string }
+
+// STAGE marca "em que passo o detetive estava" quando achou um problema. Se o PDF tiver
+// várias assinaturas, mostramos o erro da que chegou mais longe (a explicação mais útil).
+// "no(...)" é o jeito curto de dizer "pare tudo, achei um problema: ...".
+// stage: até onde a conferência chegou (quanto maior, mais útil é a mensagem para a pessoa)
+class IcpError extends Error { constructor(msg: string, public stage = 0) { super(msg); } }
+let STAGE = 0;
+function no(msg: string): never { throw new IcpError(msg, STAGE); }
+
+// LEITOR DE "CAIXINHAS DENTRO DE CAIXINHAS": assinaturas e certificados são guardados num
+// formato chamado DER. Ele é como bonecas russas: cada pedaço diz
+//   [que tipo eu sou] [quanto eu meço] [o que tenho dentro]
+// e o que tem dentro pode ser mais caixinhas. tlv() abre UMA caixinha; kids() lista as caixinhas
+// de dentro; oid() lê "nomes em números" (ex.: 2.16.76.1.4.2.2.1 = "número do CRM");
+// time() lê datas; text() lê textos (nomes, CRM).
+/* ---------- DER/BER mínimo ---------- */
+function tlv(buf: Buffer, pos: number, limit = buf.length): DerNode {
+  const start = pos;
+  if (pos + 2 > limit) no("Estrutura da assinatura corrompida.");
+  const tag = buf[pos++];
+  let num = tag & 0x1f;
+  if (num === 0x1f) { num = 0; let b; do { b = buf[pos++]; num = num * 128 + (b & 0x7f); } while (b & 0x80 && pos < limit); }
+  let len = buf[pos++], indefinite = false;
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    if (n === 0) indefinite = true;
+    else { if (n > 4) no("Estrutura da assinatura corrompida."); len = 0; for (let i = 0; i < n; i++) len = len * 256 + buf[pos++]; }
+  }
+  const node: DerNode = { buf, tag, cls: tag >> 6, cons: !!(tag & 0x20), num, start, hstart: pos, end: 0, vend: 0 };
+  if (indefinite) { // BER: filhos até o marcador 00 00
+    const kids: DerNode[] = []; let p = pos;
+    while (!(buf[p] === 0 && buf[p + 1] === 0)) { if (p >= limit) no("Estrutura da assinatura corrompida."); const k = tlv(buf, p, limit); kids.push(k); p = k.end; }
+    node.end = p + 2; node.vend = p; node._kids = kids;
+  } else {
+    node.end = pos + len; node.vend = node.end;
+    if (node.end > limit) no("Estrutura da assinatura corrompida.");
+  }
+  return node;
+}
+const der = (buf: Buffer) => tlv(buf, 0);
+const raw = (n: DerNode) => n.buf.subarray(n.start, n.end);
+const val = (n: DerNode) => n.buf.subarray(n.hstart, n.vend);
+function kids(n: DerNode): DerNode[] {
+  if (n._kids) return n._kids;
+  const out: DerNode[] = []; let p = n.hstart;
+  while (p < n.vend) { const k = tlv(n.buf, p, n.vend); out.push(k); p = k.end; }
+  return (n._kids = out);
+}
+function oid(n: DerNode) {
+  const b = val(n); const parts = [Math.floor(b[0] / 40), b[0] % 40]; let v = 0;
+  for (let i = 1; i < b.length; i++) { v = v * 128 + (b[i] & 0x7f); if (!(b[i] & 0x80)) { parts.push(v); v = 0; } }
+  return parts.join(".");
+}
+const intHex = (n: DerNode) => val(n).toString("hex").replace(/^(00)+(?=.)/, "").toUpperCase();
+function time(n: DerNode): Date | null {
+  const s = val(n).toString("latin1");
+  const m = n.tag === 0x17 ? /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(s) : /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\.\d+)?Z$/.exec(s);
+  if (!m) return null;
+  const y = n.tag === 0x17 ? (Number(m[1]) < 50 ? 2000 : 1900) + Number(m[1]) : Number(m[1]);
+  return new Date(Date.UTC(y, Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])));
+}
+// texto de qualquer tipo de string ASN.1 (ou OCTET STRING), procurando dentro de wrappers
+function text(n: DerNode): string {
+  if (n.cons) { const k = kids(n); return k.length ? text(k[0]) : ""; }
+  const b = val(n);
+  if (n.tag === 0x1e) { let s = ""; for (let i = 0; i + 1 < b.length; i += 2) s += String.fromCharCode(b.readUInt16BE(i)); return s.trim(); } // BMPString
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(b).trim(); } catch { return b.toString("latin1").trim(); }
+}
+
+// Tradutores de "nomes em números" para nomes de contas matemáticas (sha256 etc.) e a função
+// que confere se uma assinatura bate com a chave pública de quem assinou.
+// SHA-1 é recusado porque é uma conta antiga que já foi "quebrada".
+/* ---------- algoritmos ---------- */
+const HASH: Record<string, string> = { "1.3.14.3.2.26": "sha1", "2.16.840.1.101.3.4.2.1": "sha256", "2.16.840.1.101.3.4.2.2": "sha384", "2.16.840.1.101.3.4.2.3": "sha512" };
+const SIG: Record<string, string> = { "1.2.840.113549.1.1.11": "sha256", "1.2.840.113549.1.1.12": "sha384", "1.2.840.113549.1.1.13": "sha512", "1.2.840.113549.1.1.5": "sha1",
+  "1.2.840.10045.4.3.2": "sha256", "1.2.840.10045.4.3.3": "sha384", "1.2.840.10045.4.3.4": "sha512" };
+function verifySig(algNode: DerNode, digestName: string, data: Buffer, key: crypto.KeyObject, signature: Buffer): boolean {
+  const a = kids(algNode), id = oid(a[0]);
+  if (id === "1.2.840.113549.1.1.10") { // RSASSA-PSS: parâmetros dizem o hash e o tamanho do sal
+    let hash = "sha1", salt = 20;
+    for (const p of a[1] ? kids(a[1]) : []) {
+      if (p.num === 0) hash = HASH[oid(kids(kids(p)[0])[0])] || hash;
+      if (p.num === 2) salt = parseInt(val(kids(p)[0]).toString("hex"), 16);
+    }
+    return crypto.verify(hash, data, { key, padding: crypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: salt }, signature);
+  }
+  const hash = id === "1.2.840.113549.1.1.1" ? digestName : SIG[id];
+  if (!hash) no("A assinatura usa um algoritmo que não é aceito.");
+  if (hash === "sha1") no("A assinatura usa SHA-1, que não é mais aceito pela ICP-Brasil.");
+  return crypto.verify(hash, data, id.startsWith("1.2.840.10045") ? { key, dsaEncoding: "der" } : key, signature);
+}
+
+// certInfo lê o "cartão de identidade digital" e separa o que interessa: número de série,
+// quem emitiu, para que serve, onde fica a lista de cartões cancelados e, principalmente,
+// o CRM do médico (ou se foi emitido pela "AR CFM", o balcão do Conselho de Medicina).
+/* ---------- certificados ---------- */
+function certInfo(derBuf: Buffer): CertificateInfo {
+  const x = new crypto.X509Certificate(derBuf);
+  const tbs = kids(kids(der(derBuf))[0]);
+  let i = tbs[0].cls === 2 && tbs[0].num === 0 ? 1 : 0;
+  const info: CertificateInfo = { x, der: derBuf, serial: intHex(tbs[i]), issuerRaw: raw(tbs[i + 2]), ski: "", crm: "", crmUf: "", policies: [], keyUsage: 0, crlUrls: [], name: "", medicalAr: "" };
+  const extsWrap = tbs.find(t => t.cls === 2 && t.num === 3);
+  for (const e of extsWrap ? kids(kids(extsWrap)[0]) : []) {
+    const ek = kids(e), id = oid(ek[0]), v = der(val(ek[ek.length - 1]));
+    if (id === "2.5.29.14") info.ski = val(v).toString("hex").toUpperCase();
+    if (id === "2.5.29.15") { const b = val(v); info.keyUsage = b[1] || 0; }
+    if (id === "2.5.29.32") info.policies = kids(v).map(p => oid(kids(p)[0]));
+    if (id === "2.5.29.31") (function walk(n: DerNode): void { if (n.cls === 2 && n.num === 6 && !n.cons) { const u = val(n).toString("latin1"); if (/^https?:\/\//i.test(u)) info.crlUrls.push(u); } else if (n.cons) kids(n).forEach(walk); })(v);
+    if (id === "2.5.29.17") for (const g of kids(v)) {
+      if (!(g.cls === 2 && g.num === 0 && g.cons)) continue; // otherName
+      const [t, wrapped] = kids(g); const o = oid(t), s = wrapped ? text(wrapped) : "";
+      if (o === "2.16.76.1.4.2.2.1") info.crm = s.replace(/[^0-9A-Za-z]/g, "");
+      if (o === "2.16.76.1.4.2.2.2") info.crmUf = s.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2);
+    }
+  }
+  const cn = (x.subject.match(/(?:^|\n)CN=([^\n]+)/) || [])[1] || "";
+  info.name = cn.split(":")[0].trim(); // e-CPF: "NOME COMPLETO:CPF"
+  // OU com o nome da Autoridade de Registro que conferiu a identidade (ex.: "AR CFM", "AR CRMDF")
+  info.medicalAr = (x.subject.match(/(?:^|\n)OU=([^\n]+)/g) || []).map(o => o.replace(/^\n?OU=/, "").trim()).find(o => /^AR\s+(CFM|CRM[A-Z]{0,3})\b/i.test(o)) || "";
+  return info;
+}
+// As "raízes" e "intermediárias" são os cartões das autoridades oficiais, guardados na pasta
+// certs/icp-brasil. Funcionam como uma árvore genealógica: o cartão do médico foi assinado por
+// uma autoridade, que foi assinada por outra, até chegar na RAIZ oficial do Brasil.
+function loadPem(file: string): crypto.X509Certificate[] {
+  const pem = fs.readFileSync(file, "latin1");
+  return (pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || []).map(p => new crypto.X509Certificate(p));
+}
+const DIR = path.join(PROJECT_ROOT, "certs", "icp-brasil");
+let TRUST: CertificateTrust | null = null;
+function trust(): CertificateTrust {
+  if (!TRUST) TRUST = { roots: loadPem(path.join(DIR, "raizes.pem")), inter: loadPem(path.join(DIR, "intermediarias.pem")) };
+  return TRUST;
+}
+const validAt = (x: crypto.X509Certificate, t: Date) => new Date(x.validFrom) <= t && t <= new Date(x.validTo);
+// Sobe a árvore genealógica: do cartão do médico até a raiz oficial, conferindo em cada degrau
+// quem assinou quem e se cada cartão estava dentro da validade NA DATA DA ASSINATURA.
+// Se não chegar numa raiz oficial em até 8 degraus, não é ICP-Brasil e o laudo é recusado.
+function buildChain(leaf: crypto.X509Certificate, pool: crypto.X509Certificate[], roots: crypto.X509Certificate[], at: Date): crypto.X509Certificate[] {
+  const chain = [leaf]; let cur = leaf;
+  for (let depth = 0; depth < 8; depth++) {
+    if (!validAt(cur, at)) no(cur === leaf ? "O certificado do médico não estava válido na data da assinatura." : "Um certificado da cadeia não estava válido na data da assinatura.");
+    const root = roots.find(r => cur.checkIssued(r) && cur.verify(r.publicKey));
+    if (root) { if (!validAt(root, at)) no("A raiz ICP-Brasil não estava válida na data da assinatura."); return chain.concat(root); }
+    const next = pool.find(c => !chain.includes(c) && c.ca && cur.checkIssued(c) && cur.verify(c.publicKey));
+    if (!next) no("O certificado de quem assinou não pertence à ICP-Brasil.");
+    chain.push(next); cur = next;
+  }
+  no("Cadeia de certificados longa demais.");
+}
+
+// LISTA DE CARTÕES CANCELADOS: se um médico perder o cartão digital, a autoridade o cancela e
+// publica numa lista. Baixamos essa lista (guardando uma cópia por até 6 horas para não baixar
+// toda hora) e vemos se o número do cartão está nela. Se a lista não puder ser baixada,
+// anotamos "indisponível" em vez de travar tudo.
+/* ---------- LCR (lista de certificados revogados) ---------- */
+const crlCache = new Map<string, { at: number; serials: Set<string>; next: Date | null }>(); // url -> { at, serials:Set, next }
+async function revoked(info: CertificateInfo, issuer: crypto.X509Certificate): Promise<RevocationStatus> {
+  for (const url of info.crlUrls.filter(u => u.startsWith("http://") || u.startsWith("https://"))) {
+    try {
+      let c = crlCache.get(url);
+      if (!c || (c.next && c.next < new Date()) || Date.now() - c.at > 6 * 3600e3) {
+        const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 20_000);
+        const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+        if (!res.ok) continue;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 60e6) continue;
+        const [tbsN, algN, sigN] = kids(der(buf));
+        const sig = val(sigN).subarray(1);
+        if (!verifySig(algN, "sha256", raw(tbsN), issuer.publicKey, sig)) continue; // LCR que não é da AC emissora
+        const tbs = kids(tbsN); let i = tbs[0].tag === 0x02 ? 1 : 0;
+        const next = tbs[i + 3] && (tbs[i + 3].tag === 0x17 || tbs[i + 3].tag === 0x18) ? time(tbs[i + 3]) : null;
+        const list = tbs.find((t, k) => k > i + 2 && t.tag === 0x30);
+        c = { at: Date.now(), next, serials: new Set(list ? kids(list).map(r => intHex(kids(r)[0])) : []) };
+        crlCache.set(url, c);
+      }
+      return c.serials.has(info.serial) ? "revogado" : "ok";
+    } catch { /* tenta a próxima URL */ }
+  }
+  return "indisponivel";
+}
+
+// Procura as assinaturas dentro do PDF. Cada assinatura diz quais pedaços do arquivo ela
+// protege (/ByteRange: "do byte 0 até tal, e de tal até o fim"); o buraco no meio é onde
+// fica a própria assinatura. Também pega a data de assinatura escrita no PDF (/M).
+// "whole" = a assinatura cobre o arquivo até o último byte (ninguém colou nada depois).
+/* ---------- PDF ---------- */
+function signaturesOf(pdf: Buffer): PdfSignature[] {
+  const s = pdf.toString("latin1"), out: PdfSignature[] = [];
+  for (const m of s.matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)) {
+    const [a, b, c, d] = m.slice(1).map(Number);
+    if (a !== 0 || b <= 0 || c <= b || c + d > pdf.length || pdf[b] !== 0x3c || pdf[c - 1] !== 0x3e) continue;
+    const hex = pdf.subarray(b + 1, c - 1).toString("latin1").replace(/\s/g, "");
+    if (!/^[0-9a-fA-F]+$/.test(hex)) continue;
+    // data da assinatura no dicionário do PDF (/M), que também fica protegida pela assinatura
+    // o objeto inteiro da assinatura ("N 0 obj ... endobj"): /M pode vir antes do /Contents, que é grande
+    const objStart = s.lastIndexOf(" obj", m.index), objEnd = s.indexOf("endobj", m.index);
+    const dict = s.slice(objStart >= 0 && m.index - objStart < 300_000 ? objStart : Math.max(0, m.index - 3000), objEnd >= 0 ? objEnd : c + 3000);
+    const md = /\/M\s*\(D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?([Z+-])?(\d{2})?'?(\d{2})?'?\)/.exec(dict);
+    let pdfTime = null;
+    if (md) {
+      const [, Y, M, D, h = "00", mi = "00", se = "00", z = "Z", oh = "00", om = "00"] = md;
+      const off = z === "Z" ? 0 : (z === "-" ? -1 : 1) * (Number(oh) * 60 + Number(om));
+      pdfTime = new Date(Date.UTC(+Y, +M - 1, +D, +h, +mi, +se) - off * 60e3);
+      if (isNaN(pdfTime.getTime())) pdfTime = null;
+    }
+    out.push({ range: [a, b, c, d], cms: Buffer.from(hex, "hex"), whole: c + d === pdf.length, pdfTime });
+  }
+  return out;
+}
+
+// A investigação completa de UMA assinatura, em passos (os STAGEs):
+// 1. abre a assinatura e acha o cartão de quem assinou;
+// 2. recalcula o "resumo" (hash) do PDF e confere com o resumo que foi assinado, e confere
+//    a assinatura com a chave do cartão. Se o PDF mudou, os resumos não batem;
+// 3. confere se a assinatura cobre o arquivo inteiro;
+// 4. sobe a árvore até a raiz oficial;
+// 5. confere se é cartão de PESSOA, de ASSINATURA e de MÉDICO, e se não foi cancelado.
+// Se tudo passar, devolve o CRM, o nome do médico e a data.
+async function checkSignature(pdf: Buffer, sig: PdfSignature, opts: VerificationOptions): Promise<SignatureVerification> {
+  const { roots, inter } = opts.trust || trust();
+  STAGE = 1;
+  const ci = kids(der(sig.cms));
+  if (oid(ci[0]) !== "1.2.840.113549.1.7.2") no("O PDF não tem uma assinatura no formato esperado.");
+  const sd = kids(kids(ci[1])[0]);
+  const encap = kids(sd[2]);
+  if (encap[1]) no("Tipo de assinatura não suportado (conteúdo embutido). Use um PDF assinado no padrão PAdES.");
+  const certsN = sd.find(n => n.cls === 2 && n.num === 0);
+  const embedded = certsN ? kids(certsN).filter(k => k.tag === 0x30).map(k => certInfo(Buffer.from(raw(k)))) : [];
+  const si = kids(kids(sd[sd.length - 1])[0]);
+  const sid = si[1];
+  const digestName = HASH[oid(kids(si[2])[0])];
+  if (!digestName) no("A assinatura usa um algoritmo de resumo que não é aceito.");
+  if (digestName === "sha1") no("A assinatura usa SHA-1, que não é mais aceito pela ICP-Brasil.");
+  let idx = 3; const attrsN = si[3].cls === 2 && si[3].num === 0 ? si[idx++] : null;
+  const sigAlg = si[idx++], signature = val(si[idx]);
+
+  // quem assinou
+  let signer;
+  if (sid.tag === 0x30) { const [iss, ser] = kids(sid); signer = embedded.find(c => c.serial === intHex(ser) && c.issuerRaw.equals(raw(iss))); }
+  else signer = embedded.find(c => c.ski && c.ski === val(sid).toString("hex").toUpperCase());
+  if (!signer) no("O PDF não traz o certificado de quem assinou.");
+
+  STAGE = 2;
+  // conteúdo assinado = arquivo inteiro menos o espaço da própria assinatura
+  const [a, b, c, d] = sig.range;
+  const content = Buffer.concat([pdf.subarray(a, a + b), pdf.subarray(c, c + d)]);
+  const digest = crypto.createHash(digestName).update(content).digest();
+  let signedAt = null;
+  if (attrsN) {
+    let md = null;
+    for (const at of kids(attrsN)) {
+      const [t, set] = kids(at), id = oid(t), v = kids(set)[0];
+      if (id === "1.2.840.113549.1.9.4") md = val(v);
+      if (id === "1.2.840.113549.1.9.5") signedAt = time(v);
+    }
+    if (!md || !md.equals(digest)) no("O PDF foi alterado depois de assinado (o conteúdo não bate com a assinatura).");
+    const attrsDer = Buffer.from(raw(attrsN)); attrsDer[0] = 0x31; // assina-se o SET, não o [0]
+    if (!verifySig(sigAlg, digestName, attrsDer, signer.x.publicKey, signature)) no("A assinatura digital não confere.");
+  } else if (!verifySig(sigAlg, digestName, content, signer.x.publicKey, signature)) no("A assinatura digital não confere.");
+  STAGE = 3;
+  if (!sig.whole) no("O PDF recebeu alterações depois da assinatura do médico. Envie o arquivo exatamente como foi assinado.");
+
+  STAGE = 4;
+  // data da assinatura: a do próprio CMS; senão a do PDF (/M); senão agora
+  const soon = new Date(Date.now() + 5 * 60e3);
+  const at = signedAt && signedAt <= soon ? signedAt : sig.pdfTime && sig.pdfTime <= soon ? sig.pdfTime : new Date();
+  const chain = buildChain(signer.x, embedded.map(e => e.x).concat(inter), roots, at);
+  STAGE = 5;
+  if (!signer.policies.some(p => p.startsWith("2.16.76.1.2."))) no("O certificado não é um certificado de pessoa da ICP-Brasil.");
+  if (!(signer.keyUsage & 0xc0)) no("O certificado não é de uso para assinatura.");
+  if (!signer.crm && !signer.medicalAr) no("A assinatura é ICP-Brasil, mas o certificado não identifica um médico (não traz o registro no CRM nem foi emitido pela AR do CFM). O laudo precisa ser assinado com o certificado do médico.");
+  const rev = opts.skipRevocation ? "indisponivel" : await revoked(signer, chain[1]);
+  if (rev === "revogado") no("O certificado do médico foi revogado.");
+  return { crm: signer.crm, uf: signer.crmUf, ar: signer.medicalAr, doctor: signer.name, signedAt: at, revocation: rev };
+}
+
+// A porta de entrada do detetive: confere se é PDF, acha as assinaturas e testa cada uma,
+// começando pela última. Se alguma passar, devolve o resultado mais o "resumo" (sha256) do
+// arquivo, que o banco guarda para o mesmo laudo não ser usado em duas contas.
+// Confere o PDF. Devolve { crm, uf, doctor, signedAt, revocation, sha256 } ou lança IcpError com o motivo.
+async function verifyMedicalPdf(pdf: unknown, opts: VerificationOptions = {}): Promise<MedicalVerification> {
+  if (!Buffer.isBuffer(pdf) || pdf.subarray(0, 5).toString("latin1") !== "%PDF-") no("Envie o laudo em PDF.");
+  const sigs = signaturesOf(pdf);
+  if (!sigs.length) no("Esse PDF não tem assinatura digital. Peça ao médico o laudo assinado digitalmente (ICP-Brasil), não um PDF escaneado.");
+  let lastErr: IcpError | null = null;
+  for (const s of sigs.reverse()) { // a última assinatura costuma ser a que cobre o arquivo inteiro
+    try { return { ...(await checkSignature(pdf, s, opts)), sha256: crypto.createHash("sha256").update(pdf).digest("hex") }; }
+    catch (e) {
+      const error = e instanceof IcpError ? e : new IcpError("Não deu para ler a assinatura deste PDF.", STAGE);
+      if (!lastErr || error.stage > lastErr.stage) lastErr = error;
+    }
+  }
+  throw lastErr;
+}
+
+const _test = { certInfo, signaturesOf };
+export { verifyMedicalPdf, IcpError, _test };

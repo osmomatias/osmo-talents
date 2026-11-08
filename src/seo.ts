@@ -2,6 +2,7 @@
 // Nenhum dado de sessão, documento de verificação ou anexo privado entra nesta camada.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { PROJECT_ROOT } from './paths';
 import { pages as infoPages } from './seo-content';
 import type { Category, JobList, PublicJob, PublicProfile, SearchInput, SeoDependencies, SeoPage, SeoService, TalentList } from './seo-types';
 
@@ -26,7 +27,7 @@ export function createSeo({ one, all, JOB_SELECT, jobOut, profileOf, hasFreelaSQ
   const sandbox = payments.sandbox ?? (payments.BASE ? /sandbox/.test(payments.BASE) : false);
   const paymentConfig = { enabled, sandbox, fee: payments.fee ?? payments.FEE_PCT ?? 10, autoRelease: payments.autoRelease ?? payments.AUTO_RELEASE_DAYS ?? 7 };
   let categories: Category[] = [];
-  try { categories = (JSON.parse(fs.readFileSync(path.join(publicDir || path.join(__dirname, '..', '..', 'public'), 'taxonomia.json'), 'utf8')) as { categorias?: Category[] }).categorias || []; } catch {}
+  try { categories = (JSON.parse(fs.readFileSync(path.join(publicDir || path.join(PROJECT_ROOT, 'public'), 'taxonomia.json'), 'utf8')) as { categorias?: Category[] }).categorias || []; } catch {}
   const categoryNames = new Map(categories.map(c => [c.id, c.nome]));
   const freelance = typeof hasFreelaSQL === 'function' ? hasFreelaSQL('u') : hasFreelaSQL || "(u.role = 'freela' OR instr(',' || u.roles || ',', ',freela,') > 0)";
   const professional = "p.search_visible = 1 AND length(trim(p.title)) > 0 AND length(trim(p.bio)) >= 40";

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": { "noEmit": true, "noUncheckedIndexedAccess": true },
+  "include": ["src/seo*.ts", "src/router.ts", "typecheck/router.ts"]
+}
