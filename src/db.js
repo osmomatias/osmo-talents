@@ -442,28 +442,6 @@ CREATE TABLE IF NOT EXISTS phone_tickets (
 addColumn("threads", "kind", "TEXT NOT NULL DEFAULT ''");
 db.exec("CREATE INDEX IF NOT EXISTS idx_threads_kind ON threads(kind, client_id)");
 
-// CONTROLE PELO CELULAR (app de TV /tv/): cada TV ganha um "crachá" secreto (tv_screens) e cada
-// celular ligado a ela ganha o seu (tv_phones). Guardamos só o resumo (sha256) dos crachás.
-// Ficam no banco para o celular continuar ligado à TV mesmo depois de o servidor reiniciar.
-db.exec(`
-CREATE TABLE IF NOT EXISTS tv_screens (
-  id INTEGER PRIMARY KEY,
-  token_hash TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  seen_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS tv_phones (
-  id INTEGER PRIMARY KEY,
-  tv_id INTEGER NOT NULL REFERENCES tv_screens(id) ON DELETE CASCADE,
-  key_hash TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  seen_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-`);
-
-// catálogo da Biblioteca da casa que a TV mandou (o celular mostra os pôsteres mesmo com a TV em outra tela)
-addColumn("tv_screens", "catalog", "TEXT");
-
 // Integridade das transições e relações principais. Triggers funcionam também em bancos
 // antigos sem reconstruir tabelas e rejeitam estados inválidos em qualquer caminho de escrita.
 db.exec(`

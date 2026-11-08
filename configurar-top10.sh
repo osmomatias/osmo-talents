@@ -1,5 +1,5 @@
 #!/bin/bash
-# EXPLICANDO COMO PARA UMA CRIANÇA: este script liga o Top 10 de filmes e séries (/top10 e o app de TV em /tv/).
+# EXPLICANDO COMO PARA UMA CRIANÇA: este script liga o Top 10 de filmes e séries (/top10).
 # Ele pede a chave do TMDB (o "API Read Access Token", que começa com eyJ), confere com o TMDB se ela
 # funciona, grava no .env do servidor e no .env deste computador, e reinicia o app.
 # A chave não aparece na tela enquanto você cola, e nunca vai para o GitHub (.env fica fora do git).
@@ -47,8 +47,8 @@ REMOTE
 unset TOKEN
 sleep 3
 echo ""
-if curl -sf "https://app.osmo.com.br/api/top10" >/dev/null; then
-  echo "Pronto! O Top 10 está ligado: https://app.osmo.com.br/tv/ (e na TV, no app Osmo TV)."
+if curl -sf "https://osmo.com.br/api/top10" >/dev/null; then
+  echo "Pronto! O Top 10 está ligado: https://osmo.com.br/top10"
 else
-  echo "Gravado, mas o site ainda não respondeu com o Top 10. Espere uns segundos e abra https://app.osmo.com.br/tv/."
+  echo "Gravado, mas o site ainda não respondeu com o Top 10. Espere uns segundos e abra https://osmo.com.br/top10."
 fi

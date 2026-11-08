@@ -66,7 +66,7 @@ NODE_BIN="$(command -v node)"
 # os segredos, só pode ser lido pelo administrador e pelo app.
 say "3/7 Copiando o app para $APP_DIR"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$APP_USER"
-mkdir -p "$APP_DIR/data" "$APP_DIR/data/videos" # data/videos: os vídeos dos Osmo Originais (app de TV)
+mkdir -p "$APP_DIR/data"
 if [ "$SRC_DIR" != "$APP_DIR" ]; then
   rsync -a --delete --exclude data --exclude .env --exclude node_modules "$SRC_DIR"/ "$APP_DIR"/
 fi
@@ -119,7 +119,7 @@ if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondend
 # o Apache) estiver ocupando a porta 80, desliga ou avisa.
 say "5/7 Configurando o nginx para $APP_HOST e $DOMAIN"
 # O domínio principal e app.osmo.com.br servem o mesmo app. O domínio principal é o canônico;
-# app.osmo.com.br continua como endereço alternativo para a TV e links já compartilhados.
+# app.osmo.com.br continua como endereço alternativo para links já compartilhados.
 # Segurança: só redireciona se o app. já existe no DNS e se o certificado cobre esse nome.
 # Senão, o app continua respondendo nos dois endereços e aparece um aviso.
 # Se o certificado de origem da Cloudflare já foi enviado (configurar-https-cloudflare.sh),

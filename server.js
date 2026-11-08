@@ -33,7 +33,6 @@ const push = require("./src/push"); // notificações no celular e no computador
 const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 const wa = require("./src/whatsapp"); // confirmar o celular no cadastro pelo WhatsApp (de graça)
-const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
 const { createRouter } = require("./src/router");
 
 // Configurações gerais:
@@ -2155,7 +2154,7 @@ const top10Item = (x, i) => ({
   year: String(x.release_date || x.first_air_date || "").slice(0, 4),
   rating: Math.round((x.vote_average || 0) * 10) / 10,
   poster: x.poster_path ? `https://image.tmdb.org/t/p/w342${x.poster_path}` : "",
-  backdrop: x.backdrop_path ? `https://image.tmdb.org/t/p/w1280${x.backdrop_path}` : "", // imagem larga (fundo do app de TV em /tv/)
+  backdrop: x.backdrop_path ? `https://image.tmdb.org/t/p/w1280${x.backdrop_path}` : "", // imagem larga
   overview: String(x.overview || "").slice(0, 280),
 });
 route("GET", "/api/top10", async ({ query }) => {
@@ -2174,84 +2173,6 @@ route("GET", "/api/top10", async ({ query }) => {
     fail(502, "Não deu para buscar o Top 10 agora. Tente de novo em instantes.");
   }
 }, { auth: false });
-
-// OSMO ORIGINAIS (vídeos próprios no app de TV /tv/). Como para uma criança:
-// - os vídeos moram numa pasta do servidor (data/videos), fora do código: publicar.sh não mexe nela;
-// - cada vídeo é um arquivo .mp4 (ou .webm/.m4v). Junto dele, com o MESMO nome, podem ir:
-//     nome.jpg/.png/.webp      -> a capa em pé (cartaz)
-//     nome-fundo.jpg/.png/.webp -> a imagem larga do fundo
-//     nome.vtt                 -> legenda
-//     nome.json                -> {"title":"...","year":"2026","overview":"...","order":1}
-//   sem o .json, o título vem do nome do arquivo ("meu-curta_2026.mp4" vira "Meu curta 2026");
-// - o vídeo é entregue "em pedaços" (HTTP Range): começa a tocar logo e dá para pular para
-//   qualquer ponto sem baixar tudo;
-// - só nomes simples (letras, números, ponto, traço) são aceitos: ninguém sai da pasta com "../".
-const VIDEO_DIR = path.resolve(process.env.VIDEO_DIR || path.join(__dirname, "data", "videos"));
-const VIDEO_EXT = { ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm" };
-const VIDEO_IMG = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
-const VIDEO_NAME = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,150}$/;
-function videoFile(name) {
-  if (!VIDEO_NAME.test(name) || name.includes("..")) return null;
-  const file = path.join(VIDEO_DIR, name);
-  return path.dirname(file) === VIDEO_DIR ? file : null;
-}
-function listVideos() {
-  let names;
-  try { names = fs.readdirSync(VIDEO_DIR); } catch { return []; }
-  const set = new Set(names);
-  const pick = (stem, exts) => exts.map(e => stem + e).find(n => set.has(n));
-  const imgs = Object.keys(VIDEO_IMG);
-  return names.filter(n => VIDEO_EXT[path.extname(n).toLowerCase()] && VIDEO_NAME.test(n)).map(n => {
-    const stem = n.slice(0, -path.extname(n).length);
-    let meta = {};
-    try { meta = JSON.parse(fs.readFileSync(path.join(VIDEO_DIR, stem + ".json"), "utf8")) || {}; } catch {}
-    const st = fs.statSync(path.join(VIDEO_DIR, n));
-    const url = f => f ? "/video/" + encodeURIComponent(f) + "?v=" + Math.floor(fs.statSync(path.join(VIDEO_DIR, f)).mtimeMs).toString(36) : "";
-    const nice = stem.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-    return {
-      id: stem, order: Number(meta.order) || 999, added: st.mtimeMs,
-      title: String(meta.title || (nice.charAt(0).toUpperCase() + nice.slice(1))).slice(0, 120),
-      year: String(meta.year || "").slice(0, 4),
-      overview: String(meta.overview || "").slice(0, 400),
-      src: "/video/" + encodeURIComponent(n),
-      poster: url(pick(stem, imgs)), backdrop: url(pick(stem + "-fundo", imgs)) || url(pick(stem, imgs)),
-      subtitles: url(pick(stem, [".vtt"])),
-    };
-  }).filter(v => !v.id.endsWith("-fundo"))
-    .sort((a, b) => a.order - b.order || b.added - a.added)
-    .map(({ order, added, ...v }) => v);
-}
-route("GET", "/api/videos", () => ({ videos: listVideos() }), { auth: false });
-// entrega o vídeo (em pedaços), a capa, o fundo ou a legenda
-function serveVideo(req, res, rawName) {
-  let name; try { name = decodeURIComponent(rawName); } catch { return notFound(res); }
-  const file = videoFile(name); if (!file) return notFound(res);
-  const ext = path.extname(name).toLowerCase();
-  const type = VIDEO_EXT[ext] || VIDEO_IMG[ext] || (ext === ".vtt" ? "text/vtt; charset=utf-8" : null);
-  if (!type) return notFound(res);
-  fs.stat(file, (err, st) => {
-    if (err || !st.isFile()) return notFound(res);
-    const size = st.size;
-    const etag = `"${size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
-    const base = { ...SECURITY_HEADERS, "Content-Type": type, "Accept-Ranges": "bytes", "ETag": etag,
-      "Cache-Control": VIDEO_EXT[ext] ? "public, max-age=3600" : "public, max-age=86400" };
-    if (req.headers["if-none-match"] === etag && !req.headers.range) { res.writeHead(304, base); return res.end(); }
-    let start = 0, end = size - 1, status = 200;
-    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
-    if (m && size > 0) {
-      if (m[1] === "" && m[2] !== "") { start = Math.max(0, size - Number(m[2])); }
-      else { start = Number(m[1] || 0); if (m[2] !== "") end = Math.min(end, Number(m[2])); }
-      if (start > end || start >= size) { res.writeHead(416, { ...base, "Content-Range": `bytes */${size}` }); return res.end(); }
-      status = 206;
-    }
-    res.writeHead(status, { ...base, "Content-Length": end - start + 1, ...(status === 206 ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) });
-    if (req.method === "HEAD" || size === 0) return res.end();
-    const stream = fs.createReadStream(file, { start, end });
-    stream.on("error", () => res.destroy());
-    res.on("close", () => stream.destroy());
-    stream.pipe(res);
-  });
-}
 
 // MIME: a "etiqueta" que diz ao navegador que tipo de arquivo está chegando (página, estilo,
 // script, imagem...). Sem a etiqueta certa, o navegador pode não saber o que fazer.
@@ -2334,8 +2255,6 @@ function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === "/privacidade" || rel === "/termos") rel += ".html";
   else if (rel === "/" || APP_PATH.test(rel)) rel = "/index.html";
-  else if (rel === "/tv" || rel === "/tv/") rel = "/tv/index.html"; // app de TV separado: só o Top 10 de filmes e séries
-  else if (rel === "/tv/controle" || rel === "/tv/controle/") rel = "/tv/controle.html"; // o celular como controle remoto da TV
   else if (rel === "/404.html") return notFound(res);
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, "Proibido");
@@ -2350,7 +2269,7 @@ function serveStatic(req, res, pathname) {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
         send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
       });
     }
@@ -2376,8 +2295,6 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
-  const vm = url.pathname.match(/^\/video\/([^/]+)$/);
-  if (vm && (req.method === "GET" || req.method === "HEAD")) return serveVideo(req, res, vm[1]);
   const fm = url.pathname.match(/^\/arquivo\/(a\/)?(\d+)$/);
   if (fm && (req.method === "GET" || req.method === "HEAD")) return fm[1] ? serveAttachment(req, res, Number(fm[2])) : serveFile(req, res, Number(fm[2]));
   const av = url.pathname.match(/^\/(avatar|portfolio)\/(\d+)$/);
@@ -2388,8 +2305,6 @@ const server = http.createServer(async (req, res) => {
     // o endereço muda (?v=) a cada foto nova, então pode ficar em cache por muito tempo
     return send(res, 200, Buffer.from(a.data), { "Content-Type": a.mime, "Cache-Control": url.searchParams.get("v") === String(a.v) ? "public, max-age=31536000, immutable" : "no-cache" });
   }
-  // controle pelo celular do app de TV: tem regras próprias (cano aberto, pedidos vindos da Biblioteca da casa)
-  if (url.pathname.startsWith("/api/tv/remote/")) return tvRemote.handle(req, res, url, ip, { send, readBody, limit, HttpError });
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
     return serveStatic(req, res, url.pathname);
