@@ -86,11 +86,18 @@ function hashPassword(pw) {
   const hash = crypto.scryptSync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
   return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
 }
-function checkPassword(pw, stored) {
+const scryptAsync = require("node:util").promisify(crypto.scrypt);
+async function hashPasswordAsync(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
+  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+async function checkPassword(pw, stored) {
   const [, saltHex, hashHex] = String(stored).split("$");
   if (!saltHex || !hashHex) return false;
-  const hash = crypto.scryptSync(pw, Buffer.from(saltHex, "hex"), 64, { N: 16384, r: 8, p: 1 });
-  return crypto.timingSafeEqual(hash, Buffer.from(hashHex, "hex"));
+  const hash = await scryptAsync(pw, Buffer.from(saltHex, "hex"), 64, { N: 16384, r: 8, p: 1 });
+  const expected = Buffer.from(hashHex, "hex");
+  return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);
 }
 const sha = s => crypto.createHash("sha256").update(s).digest("hex");
 
@@ -345,7 +352,7 @@ route("POST", "/api/auth/phone/simulate", ({ body }) => {
 // check:true só confere os dados, sem criar nada (o site usa antes de pedir o WhatsApp,
 // para a pessoa não confirmar o celular à toa com um e-mail que já tem conta).
 // O "limit" impede alguém de criar mil contas seguidas do mesmo endereço.
-route("POST", "/api/auth/register", ({ body, res, ip }) => {
+route("POST", "/api/auth/register", async ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
   const name = str(body.name, 80), email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
   const role = body.role === "cliente" ? "cliente" : "freela";
@@ -361,8 +368,9 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
     phone = t.phone;
     if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
   }
+  const passHash = await hashPasswordAsync(password);
   const id = tx(() => {
-    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, hashPassword(password), role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
+    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, passHash, role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
     run("INSERT INTO profiles (user_id) VALUES (?)", uid);
     if (phone) run("DELETE FROM phone_tickets WHERE phone = ?", phone);
     return uid;
@@ -373,11 +381,11 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
 
 // ENTRAR: procura o e-mail e confere a senha. A mensagem de erro é a mesma para "e-mail não
 // existe" e "senha errada", para um espertinho não descobrir quais e-mails têm conta.
-route("POST", "/api/auth/login", ({ body, res, ip }) => {
+route("POST", "/api/auth/login", async ({ body, res, ip }) => {
   limit("login:" + ip, 10, 600_000);
   const email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
   const u = one("SELECT id, pass_hash FROM users WHERE email = ?", email);
-  if (!u || !checkPassword(password, u.pass_hash)) fail(401, "E-mail ou senha não conferem.");
+  if (!u || !(await checkPassword(password, u.pass_hash))) fail(401, "E-mail ou senha não conferem.");
   createSession(res, u.id);
   return { ok: true };
 }, { auth: false });
@@ -439,14 +447,16 @@ route("GET", "/api/auth/reset", ({ query }) => {
   if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   return { email: r.email };
 }, { auth: false });
-route("POST", "/api/auth/reset", ({ body, res, ip }) => {
+route("POST", "/api/auth/reset", async ({ body, res, ip }) => {
   limit("reset:" + ip, 10, 600_000);
   const password = typeof body.password === "string" ? body.password : "";
   const r = resetRow(body.token);
   if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
+  const passHash = await hashPasswordAsync(password);
+  if (!resetRow(body.token)) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   tx(() => {
-    run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(password), r.user_id);
+    run("UPDATE users SET pass_hash = ? WHERE id = ?", passHash, r.user_id);
     run("DELETE FROM password_resets WHERE user_id = ?", r.user_id);
     run("DELETE FROM sessions WHERE user_id = ?", r.user_id); // encerra a conta em outros aparelhos
   });
@@ -1480,10 +1490,11 @@ const ADMIN_ENT = {
       WHERE ? = '' OR u.name LIKE ? OR u.email LIKE ? OR p.title LIKE ? ORDER BY u.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
     cols: [["name", "Nome"], ["email", "E-mail"], ["role", "Perfil"], ["title", "O que faz"], ["created_at", "Desde"]],
     get: id => one("SELECT u.*, p.* , u.id id FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?", id),
-    create: (v, user) => {
+    create: async (v, user) => {
       if (one("SELECT 1 FROM users WHERE email = ?", v.email)) fail(409, "Já existe uma conta com esse e-mail.");
       const pass = crypto.randomBytes(9).toString("base64url");
-      const id = tx(() => { const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", v.name, v.email, hashPassword(pass), v.role).lastInsertRowid);
+      const passHash = await hashPasswordAsync(pass);
+      const id = tx(() => { const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", v.name, v.email, passHash, v.role).lastInsertRowid);
         run("INSERT INTO profiles (user_id) VALUES (?)", uid); return uid; });
       return { id, tempPassword: pass };
     },
@@ -1625,12 +1636,12 @@ for (const [key, ent] of Object.entries(ADMIN_ENT)) {
     return { ok: true };
   }, { auth: false });
   // CRIAR: só onde faz sentido (pessoas e vagas); propostas, contratos e etapas nascem pelo fluxo normal
-  if (ent.canCreate) route("POST", `/api/admin/${key}`, ({ user, body }) => {
+  if (ent.canCreate) route("POST", `/api/admin/${key}`, async ({ user, body }) => {
     needAdmin(user);
     const v = {}; for (const f of adminFields(ent, "create")) if (body[f.k] !== undefined && body[f.k] !== "") v[f.k] = adminValue(f, body[f.k]);
     for (const f of ent.fields) if (f.req && (v[f.k] === undefined || v[f.k] === "")) fail(400, `Preencha "${f.label}".`);
     if (ent.check) ent.check(v, 0);
-    const out = ent.create(v, user);
+    const out = await ent.create(v, user);
     const rest = adminFields(ent, "edit").filter(f => f.tbl === "profiles" && v[f.k] !== undefined);
     for (const f of rest) run(`UPDATE profiles SET ${f.k} = ? WHERE user_id = ?`, f.json ? JSON.stringify(v[f.k]) : v[f.k], out.id);
     adminLog(user, "criar", key, out.id, v);
@@ -1651,11 +1662,12 @@ for (const [key, ent] of Object.entries(ADMIN_ENT)) {
   }, { auth: false });
 }
 // TROCAR SENHA de alguém (ex.: pessoa sem acesso ao e-mail): gera uma senha temporária, mostrada uma vez, e desconecta os aparelhos
-route("POST", "/api/admin/users/:id/password", ({ user, params }) => {
+route("POST", "/api/admin/users/:id/password", async ({ user, params }) => {
   needAdmin(user);
   if (!one("SELECT 1 FROM users WHERE id = ?", params.id)) fail(404, "Registro não encontrado.");
   const pass = crypto.randomBytes(9).toString("base64url");
-  tx(() => { run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(pass), params.id); run("DELETE FROM sessions WHERE user_id = ?", params.id);
+  const passHash = await hashPasswordAsync(pass);
+  tx(() => { run("UPDATE users SET pass_hash = ? WHERE id = ?", passHash, params.id); run("DELETE FROM sessions WHERE user_id = ?", params.id);
     adminLog(user, "trocar senha", "users", params.id, {}); });
   return { tempPassword: pass };
 }, { auth: false });
@@ -2370,9 +2382,12 @@ function serveStatic(req, res, pathname) {
 //    Erros esperados viram mensagens amigáveis; erros inesperados viram "algo deu errado"
 //    (e o detalhe vai só para o registro do servidor, nunca para a pessoa).
 const server = http.createServer(async (req, res) => {
+  try {
   const url = new URL(req.url, "http://localhost");
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
-  const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
+  const peer = req.socket.remoteAddress;
+  const trusted = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer);
+  const ip = trusted && (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || peer;
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
@@ -2413,6 +2428,12 @@ const server = http.createServer(async (req, res) => {
     if (e instanceof HttpError) return send(res, e.status, { error: e.message });
     console.error(new Date().toISOString(), req.method, url.pathname, e);
     send(res, 500, { error: "Algo deu errado do nosso lado. Tente de novo em instantes." });
+  }
+  } catch (e) {
+    if (res.headersSent) return res.destroy();
+    const badRequest = e instanceof URIError || e.code === "ERR_INVALID_URL";
+    if (!badRequest) console.error("request", e);
+    send(res, badRequest ? 400 : 500, { error: badRequest ? "Requisição inválida." : "Algo deu errado do nosso lado." });
   }
 });
 
