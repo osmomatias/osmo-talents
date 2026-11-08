@@ -356,7 +356,7 @@ function renderChrome() {
     <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
   const item = (k, label, extra = "") => `<li><button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}${extra}</span><span class="chev" aria-hidden="true">›</span></button></li>`;
   $("#mmBody").innerHTML = `
-    ${ME ? `<p class="mm-user">Olá, ${esc(ME.name.split(" ")[0])}</p>${roleSwitch()}` : ""}
+    ${ME ? `<button class="mm-user" data-go="perfil">${av(ME.name, ME.id, "", ME.profile && ME.profile.avatar)}<span class="mm-user-txt"><b>Olá, ${esc(ME.name.split(" ")[0])}</b><span>Meu perfil</span></span><span class="chev" aria-hidden="true">›</span></button>${roleSwitch()}` : ""}
     <ul class="mm-list">
       ${item("inicio", "Início")}${item("vagas", "Encontrar trabalho")}${item("talentos", "Encontrar talentos")}
       ${ME ? item("mensagens", "Mensagens", unread ? `<span class="badge">${unread}</span>` : "") + item("painel", "Painel") + (RECURSOS.tarefas ? item("tarefas", "Tarefas") : "") + (RECURSOS.squads ? item("squads", "Squads") : "") + item("perfil", "Meu perfil") + (ME.isAdmin ? item("panorama", "Área do admin") + `<li class="mm-switch">${admModeSwitch()}</li>` : "") : item("entrar", "Entrar ou criar conta")}
