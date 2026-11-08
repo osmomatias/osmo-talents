@@ -1388,6 +1388,9 @@ html.calm[data-device="tv"] .t10-card:focus{transform:none}
 /* busca do início: lista de sugestões (autocompletar) sob o campo; reaproveita o visual da .sk-list */
 .search{position:relative}
 .hero:has(.hac-list:not([hidden])){overflow:visible; position:relative; z-index:6}
+/* o vidro (backdrop-filter) faz do campo uma camada própria: sem subir o campo inteiro, o cartão
+   de perfil que vem depois (embaixo, no celular) cobre a lista */
+.hero .search:has(.hac-list:not([hidden])){z-index:20}
 .hac-list{left:0; right:0; color:var(--fg); text-align:left}
 .hac-list [role=option]{justify-content:space-between; gap:12px}
 .hac-main{display:flex; flex-direction:column; min-width:0}
