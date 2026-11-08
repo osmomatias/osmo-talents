@@ -1341,6 +1341,21 @@ html:not([data-theme]) .top .btn.primary{background:var(--brand); color:#fff; bo
 html:not([data-theme]) .menu-btn{color:var(--brand); border-color:rgb(122 11 60 / .35)}
 }
 
+/* ---------- topo com vidro WebGL (public/liquid.js liga a classe "liquid" só no computador) ----------
+   A biblioteca liquidGL desenha a barra como uma lâmina de vidro numa tela (canvas) atrás do conteúdo:
+   - ela deixa a barra "sem clique" para desenhar; o conteúdo (logo, menu, botões) volta a ter clique;
+   - o degradê da barra sai antes da "foto" do fundo e volta numa camada por cima da lâmina (::after),
+     com as mesmas cores dos temas escuro e claro acima; o desfoque do ::before fica por conta da lâmina. */
+html.liquid .top .wrap{pointer-events:auto}
+html.liquid .top{background-image:none}
+html.liquid .top::before{display:none}
+html.liquid .top::after{display:block; content:""; position:absolute; inset:0; width:auto; height:auto; z-index:-1; pointer-events:none; transform:none; opacity:1;
+  background:linear-gradient(to bottom, rgb(0 0 0 / .62) 0%, rgb(0 0 0 / .32) 60%, rgb(0 0 0 / .12) 100%)}
+html.liquid[data-theme="light"] .top::after{background:linear-gradient(to bottom, rgb(255 255 255 / .94) 0%, rgb(255 255 255 / .78) 60%, rgb(255 255 255 / .35) 100%)}
+@media (prefers-color-scheme: light){
+html.liquid:not([data-theme]) .top::after{background:linear-gradient(to bottom, rgb(255 255 255 / .94) 0%, rgb(255 255 255 / .78) 60%, rgb(255 255 255 / .35) 100%)}
+}
+
 /* ---------- tema claro um pouco mais vivo e com contornos definidos ----------
    Os cartões de vidro tinham borda branca sobre fundo branco (sumia): agora a borda é um bordô
    translúcido. Rosa, laranja suave e as manchas de luz do fundo ficam um tom mais fortes. */
