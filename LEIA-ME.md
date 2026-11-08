@@ -1,9 +1,22 @@
 # Osmo Talents: como colocar no ar
 
-App em Node.js puro com banco SQLite embutido. Não precisa instalar pacotes (`npm install` não é necessário).
+App em TypeScript, com runtime Node.js nativo e banco SQLite embutido. No desenvolvimento, execute `npm ci` e `npm run build`; os pacotes de publicação incluem o JavaScript compilado.
 Requisito: **Node.js 22.13 ou mais novo** (no CloudPanel, escolha a versão 22 ou 24).
 
 ---
+
+## Desenvolvimento local em TypeScript
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run dev
+```
+
+`npm run dev` compila mudanças no servidor e no navegador e reinicia o backend quando necessário. `npm start` verifica o build e inicia a versão compilada. Para gerar uma entrega: `npm run build`; para publicar na VPS existente: `npm run publicar`.
+
+Edite `server.ts`, `src/`, `client/` e `scripts/*.ts`. Os arquivos `public/app.js`, `public/sw.js` e demais scripts próprios do navegador são gerados e não devem ser editados diretamente. QR Code e Lottie mantêm o código distribuído por seus autores; a integração da aplicação possui declarações de tipos.
 
 ## Antes de começar
 
@@ -30,7 +43,7 @@ Faça um backup do site atual antes do passo 1.
 1. No site, abra **File Manager**.
 2. Entre na pasta `htdocs/osmo.com.br`.
 3. Envie o arquivo `osmo-talents.zip` e use **Extract** para descompactar ali.
-4. Confira que `server.js`, `package.json` e a pasta `public` ficaram direto dentro de `htdocs/osmo.com.br`.
+4. Confira que `server.js`, `package.json`, as pastas `dist` e `public` ficaram direto dentro de `htdocs/osmo.com.br`. Se enviou apenas as fontes do GitHub, execute `npm ci` e `npm run build` antes de iniciar.
 
 ## Passo 3. Criar o arquivo de configuração
 
@@ -86,7 +99,8 @@ Antes de abrir a plataforma para pessoas reais, apague o banco (`data/osmo_talen
 ## Atualizar para uma versão nova
 
 1. Envie os arquivos novos por cima dos antigos (a pasta `data` e o `.env` ficam como estão).
-2. Rode `pm2 restart osmo-talents`.
+2. Se enviou apenas as fontes, rode `npm ci` e `npm run build`.
+3. Rode `pm2 restart osmo-talents`.
 
 ## Backup
 
@@ -204,7 +218,7 @@ Usam o mesmo e-mail configurado acima. Sem ele, nada é enviado.
 
 ## Notificações no celular e no computador (push)
 
-Os mesmos avisos do e-mail (mensagem nova, proposta recebida ou aceita, etapa paga, entregue, aprovada ou com ajustes pedidos, anexos novos) podem aparecer como notificação no aparelho, mesmo com o site fechado. Funciona sem e-mail configurado, e sem bibliotecas externas (`src/push.js` faz o carimbo VAPID e o cadeado aes128gcm só com `node:crypto`).
+Os mesmos avisos do e-mail (mensagem nova, proposta recebida ou aceita, etapa paga, entregue, aprovada ou com ajustes pedidos, anexos novos) podem aparecer como notificação no aparelho, mesmo com o site fechado. Funciona sem e-mail configurado, e sem bibliotecas externas (`src/push.ts` faz o carimbo VAPID e o cadeado aes128gcm só com `node:crypto`).
 
 Para ligar:
 
@@ -242,7 +256,7 @@ Para testar no computador sem a Meta, use `PHONE_DEV=true`: a tela ganha o botã
 
 Freelancers podem, se quiserem, enviar um laudo em PDF **assinado digitalmente por médico** com certificado ICP-Brasil. Se passar, aparece um selo verde ao lado do nome.
 
-O que o site confere (`src/icp.js`, sem bibliotecas externas):
+O que o site confere (`src/icp.ts`, sem bibliotecas externas):
 
 - a assinatura digital é válida e cobre o PDF inteiro (nada mudou depois de assinar);
 - o certificado encadeia até uma raiz oficial da ICP-Brasil (`certs/icp-brasil`) e estava válido na data da assinatura;
@@ -254,7 +268,7 @@ O que **não** dá para conferir: o conteúdo do laudo (diagnóstico e nome do p
 
 O PDF é conferido na memória e descartado. O banco guarda só a data, o CRM de quem assinou e o hash do arquivo.
 
-- Testar um PDF no seu computador, sem enviar: `node scripts/conferir-laudo.js laudo.pdf`
+- Testar um PDF no seu computador, sem enviar: `npm run laudo:conferir -- laudo.pdf`
 - Atualizar as ACs da ICP-Brasil (quando o ITI publicar novas): `bash scripts/atualizar-icp.sh` e depois publicar.
 - Antes de divulgar o selo, vale passar o texto de consentimento por um advogado de proteção de dados (laudo é dado sensível na LGPD).
 
@@ -263,19 +277,19 @@ O PDF é conferido na memória e descartado. O banco guarda só a data, o CRM de
 Cada arquivo de código tem comentários no começo e em cada parte explicando o que acontece, como se fosse para uma criança de 10 anos. Este mapa mostra onde fica cada coisa. Pense num restaurante: o site no navegador é o garçom, o servidor é a cozinha e o banco de dados é a despensa.
 
 **O servidor (a cozinha)**
-- `server.js`: recebe todos os pedidos do site (cadastro, vagas, propostas, contratos, pagamentos, mensagens) e decide o que fazer com cada um.
-- `src/db.js`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
-- `src/asaas.js`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
-- `src/mail.js`: o carteiro que manda e-mails.
-- `src/whatsapp.js`: a caixa de correio do WhatsApp que confirma o celular no cadastro.
-- `src/push.js`: o carteiro das notificações no celular e no computador (Web Push).
-- `src/oauth.js`: o "Entrar com Google/Microsoft/GitHub/LinkedIn/Adobe".
-- `src/icp.js`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
+- `server.ts`: recebe todos os pedidos do site (cadastro, vagas, propostas, contratos, pagamentos, mensagens) e decide o que fazer com cada um.
+- `src/db.ts`: o banco de dados, um "caderno" com páginas para pessoas, vagas, propostas, contratos, etapas e mensagens.
+- `src/asaas.ts`: conversa com o Asaas, que cobra o cliente e repassa o dinheiro ao freelancer.
+- `src/mail.ts`: o carteiro que manda e-mails.
+- `src/whatsapp.ts`: a caixa de correio do WhatsApp que confirma o celular no cadastro.
+- `src/push.ts`: o carteiro das notificações no celular e no computador (Web Push).
+- `src/oauth.ts`: o "Entrar com Google/Microsoft/GitHub/LinkedIn/Adobe".
+- `src/icp.ts`: o detetive que confere a assinatura digital dos laudos do selo de verificado.
 
 **O site (o garçom, roda no navegador)**
 - `public/index.html`: o esqueleto da página (cabeçalho, espaço do meio, rodapé).
-- `public/app.js`: desenha cada tela, escuta cliques e digitação e leva os pedidos ao servidor.
-- `public/theme.js`: liga o tema escuro e as preferências de Ajustes antes de a página aparecer, para não piscar.
+- `client/app.ts`: desenha cada tela, escuta cliques e digitação e leva os pedidos ao servidor.
+- `client/theme.ts`: liga o tema escuro e as preferências de Ajustes antes de a página aparecer, para não piscar.
 - `public/styles.css`: as roupas do site (cores, letras, tamanhos, celular, tablet e telas grandes).
 - `public/fonts.css`: onde entra a fonte oficial DIN Pro, quando os arquivos dela forem colocados no projeto.
 - `public/termos.html` e `public/privacidade.html`: as páginas de regras, já prontas com o texto.
@@ -289,13 +303,18 @@ Cada arquivo de código tem comentários no começo e em cada parte explicando o
 - `configurar-https-cloudflare.sh`: envia ao servidor o certificado de origem da Cloudflare, para a conexão Cloudflare → servidor também ser segura.
 - `configurar-email.sh`, `configurar-push.sh`, `configurar-login-social.sh` e `configurar-pagamentos.sh`: gravam no servidor as senhas e chaves de cada recurso, sem elas passarem por mais ninguém.
 - `configurar-admin.sh`: diz quais e-mails podem abrir o painel do dono em `/#panorama` (números gerais, evolução por semana, funil, dinheiro e o que está parado). A página não aparece em nenhum menu e, para as outras pessoas, responde como se não existisse.
-- `scripts/seed.js`: cria pessoas e vagas de exemplo.
-- `scripts/asaas-setup.js`: pede ao Asaas para avisar o site quando um pagamento mudar.
-- `scripts/conferir-laudo.js`: testa um laudo no computador, sem enviar ao site.
+- `scripts/seed.ts`: cria pessoas e vagas de exemplo.
+- `scripts/asaas-setup.ts`: pede ao Asaas para avisar o site quando um pagamento mudar.
+- `scripts/conferir-laudo.ts`: testa um laudo no computador, sem enviar ao site.
 - `scripts/atualizar-icp.sh`: baixa a lista oficial de autoridades da ICP-Brasil.
 - `certs/icp-brasil/`: os certificados oficiais das autoridades (raízes e intermediárias). São arquivos de "carimbo" em texto codificado, que não devem ser editados à mão.
 - `.env.example`: o molde do arquivo de segredos `.env` (que nunca vai para o GitHub).
-- `ecosystem.config.cjs`: configuração do PM2, para quem preferir usá-lo no lugar do systemd.
+- `ecosystem.config.ts`: configuração tipada do PM2; `ecosystem.config.cjs` é o carregador compatível com a ferramenta.
+- `server.js` e `scripts/ensure-build.cjs`: pequenos carregadores de inicialização; a lógica da aplicação e do build está em TypeScript.
+- `client/`: fontes da aplicação, idiomas, temas, service worker e TV; `npm run build` gera os mesmos URLs JavaScript em `public/`.
+- `dist/`: servidor, integrações, scripts e testes compilados, gerados pelo build.
+- `biblioteca/server.mts` e `biblioteca/client/app.ts`: servidor e interface do protótipo de mídia local; o build gera `biblioteca/dist/server.mjs` e `biblioteca/public/app.js`. A pasta continua fora do pacote da VPS.
+- `npm run typecheck` e `npm test`: checagem estrita de tipos e testes da aplicação.
 - `data/`: onde fica o banco de dados de verdade. Não vai para o GitHub nem é trocado na publicação.
 
 ## O que esta versão faz
@@ -327,10 +346,10 @@ Para o MVP focar no caminho vaga → proposta → contrato → entrega → pagam
 
 | Recurso | Para trazer de volta |
 | --- | --- |
-| Projetos e tarefas (Minhas tarefas, Projetos, botão "Tarefas" no Painel e no admin) | `tarefas: true` no `RECURSOS`, no começo do `public/app.js` |
+| Projetos e tarefas (Minhas tarefas, Projetos, botão "Tarefas" no Painel e no admin) | `tarefas: true` no `RECURSOS`, no começo do `client/app.ts` |
 | Squads | `squads: true` no `RECURSOS` |
 | Relógio Pomodoro | `pomodoro: true` no `RECURSOS` |
-| Inglês, espanhol e francês (site e e-mails) | `ATIVO = true` no `public/i18n.js` e no `src/i18n.js` |
+| Inglês, espanhol e francês (site e e-mails) | `ATIVO = true` no `client/i18n.ts` e no `src/i18n.ts` |
 
 Continuam no ar: vidro líquido com o botão de ligar e desligar, animação do botão de trocar de papel, login com Adobe e Microsoft (aparecem quando as credenciais forem configuradas) e o selo de verificado.
 
@@ -368,7 +387,7 @@ O app de TV (`app.osmo.com.br/tv/`) tem uma fileira **Osmo Originais** com víde
 
 Igual ao Compartilhamento Doméstico da Apple TV antiga: os vídeos ficam no Mac e tocam na TV/celular da casa.
 
-1. Dê dois cliques em `Biblioteca da casa.command`. Ele cria e abre a pasta **Filmes do Mac › Osmo TV** e abre a biblioteca no navegador.
+1. Após `npm ci` e `npm run build`, execute `npm run biblioteca`. Ele cria a pasta **Filmes do Mac › Osmo TV** e mostra o endereço local no terminal.
 2. Coloque os vídeos nas gavetas:
    - `Filmes/Nome do Filme (2010).mp4`
    - `Séries/Nome da Série/Temporada 1/Nome da Série S01E01.mp4` (também aceita `1x01`)
@@ -382,5 +401,5 @@ Formato mais garantido: MP4 (H.264 + AAC). Não vai para a VPS: o `publicar.sh` 
 
 ### Biblioteca da casa na Google TV
 O app Osmo TV (versão 3.3.0+) acha o Mac sozinho pelo Wi-Fi (Bonjour, `_osmotv._tcp`).
-Com a `Biblioteca da casa.command` aberta no Mac, aparece a aba **⌂ Na sua casa** no Osmo TV; Voltar na biblioteca leva de volta ao Osmo TV.
+Com `npm run biblioteca` rodando no Mac, aparece a aba **⌂ Na sua casa** no Osmo TV; Voltar na biblioteca leva de volta ao Osmo TV.
 Para atualizar o app da TV: `Publicar.command` (a aba nova está no site) e depois `tv/Instalar na TV.command` (agora ele compila o app antes de instalar).

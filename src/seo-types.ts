@@ -78,7 +78,7 @@ export interface TalentList {
   normalized: URLSearchParams;
   q: string;
 }
-export type SearchInput = URLSearchParams | string | Record<string, string> | string[][];
+export type SearchInput = URLSearchParams | string | Record<string, string> | [string, string][];
 export interface SeoDependencies {
   one(sql: string, ...params: SqlValue[]): DatabaseRow | undefined;
   all(sql: string, ...params: SqlValue[]): DatabaseRow[];

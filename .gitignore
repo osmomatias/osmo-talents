@@ -8,3 +8,16 @@ Claude outputs/
 
 # JavaScript gerado a partir dos módulos TypeScript
 dist/
+
+# Assets JavaScript compilados de client/*.ts; os URLs públicos são preservados.
+/public/app.js
+/public/i18n-core.js
+/public/i18n.js
+/public/offline.js
+/public/theme.js
+/public/sw.js
+/public/tv/tv.js
+/public/tv/remote-tv.js
+/public/tv/controle.js
+/biblioteca/public/app.js
+/biblioteca/dist/

@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "preserve",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "client",
+    "outDir": "public",
+    "strict": true,
+    "noEmitOnError": true,
+    "removeComments": false
+  },
+  "include": [
+    "client/globals.d.ts",
+    "client/i18n-core.ts",
+    "client/i18n.ts",
+    "client/offline.ts",
+    "client/theme.ts",
+    "client/tv/*.ts"
+  ]
+}
