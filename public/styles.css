@@ -1384,3 +1384,17 @@ html.glass .t10-head .seg{background:rgb(255 255 255 / .12); box-shadow:inset 0 
 html[data-device="tv"] .t10-row{grid-auto-columns:15vw; padding:18px 14px 22px; scrollbar-width:none}
 html[data-device="tv"] .t10-card:focus{transform:scale(1.06); transition:transform .15s ease}
 html.calm[data-device="tv"] .t10-card:focus{transform:none}
+
+/* busca do início: lista de sugestões (autocompletar) sob o campo; reaproveita o visual da .sk-list */
+.search{position:relative}
+.hero:has(.hac-list:not([hidden])){overflow:visible; position:relative; z-index:6}
+.hac-list{left:0; right:0; color:var(--fg); text-align:left}
+.hac-list [role=option]{justify-content:space-between; gap:12px}
+.hac-main{display:flex; flex-direction:column; min-width:0}
+.hac-main > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.hac-main .hint{font-size:.82rem}
+.hac-kind{flex:none; font-size:.75rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted)}
+.hac-list [aria-selected="true"] .hac-kind,.hac-list [role=option]:hover .hac-kind{color:inherit}
+/* o campo da faixa é sempre claro (branco), então o texto fica escuro também no tema escuro */
+.hero .search input{color:#14050D}
+.hero .search input::placeholder{color:#6B5360}

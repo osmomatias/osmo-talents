@@ -164,6 +164,75 @@ document.addEventListener("focusin", e => { if (e.target.id === "p_skills_in") s
 document.addEventListener("focusout", e => { if (e.target.id === "p_skills_in") setTimeout(() => { if (document.activeElement !== e.target) skillList(false); }, 150); });
 // na lista, o toque escolhe sem tirar o foco do campo (assim o teclado do celular não fecha)
 document.addEventListener("pointerdown", e => { const o = e.target.closest("[data-skill-opt]"); if (o) { e.preventDefault(); skillAdd(SKB.opts[Number(o.dataset.skillOpt)]); } });
+
+// AUTOCOMPLETAR DA BUSCA DO INÍCIO (a faixa colorida): enquanto a pessoa digita, aparece uma
+// lista com sugestões que mudam conforme o botão escolhido:
+// - "Quero trabalhar": áreas, habilidades e vagas abertas (pela vaga, vai direto para ela);
+// - "Quero contratar": habilidades, profissões (o título dos perfis) e talentos pelo nome.
+// Setas sobem e descem, Enter escolhe, Esc fecha. Sem nada destacado, Enter faz a busca normal.
+/* ---------- busca do início: autocompletar ---------- */
+const HAC = { active: -1, opts: [], data: {}, loading: {} }; // data: vagas/talentos já baixados (uma vez por visita)
+const HAC_KIND = { cat: "Área", skill: "Habilidade", job: "Vaga", role: "Profissão", talent: "Talento" };
+async function heroData(aud) {
+  if (HAC.data[aud] || HAC.loading[aud]) return;
+  HAC.loading[aud] = true;
+  try {
+    HAC.data[aud] = aud === "freela" ? (await api("GET", "/api/jobs")).jobs.map(j => ({ id: j.id, t: j.title, sub: j.company || j.client || "" }))
+      : (await api("GET", "/api/talents")).talents.map(t => ({ id: t.id, t: t.name, sub: t.title || "", title: t.title || "" }));
+  } catch { HAC.data[aud] = null; }
+  HAC.loading[aud] = false;
+  if ($("#heroQ") === document.activeElement && S.aud === aud) heroList(); // chegou depois de abrir: atualiza a lista
+}
+function heroMatch(term) {
+  const t = fold(term.trim()); if (!t) return [];
+  // começo do texto primeiro, depois começo de palavra, depois qualquer trecho
+  const score = s => { const f = fold(s); return f.startsWith(t) ? 0 : (" " + f).includes(" " + t) ? 1 : f.includes(t) ? 2 : -1; };
+  const pick = (items, n) => items.map((o, i) => [o, score(o.label), i]).filter(x => x[1] >= 0).sort((a, b) => a[1] - b[1] || a[2] - b[2]).slice(0, n).map(x => x[0]);
+  const skills = pick(SKILLS.all.map(k => ({ kind: "skill", label: skLabel(k), value: k })), 4);
+  const data = HAC.data[S.aud] || [];
+  if (S.aud === "freela") {
+    return [...pick(CATS.map(c => ({ kind: "cat", label: TR.tx(c.n), value: c.id })), 2), ...skills,
+      ...pick(data.map(j => ({ kind: "job", label: j.t, value: j.id, sub: j.sub })), 3)].slice(0, 8);
+  }
+  const roles = [...new Set(data.map(x => x.title).filter(Boolean))].map(r => ({ kind: "role", label: r, value: r }));
+  return [...skills, ...pick(roles, 2), ...pick(data.map(x => ({ kind: "talent", label: x.t, value: x.id, sub: x.sub })), 3)].slice(0, 8);
+}
+const heroMark = (s, term) => { const t = term.trim(), i = fold(s).indexOf(fold(t)); return !t || i < 0 ? esc(s) : esc(s.slice(0, i)) + "<mark>" + esc(s.slice(i, i + t.length)) + "</mark>" + esc(s.slice(i + t.length)); };
+function heroList(open = true) {
+  const inp = $("#heroQ"), ul = $("#heroQ_list"); if (!inp || !ul) return;
+  if (open) heroData(S.aud);
+  const term = inp.value;
+  HAC.opts = open ? heroMatch(term) : []; HAC.active = -1;
+  ul.innerHTML = HAC.opts.map((o, i) => `<li role="option" id="hac-opt-${i}" data-hero-opt="${i}" aria-selected="false"><span class="hac-main"><span>${heroMark(o.label, term)}</span>${o.sub ? `<span class="hint">${esc(o.sub)}</span>` : ""}</span><span class="hac-kind">${HAC_KIND[o.kind]}</span></li>`).join("");
+  ul.hidden = !HAC.opts.length; inp.setAttribute("aria-expanded", String(!ul.hidden)); inp.removeAttribute("aria-activedescendant");
+}
+function heroMove(d) {
+  if ($("#heroQ_list").hidden) return heroList();
+  if (!HAC.opts.length) return;
+  HAC.active = HAC.active < 0 ? (d > 0 ? 0 : HAC.opts.length - 1) : (HAC.active + d + HAC.opts.length) % HAC.opts.length;
+  $$("#heroQ_list [role=option]").forEach((o, i) => o.setAttribute("aria-selected", String(i === HAC.active)));
+  const cur = $("#hac-opt-" + HAC.active); cur.scrollIntoView({ block: "nearest" }); $("#heroQ").setAttribute("aria-activedescendant", cur.id);
+}
+function heroPick(o) {
+  heroList(false);
+  if (o.kind === "job") return go("vaga-" + o.value);
+  if (o.kind === "talent") return go("talento-" + o.value);
+  if (o.kind === "cat") { S.cat = o.value; S.q = ""; return go("vagas"); }
+  const q = o.kind === "skill" ? o.value : o.label; $("#heroQ").value = q;
+  if (S.aud === "freela") { S.q = q; go("vagas"); } else { S.tq = q; go("talentos"); }
+}
+document.addEventListener("keydown", e => {
+  if (e.target.id !== "heroQ") return;
+  const open = !$("#heroQ_list").hidden;
+  if (e.key === "ArrowDown") { e.preventDefault(); return heroMove(1); }
+  if (e.key === "ArrowUp") { e.preventDefault(); return heroMove(-1); }
+  if (e.key === "Escape" && open) { e.preventDefault(); return heroList(false); }
+  if (e.key === "Enter" && open && HAC.active >= 0) { e.preventDefault(); return heroPick(HAC.opts[HAC.active]); }
+});
+document.addEventListener("input", e => { if (e.target.id === "heroQ") heroList(); });
+document.addEventListener("focusin", e => { if (e.target.id === "heroQ") { heroData(S.aud); if (e.target.value.trim()) heroList(); } });
+document.addEventListener("focusout", e => { if (e.target.id === "heroQ") setTimeout(() => { if (document.activeElement !== e.target) heroList(false); }, 150); });
+document.addEventListener("pointerdown", e => { const o = e.target.closest("[data-hero-opt]"); if (o) { e.preventDefault(); heroPick(HAC.opts[Number(o.dataset.heroOpt)]); } });
 // STORE: uma "gaveta" no próprio navegador (localStorage) para guardar coisas pequenas, como
 // rascunhos e preferências. Fica só neste aparelho. O try/catch evita erro em janelas anônimas,
 // onde a gaveta pode estar trancada.
@@ -554,8 +623,9 @@ V.inicio = async () => {
       <button aria-pressed="${S.aud === "cliente"}" data-aud="cliente">Quero contratar</button>
     </div>
     <form class="search" id="heroSearch" role="search">
-      <input id="heroQ" aria-label="Buscar" placeholder="${S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"}">
+      <input id="heroQ" aria-label="Buscar" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="heroQ_list" autocomplete="off" autocapitalize="off" enterkeyhint="search" placeholder="${S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"}">
       <button class="btn hl" type="submit">Buscar</button>
+      <ul class="sk-list hac-list" id="heroQ_list" role="listbox" aria-label="Sugestões de busca" hidden></ul>
     </form>
   </div>
   ${featured ? `<aside class="wcard" aria-label="Perfil em destaque">
@@ -2373,7 +2443,7 @@ document.addEventListener("click", async e => {
   }
   if (t.id === "scrim" || t.closest("#a11yClose")) return closeA11y();
   const g = t.closest("[data-go]"); if (g) { e.preventDefault(); if (menuOpen) closeMenu(false); return go(g.dataset.go); }
-  const a = t.closest("[data-aud]"); if (a) { S.aud = a.dataset.aud; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", b === a)); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; return; }
+  const a = t.closest("[data-aud]"); if (a) { S.aud = a.dataset.aud; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", b === a)); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; heroList($("#heroQ") === document.activeElement); return; }
   const c = t.closest("[data-cat]"); if (c) { S.cat = c.dataset.cat; return go("vagas"); }
   const fq = t.closest("[data-fchip]"); if (fq) { const k = fq.dataset.fchip; S[k] = !S[k]; const cb = $("#f_" + k); if (cb) cb.checked = S[k]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
@@ -2557,7 +2627,7 @@ document.addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target, btn = f.querySelector('[type="submit"]');
   const showErr = (box, msg) => { const b = $(box); if (b) { b.textContent = msg; b.hidden = false; b.scrollIntoView({ block: "nearest" }); } else toast(msg); };
-  if (f.id === "heroSearch") { const q = $("#heroQ").value; if (S.aud === "freela") { S.q = q; go("vagas"); } else { S.tq = q; go("talentos"); } return; }
+  if (f.id === "heroSearch") { heroList(false); const q = $("#heroQ").value; if (S.aud === "freela") { S.q = q; go("vagas"); } else { S.tq = q; go("talentos"); } return; }
   if (btn) btn.disabled = true;
   try {
     if (f.id === "authForm") {
