@@ -104,18 +104,18 @@ Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e o
 
 ---
 
-## Endereço do app: app.osmo.com.br
+## Endereço principal do app: osmo.com.br
 
-O app mora em `app.osmo.com.br`. O `osmo.com.br` fica reservado para o site da agência e, por enquanto, redireciona para o app levando o caminho junto (`osmo.com.br/vagas/12` → `app.osmo.com.br/vagas/12`). Continuam respondendo no endereço antigo, sem redirecionar: `/api/` (avisos do Asaas), `/auth/` (retornos de login) e `/sw.js`.
+O `osmo.com.br` serve o app diretamente e é a URL canônica para acesso pelo computador, e-mails e notificações. `app.osmo.com.br` continua servindo o mesmo app como endereço alternativo para TVs, links antigos e callbacks dos provedores sociais já configurados. Depois do login social, a pessoa volta ao domínio raiz.
 
 1. Na Cloudflare, no site osmo.com.br: **DNS → Records → Add record**. Tipo `A`, nome `app`, IPv4 `46.202.147.229`, nuvem laranja ligada (Proxied). Salve.
-2. No terminal do editor: `bash publicar.sh`. O instalador confere se o `app.` já existe no DNS e se o certificado de origem cobre `*.osmo.com.br`; só então liga o redirecionamento e troca o `PUBLIC_URL` do `.env` do servidor para `https://app.osmo.com.br`. Se faltar algo, o app continua em `osmo.com.br` e aparece um aviso.
-3. Login social: se aparecer o aviso, cadastre o novo endereço de retorno (`https://app.osmo.com.br/auth/<provedor>/callback`) no painel do Google, Microsoft, LinkedIn, Adobe ou GitHub.
-4. Asaas: o aviso continua chegando em `osmo.com.br/api/webhooks/asaas`. Se quiser, troque no painel do Asaas para `https://app.osmo.com.br/api/webhooks/asaas`.
+2. No terminal do editor: `bash publicar.sh`. O instalador configura `osmo.com.br` e, quando o DNS existe, `app.osmo.com.br` para servir o mesmo app. O `.env` do servidor passa a usar `PUBLIC_URL=https://osmo.com.br`.
+3. Login social: mantenha o endereço de retorno `https://app.osmo.com.br/auth/<provedor>/callback` no painel do Google, Microsoft, LinkedIn, Adobe ou GitHub. O servidor recebe o callback e encaminha a sessão para o domínio raiz.
+4. Asaas: o endereço canônico do webhook é `https://osmo.com.br/api/webhooks/asaas`.
 
 Quem estava logado em `osmo.com.br` precisa entrar de novo uma vez, porque o login fica guardado por endereço.
 
-Para o `osmo.com.br` voltar a mostrar o app (sem redirecionar): `MAIN_MODE=app bash publicar.sh`.
+Para restaurar o redirecionamento antigo de `osmo.com.br` para `app.osmo.com.br`: `MAIN_MODE=redirect bash publicar.sh`.
 
 ## HTTPS entre a Cloudflare e o servidor
 

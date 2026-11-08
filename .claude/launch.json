@@ -9,6 +9,12 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "dev-whatsapp",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PHONE_DEV=true", "npm", "run", "dev"],
+      "port": 3000
     }
   ]
 }

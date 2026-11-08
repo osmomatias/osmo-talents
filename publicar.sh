@@ -13,10 +13,10 @@ set -e
 cd "$(dirname "$0")"
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
-# APP_HOST: endereço do app. MAIN_MODE=redirect faz o osmo.com.br levar até ele;
-# MAIN_MODE=app deixa o osmo.com.br mostrando o app também (sem redirecionar).
+# APP_HOST: endereço alternativo do app. O domínio principal serve o app por padrão;
+# MAIN_MODE=redirect pode ser usado manualmente para restaurar o redirecionamento antigo.
 APP_HOST="${APP_HOST:-app.$DOMAIN}"
-MAIN_MODE="${MAIN_MODE:-redirect}"
+MAIN_MODE="${MAIN_MODE:-app}"
 ZIP="$(mktemp -t osmo).zip"
 rm -f "$ZIP"
 zip -qr "$ZIP" . -x "data/*" ".env" "node_modules/*" ".git/*" "*.DS_Store" "Claude outputs/*" ".claude/*" "biblioteca/*" "Biblioteca da casa.command"

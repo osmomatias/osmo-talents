@@ -9,7 +9,9 @@
 set -e
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
-# o app mora em app.osmo.com.br: é para lá que os provedores devolvem a pessoa
+# O domínio principal é a URL canônica; o subdomínio app mantém o callback cadastrado.
+PUBLIC_HOST="${PUBLIC_HOST:-$DOMAIN}"
+# O callback continua no subdomínio já cadastrado nos provedores sociais.
 APP_HOST="${APP_HOST:-app.$DOMAIN}"
 echo ""
 echo "Login social"
@@ -21,7 +23,8 @@ echo ""
 echo "No painel do provedor, o endereço de retorno (redirect URI) deve ser:"
 echo "   https://$APP_HOST/auth/$P/callback"
 echo ""
-LINES="PUBLIC_URL=https://$APP_HOST"
+LINES="PUBLIC_URL=https://$PUBLIC_HOST
+OAUTH_REDIRECT_URL=https://$APP_HOST"
 read -r -p "Client ID: " CID
 read -r -s -p "Client Secret (não aparece na tela): " SEC; echo ""
 [ -n "$CID" ] && [ -n "$SEC" ] || { echo "Faltou o Client ID ou o Secret. Nada foi alterado."; exit 1; }
@@ -42,4 +45,4 @@ mv \$ENV.tmp \$ENV && chmod 640 \$ENV && chgrp osmo \$ENV
 systemctl restart osmo-talents
 REMOTE
 echo ""
-echo "Pronto. Abra https://$APP_HOST/entrar: o botão de $P deve aparecer."
+echo "Pronto. Abra https://$PUBLIC_HOST/entrar: o botão de $P deve aparecer."

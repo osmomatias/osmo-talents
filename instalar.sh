@@ -24,10 +24,10 @@ EMAIL="${2:-}"
 APP_DIR="/var/www/osmo-talents"
 APP_USER="osmo"
 PORT="${PORT:-3000}"
-# APP_HOST: onde o app mora (padrão app.DOMÍNIO). MAIN_MODE=redirect manda o domínio principal
-# para o app; MAIN_MODE=app faz o domínio principal mostrar o app também, sem redirecionar.
+# APP_HOST: endereço alternativo do app (padrão app.DOMÍNIO). MAIN_MODE=app faz o domínio
+# principal servir o app diretamente; MAIN_MODE=redirect restaura o redirecionamento antigo.
 APP_HOST_IN="${APP_HOST:-}"
-MAIN_MODE="${MAIN_MODE:-redirect}"
+MAIN_MODE="${MAIN_MODE:-app}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 say()  { printf "\n\033[1;35m==> %s\033[0m\n" "$*"; }
@@ -118,12 +118,8 @@ if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondend
 # 3000, contando o IP de verdade de quem visitou (X-Forwarded-For). Se outro programa (como
 # o Apache) estiver ocupando a porta 80, desliga ou avisa.
 say "5/7 Configurando o nginx para $APP_HOST e $DOMAIN"
-# O app mora em app.osmo.com.br (APP_HOST). O osmo.com.br fica para o site da agência:
-# por enquanto ele só redireciona para o app, levando junto o caminho (osmo.com.br/vagas/12
-# vira app.osmo.com.br/vagas/12). Três coisas continuam respondendo no endereço antigo, sem
-# redirecionar: /api/ (os avisos do Asaas chegam ali, e aviso não segue redirecionamento),
-# /auth/ (retornos de login social já cadastrados) e /sw.js (o ajudante dos celulares que já
-# instalaram o app precisa conseguir se atualizar).
+# O domínio principal e app.osmo.com.br servem o mesmo app. O domínio principal é o canônico;
+# app.osmo.com.br continua como endereço alternativo para a TV e links já compartilhados.
 # Segurança: só redireciona se o app. já existe no DNS e se o certificado cobre esse nome.
 # Senão, o app continua respondendo nos dois endereços e aparece um aviso.
 # Se o certificado de origem da Cloudflare já foi enviado (configurar-https-cloudflare.sh),
@@ -284,25 +280,36 @@ else
   warn "Usa a Cloudflare? Então rode no seu computador: bash configurar-https-cloudflare.sh"
 fi
 
-# PUBLIC_URL é o endereço usado nos e-mails (recuperar senha, avisos) e nos retornos do
-# login social. Com o app no subdomínio, ele passa a ser https://app.osmo.com.br.
+# PUBLIC_URL é o endereço canônico usado nos e-mails e avisos. O callback OAuth pode continuar
+# no host app. para compatibilidade com provedores já configurados; o servidor o canoniza depois.
 if [ "$HTTPS" -eq 1 ]; then
-  WANT="https://$DOMAIN"; [ "$APP_SPLIT" -eq 1 ] && WANT="https://$APP_HOST"
+  WANT="https://$DOMAIN"
+  OAUTH_WANT="$WANT"
+  if [ -n "$APP_DNS" ] && [ "$APP_HOST" != "$DOMAIN" ]; then OAUTH_WANT="https://$APP_HOST"; fi
+  CHANGED=0
   if [ "$(grep -E '^PUBLIC_URL=' "$APP_DIR/.env" | cut -d= -f2-)" != "$WANT" ]; then
     if grep -q '^PUBLIC_URL=' "$APP_DIR/.env"; then sed -i "s#^PUBLIC_URL=.*#PUBLIC_URL=$WANT#" "$APP_DIR/.env"; else echo "PUBLIC_URL=$WANT" >> "$APP_DIR/.env"; fi
+    CHANGED=1
+  fi
+  if [ "$(grep -E '^OAUTH_REDIRECT_URL=' "$APP_DIR/.env" | cut -d= -f2-)" != "$OAUTH_WANT" ]; then
+    if grep -q '^OAUTH_REDIRECT_URL=' "$APP_DIR/.env"; then sed -i "s#^OAUTH_REDIRECT_URL=.*#OAUTH_REDIRECT_URL=$OAUTH_WANT#" "$APP_DIR/.env"; else echo "OAUTH_REDIRECT_URL=$OAUTH_WANT" >> "$APP_DIR/.env"; fi
+    CHANGED=1
+  fi
+  if [ "$CHANGED" -eq 1 ]; then
     systemctl restart osmo-talents
     ok "PUBLIC_URL agora é $WANT"
-    for K in GOOGLE LINKEDIN ADOBE GITHUB; do
+    ok "OAUTH_REDIRECT_URL agora é $OAUTH_WANT"
+    for K in GOOGLE MICROSOFT LINKEDIN ADOBE GITHUB; do
       if grep -qE "^${K}_CLIENT_ID=.+" "$APP_DIR/.env"; then
         k="$(echo "$K" | tr 'A-Z' 'a-z')"
-        warn "Login com $K: cadastre também este endereço de retorno no painel do $K: $WANT/auth/$k/callback"
+        warn "Login com $K: endereço de retorno esperado no painel: $OAUTH_WANT/auth/$k/callback"
       fi
     done
   fi
 fi
 
 say "7/7 Pronto"
-if [ "$HTTPS" -eq 1 ] && [ "$APP_SPLIT" -eq 1 ]; then echo "    Abra: https://$APP_HOST  (https://$DOMAIN redireciona para lá)"; elif [ "$HTTPS" -eq 1 ]; then echo "    Abra: https://$DOMAIN"; else echo "    Por enquanto, teste pelo IP: http://${SERVER_IP:-SEU-IP}"; fi
+if [ "$HTTPS" -eq 1 ]; then echo "    Abra: https://$DOMAIN (URL principal)"; elif [ "$APP_DNS" = "$SERVER_IP" ] && [ -n "$SERVER_IP" ]; then echo "    Por enquanto, teste pelo IP: http://${SERVER_IP}  (o app também responde em $APP_HOST)"; else echo "    Por enquanto, teste pelo IP: http://${SERVER_IP:-SEU-IP}"; fi
 echo
 echo "    Dados de demonstração (opcional):  cd $APP_DIR && sudo -u $APP_USER npm run seed"
 echo "    Ver se está rodando:               systemctl status osmo-talents"

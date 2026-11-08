@@ -34,6 +34,7 @@ const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 const wa = require("./src/whatsapp"); // confirmar o celular no cadastro pelo WhatsApp (de graça)
 const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
+const { createRouter } = require("./src/router");
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -270,11 +271,8 @@ function dateBR(addDays = 0) { const d = new Date(Date.now() - 3 * 3600e3 + addD
 //   - a função que resolve o pedido;
 //   - opções: auth:false (não precisa estar logado), role (só freela ou só cliente).
 /* ---------------- rotas ---------------- */
-const routes = [];
-const route = (method, pattern, handler, opts = {}) => {
-  const keys = []; const re = new RegExp("^" + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return "(\\d+)"; }) + "$");
-  routes.push({ method, re, keys, handler, auth: opts.auth !== false, role: opts.role, raw: opts.raw });
-};
+const router = createRouter();
+const route = router.route;
 
 // --- autenticação
 // CONFIRMAR O CELULAR PELO WHATSAPP, DE GRAÇA ("WhatsApp ao contrário", ver src/whatsapp.js):
@@ -2091,8 +2089,7 @@ async function handleAuth(req, res, url, ip) {
   if (!oauth.enabled(k)) return fail2("indisponivel");
   if (!m[2]) {
     if (req.method !== "GET") return send(res, 405, "Método não permitido");
-    // começou por outro endereço (ex.: osmo.com.br, ícone antigo)? Vai antes para o endereço do app:
-    // o bilhete (cookie) precisa ficar no mesmo endereço para onde o Google/GitHub vão devolver a pessoa
+    // OAuth começa no domínio canônico para que o cookie de estado seja válido nele.
     const pub = new URL(PUBLIC_URL);
     if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
     try { limit("oauth:" + ip, 30, 600_000); } catch { return fail2("tentativas"); }
@@ -2105,6 +2102,9 @@ async function handleAuth(req, res, url, ip) {
   }
   // retorno do provedor
   if (req.method !== "GET") return send(res, 405, "Método não permitido");
+  // O provedor pode devolver para o host app. antigo; volta ao canônico antes de ler o cookie.
+  const pub = new URL(PUBLIC_URL);
+  if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
   const params = url.searchParams;
   appendCookie(res, stateCookie("", 0));
   if (params.get("error")) return fail2(params.get("error") === "access_denied" || params.get("error") === "user_cancelled_authorize" ? "cancelado" : "falhou");
@@ -2397,9 +2397,9 @@ const server = http.createServer(async (req, res) => {
   try {
     // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)
     if (req.method !== "GET" && req.headers["x-osmo"] !== "1" && !url.pathname.startsWith("/api/webhooks/")) fail(403, "Requisição recusada.");
-    const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
+    const r = router.match(req.method, url.pathname);
     if (!r) fail(404, "Rota não encontrada.");
-    const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
+    const { params } = r;
     const user = currentUser(req);
     // o site manda o idioma da tela em cada pedido; guardamos para escrever os e-mails nesse idioma
     const hl = i18n.pick(req.headers["x-osmo-lang"]);

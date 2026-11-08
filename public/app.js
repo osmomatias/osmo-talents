@@ -266,8 +266,9 @@ const ICONS = {
   inicio: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   vagas: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   talentos: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 0 1 5.5 5"/>',
-  mensagens: '<path d="M4 5h16v11H9l-5 4z"/>',
-  painel: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/>',
+  mensagens: '<path d="M3 5h18v14H3z"/><path d="m3 6 9 7 9-7"/>',
+  painel: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/>',
+  ajustes: '<path d="M9.8 3h4.4l.5 2.1c.6.2 1.1.5 1.6.9l2-.7 2.2 3.8-1.6 1.4a7 7 0 0 1 0 1.9l1.6 1.4-2.2 3.8-2-.7c-.5.4-1 .7-1.6.9l-.5 2.1H9.8l-.5-2.1c-.6-.2-1.1-.5-1.6-.9l-2 .7-2.2-3.8 1.6-1.4a7 7 0 0 1 0-1.9L3.5 9.1l2.2-3.8 2 .7c.5-.4 1-.7 1.6-.9z"/><circle cx="12" cy="12" r="2.5"/>',
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   entrar: '<path d="M10 17l5-5-5-5M15 12H3M14 3h6v18h-6"/>',
   // três círculos que se cruzam: os squads (como os círculos do Google+)
@@ -349,7 +350,11 @@ function renderChrome() {
   $$("[data-unread]").forEach(b => { b.hidden = !unread; b.textContent = unread; });
   const top = $("#topActions");
   const pub = !ME || ME.role === "cliente" ? `<button class="btn sm hl" data-go="publicar">Publicar<span class="only-d"> vaga</span></button>` : "";
-  top.innerHTML = `<button class="btn sm" id="a11yBtn" aria-haspopup="dialog">Ajustes</button>
+  top.innerHTML = `<div class="top-tools" role="group" aria-label="Acessos rápidos">
+    ${ME ? `<button class="top-tool" data-go="mensagens" aria-label="Mensagens" title="Mensagens"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.mensagens}</svg><span class="badge" data-unread hidden></span></button>
+      <button class="top-tool" data-go="painel" aria-label="Painel" title="Painel"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.painel}</svg></button>` : ""}
+    <button class="top-tool" id="a11yBtn" aria-label="Ajustes" title="Ajustes" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.ajustes}</svg></button>
+    </div>
     ${ME ? `<button class="whoami" data-go="perfil" title="Meu perfil">${esc(ME.name.split(" ")[0])}</button>` : `<button class="btn sm" data-go="entrar">Entrar</button>`}
     ${ME && ME.isAdmin ? `<button class="btn sm only-d" data-go="panorama">Admin</button>` : ""}
     ${pub}
@@ -378,7 +383,7 @@ function renderChrome() {
 }
 function markNav() {
   const name = curH().split("-")[0];
-  $$("#nav button, #mmenu [data-go], #tabbar [data-go]").forEach(b => {
+  $$("#nav button, #topActions [data-go], #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
     const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name)) || (g === "panorama" && name === "gestao");
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
