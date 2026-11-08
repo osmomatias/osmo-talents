@@ -11,12 +11,15 @@
 # IP e DOMAIN dizem para onde levar: dá para trocar passando outro valor antes do comando.
 set -e
 cd "$(dirname "$0")"
+# Compila os módulos TypeScript antes de empacotar; a VPS executa o JavaScript gerado.
+if [ ! -x node_modules/.bin/tsc ]; then npm ci --include=dev; fi
+npm run build
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
-# APP_HOST: endereço do app. MAIN_MODE=redirect faz o osmo.com.br levar até ele;
-# MAIN_MODE=app deixa o osmo.com.br mostrando o app também (sem redirecionar).
+# APP_HOST: endereço alternativo do app. O domínio principal serve o app por padrão;
+# MAIN_MODE=redirect pode ser usado manualmente para restaurar o redirecionamento antigo.
 APP_HOST="${APP_HOST:-app.$DOMAIN}"
-MAIN_MODE="${MAIN_MODE:-redirect}"
+MAIN_MODE="${MAIN_MODE:-app}"
 ZIP="$(mktemp -t osmo).zip"
 rm -f "$ZIP"
 zip -qr "$ZIP" . -x "data/*" ".env" "node_modules/*" ".git/*" "*.DS_Store" "Claude outputs/*" ".claude/*" "biblioteca/*" "Biblioteca da casa.command"

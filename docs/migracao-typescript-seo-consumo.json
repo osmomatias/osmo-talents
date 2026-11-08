@@ -1,0 +1,15 @@
+{
+  "measurement": "Recorded token_count delta for this migration, including the delegated agent; excludes final response and activity after measurement.",
+  "measured_until": "2026-11-08T18:52:17.169Z",
+  "delegated_agents": 1,
+  "usage": {
+    "input_tokens": 7595895,
+    "cached_input_tokens": 7520640,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 19757,
+    "reasoning_output_tokens": 8969,
+    "total_tokens": 7615652,
+    "uncached_input_tokens": 75255,
+    "new_input_and_output_tokens": 95012
+  }
+}

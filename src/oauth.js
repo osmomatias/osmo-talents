@@ -16,6 +16,8 @@ const crypto = require("node:crypto");
 // PUBLIC_URL é o endereço do site (ex.: https://osmo.com.br). O Google precisa saber para
 // onde devolver a pessoa depois do login. TEST_BASE só é usado em testes no computador.
 const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
+// Keep OAuth callbacks on the legacy host when providers are already configured there.
+const REDIRECT_URL = (process.env.OAUTH_REDIRECT_URL || PUBLIC_URL).replace(/\/$/, "");
 const TEST_BASE = process.env.OAUTH_TEST_BASE || ""; // só para testes locais: troca o endereço dos provedores
 
 // A "agenda de endereços" de cada portaria: onde mandar a pessoa (auth), onde trocar o código
@@ -65,7 +67,7 @@ if (TEST_BASE) for (const [k, p] of Object.entries(P)) for (const f of ["auth", 
 const ORDER = ["google", "microsoft", "linkedin", "adobe", "github"];
 const enabled = k => { const p = P[k]; return !!(p && p.id && p.secret && PUBLIC_URL); };
 const list = () => ORDER.filter(enabled);
-const redirectUri = k => `${PUBLIC_URL}/auth/${k}/callback`;
+const redirectUri = k => `${REDIRECT_URL}/auth/${k}/callback`;
 const b64u = buf => Buffer.from(buf).toString("base64url");
 
 // Passo 1 (ida): prepara o endereço da portaria. Inventa números aleatórios:

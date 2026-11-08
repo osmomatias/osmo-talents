@@ -157,6 +157,8 @@ function addColumn(table, col, def) {
 // Colunas novas para pagamento: o CPF/CNPJ de quem paga, o código do cliente no Asaas e,
 // em cada etapa, o código da cobrança, a situação do pagamento (a pagar, aguardando,
 // pago, liberado), o link da fatura e quando a etapa foi entregue.
+// Search visibility is optional; existing profiles are not opted in automatically.
+addColumn("profiles", "search_visible", "INTEGER NOT NULL DEFAULT 0");
 addColumn("profiles", "cpf_cnpj", "TEXT DEFAULT ''");
 addColumn("profiles", "asaas_customer_id", "TEXT DEFAULT ''");
 addColumn("milestones", "pay_id", "TEXT DEFAULT ''");
@@ -463,6 +465,62 @@ CREATE TABLE IF NOT EXISTS tv_phones (
 
 // catálogo da Biblioteca da casa que a TV mandou (o celular mostra os pôsteres mesmo com a TV em outra tela)
 addColumn("tv_screens", "catalog", "TEXT");
+
+// Integridade das transições e relações principais. Triggers funcionam também em bancos
+// antigos sem reconstruir tabelas e rejeitam estados inválidos em qualquer caminho de escrita.
+db.exec(`
+CREATE TRIGGER IF NOT EXISTS jobs_status_insert BEFORE INSERT ON jobs
+WHEN NEW.status NOT IN ('aberta','em_andamento','concluida','fechada')
+BEGIN SELECT RAISE(ABORT, 'invalid job status'); END;
+CREATE TRIGGER IF NOT EXISTS jobs_status_update BEFORE UPDATE OF status ON jobs
+WHEN NEW.status NOT IN ('aberta','em_andamento','concluida','fechada')
+BEGIN SELECT RAISE(ABORT, 'invalid job status'); END;
+CREATE TRIGGER IF NOT EXISTS proposals_status_insert BEFORE INSERT ON proposals
+WHEN NEW.status NOT IN ('enviada','aceita','recusada','retirada')
+BEGIN SELECT RAISE(ABORT, 'invalid proposal status'); END;
+CREATE TRIGGER IF NOT EXISTS proposals_status_update BEFORE UPDATE OF status ON proposals
+WHEN NEW.status NOT IN ('enviada','aceita','recusada','retirada')
+BEGIN SELECT RAISE(ABORT, 'invalid proposal status'); END;
+CREATE TRIGGER IF NOT EXISTS contracts_status_insert BEFORE INSERT ON contracts
+WHEN NEW.status NOT IN ('ativo','concluido')
+BEGIN SELECT RAISE(ABORT, 'invalid contract status'); END;
+CREATE TRIGGER IF NOT EXISTS contracts_status_update BEFORE UPDATE OF status ON contracts
+WHEN NEW.status NOT IN ('ativo','concluido')
+BEGIN SELECT RAISE(ABORT, 'invalid contract status'); END;
+CREATE TRIGGER IF NOT EXISTS milestones_status_insert BEFORE INSERT ON milestones
+WHEN NEW.status NOT IN ('pendente','andamento','entregue','ajustes','aprovada')
+BEGIN SELECT RAISE(ABORT, 'invalid milestone status'); END;
+CREATE TRIGGER IF NOT EXISTS milestones_status_update BEFORE UPDATE OF status ON milestones
+WHEN NEW.status NOT IN ('pendente','andamento','entregue','ajustes','aprovada')
+BEGIN SELECT RAISE(ABORT, 'invalid milestone status'); END;
+CREATE TRIGGER IF NOT EXISTS milestones_pay_status_insert BEFORE INSERT ON milestones
+WHEN NEW.pay_status NOT IN ('a_pagar','aguardando','pago','liberado','estornado')
+BEGIN SELECT RAISE(ABORT, 'invalid milestone payment status'); END;
+CREATE TRIGGER IF NOT EXISTS milestones_pay_status_update BEFORE UPDATE OF pay_status ON milestones
+WHEN NEW.pay_status NOT IN ('a_pagar','aguardando','pago','liberado','estornado')
+BEGIN SELECT RAISE(ABORT, 'invalid milestone payment status'); END;
+CREATE TRIGGER IF NOT EXISTS contracts_parties_insert BEFORE INSERT ON contracts
+WHEN NOT EXISTS (
+  SELECT 1 FROM jobs j JOIN proposals p ON p.job_id = j.id
+  WHERE j.id = NEW.job_id AND j.client_id = NEW.client_id
+    AND p.id = NEW.proposal_id AND p.freela_id = NEW.freela_id
+)
+BEGIN SELECT RAISE(ABORT, 'contract parties do not match job and proposal'); END;
+CREATE TRIGGER IF NOT EXISTS reviews_parties_insert BEFORE INSERT ON reviews
+WHEN NOT EXISTS (
+  SELECT 1 FROM contracts c WHERE c.id = NEW.contract_id
+    AND ((c.client_id = NEW.author_id AND c.freela_id = NEW.target_id)
+      OR (c.freela_id = NEW.author_id AND c.client_id = NEW.target_id))
+)
+BEGIN SELECT RAISE(ABORT, 'review parties do not match contract'); END;
+CREATE TRIGGER IF NOT EXISTS reviews_parties_update BEFORE UPDATE OF contract_id, author_id, target_id ON reviews
+WHEN NOT EXISTS (
+  SELECT 1 FROM contracts c WHERE c.id = NEW.contract_id
+    AND ((c.client_id = NEW.author_id AND c.freela_id = NEW.target_id)
+      OR (c.freela_id = NEW.author_id AND c.client_id = NEW.target_id))
+)
+BEGIN SELECT RAISE(ABORT, 'review parties do not match contract'); END;
+`);
 
 // As quatro ferramentas que o resto do programa usa para falar com o caderno:
 // - one(pergunta): devolve UMA linha (ex.: "me dá a pessoa com id 5");

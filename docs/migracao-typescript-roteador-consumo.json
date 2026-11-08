@@ -1,0 +1,15 @@
+{
+  "measurement": "Recorded token_count delta for router migration, including delegated agent; excludes final response and later activity.",
+  "measured_until": "2026-11-08T19:03:29.496Z",
+  "delegated_agents": 1,
+  "usage": {
+    "input_tokens": 4784078,
+    "cached_input_tokens": 4748928,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 10611,
+    "reasoning_output_tokens": 4649,
+    "total_tokens": 4794689,
+    "uncached_input_tokens": 35150,
+    "new_input_and_output_tokens": 45761
+  }
+}

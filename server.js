@@ -34,6 +34,7 @@ const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 const wa = require("./src/whatsapp"); // confirmar o celular no cadastro pelo WhatsApp (de graça)
 const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
+const { createRouter } = require("./dist/router/router");
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -85,11 +86,18 @@ function hashPassword(pw) {
   const hash = crypto.scryptSync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
   return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
 }
-function checkPassword(pw, stored) {
+const scryptAsync = require("node:util").promisify(crypto.scrypt);
+async function hashPasswordAsync(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(pw, salt, 64, { N: 16384, r: 8, p: 1 });
+  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+async function checkPassword(pw, stored) {
   const [, saltHex, hashHex] = String(stored).split("$");
   if (!saltHex || !hashHex) return false;
-  const hash = crypto.scryptSync(pw, Buffer.from(saltHex, "hex"), 64, { N: 16384, r: 8, p: 1 });
-  return crypto.timingSafeEqual(hash, Buffer.from(hashHex, "hex"));
+  const hash = await scryptAsync(pw, Buffer.from(saltHex, "hex"), 64, { N: 16384, r: 8, p: 1 });
+  const expected = Buffer.from(hashHex, "hex");
+  return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);
 }
 const sha = s => crypto.createHash("sha256").update(s).digest("hex");
 
@@ -211,6 +219,7 @@ function profileOf(userId) {
     id: u.id, name: u.name, role: u.role, roles: rolesOf(u), title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
+    searchVisible: !!u.search_visible,
     tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id), verified: u.verified_at || "",
   };
 }
@@ -270,11 +279,8 @@ function dateBR(addDays = 0) { const d = new Date(Date.now() - 3 * 3600e3 + addD
 //   - a função que resolve o pedido;
 //   - opções: auth:false (não precisa estar logado), role (só freela ou só cliente).
 /* ---------------- rotas ---------------- */
-const routes = [];
-const route = (method, pattern, handler, opts = {}) => {
-  const keys = []; const re = new RegExp("^" + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return "(\\d+)"; }) + "$");
-  routes.push({ method, re, keys, handler, auth: opts.auth !== false, role: opts.role, raw: opts.raw });
-};
+const router = createRouter();
+const route = router.route;
 
 // --- autenticação
 // CONFIRMAR O CELULAR PELO WHATSAPP, DE GRAÇA ("WhatsApp ao contrário", ver src/whatsapp.js):
@@ -347,7 +353,7 @@ route("POST", "/api/auth/phone/simulate", ({ body }) => {
 // check:true só confere os dados, sem criar nada (o site usa antes de pedir o WhatsApp,
 // para a pessoa não confirmar o celular à toa com um e-mail que já tem conta).
 // O "limit" impede alguém de criar mil contas seguidas do mesmo endereço.
-route("POST", "/api/auth/register", ({ body, res, ip }) => {
+route("POST", "/api/auth/register", async ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
   const name = str(body.name, 80), email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
   const role = body.role === "cliente" ? "cliente" : "freela";
@@ -363,8 +369,9 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
     phone = t.phone;
     if (phoneTaken(phone)) fail(409, "Esse celular já está em outra conta. Tente entrar.");
   }
+  const passHash = await hashPasswordAsync(password);
   const id = tx(() => {
-    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, hashPassword(password), role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
+    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, passHash, role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
     run("INSERT INTO profiles (user_id) VALUES (?)", uid);
     if (phone) run("DELETE FROM phone_tickets WHERE phone = ?", phone);
     return uid;
@@ -375,11 +382,11 @@ route("POST", "/api/auth/register", ({ body, res, ip }) => {
 
 // ENTRAR: procura o e-mail e confere a senha. A mensagem de erro é a mesma para "e-mail não
 // existe" e "senha errada", para um espertinho não descobrir quais e-mails têm conta.
-route("POST", "/api/auth/login", ({ body, res, ip }) => {
+route("POST", "/api/auth/login", async ({ body, res, ip }) => {
   limit("login:" + ip, 10, 600_000);
   const email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
   const u = one("SELECT id, pass_hash FROM users WHERE email = ?", email);
-  if (!u || !checkPassword(password, u.pass_hash)) fail(401, "E-mail ou senha não conferem.");
+  if (!u || !(await checkPassword(password, u.pass_hash))) fail(401, "E-mail ou senha não conferem.");
   createSession(res, u.id);
   return { ok: true };
 }, { auth: false });
@@ -441,14 +448,16 @@ route("GET", "/api/auth/reset", ({ query }) => {
   if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   return { email: r.email };
 }, { auth: false });
-route("POST", "/api/auth/reset", ({ body, res, ip }) => {
+route("POST", "/api/auth/reset", async ({ body, res, ip }) => {
   limit("reset:" + ip, 10, 600_000);
   const password = typeof body.password === "string" ? body.password : "";
   const r = resetRow(body.token);
   if (!r) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
+  const passHash = await hashPasswordAsync(password);
+  if (!resetRow(body.token)) fail(404, "Esse link expirou ou já foi usado. Peça um novo.");
   tx(() => {
-    run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(password), r.user_id);
+    run("UPDATE users SET pass_hash = ? WHERE id = ?", passHash, r.user_id);
     run("DELETE FROM password_resets WHERE user_id = ?", r.user_id);
     run("DELETE FROM sessions WHERE user_id = ?", r.user_id); // encerra a conta em outros aparelhos
   });
@@ -490,7 +499,7 @@ const unreadCount = id => one(`SELECT COUNT(*) n FROM messages m JOIN threads t 
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id).n;
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
@@ -529,6 +538,7 @@ route("POST", "/api/me/role", ({ user, body }) => {
 // SALVAR PERFIL: limpa e corta cada campo no tamanho certo (título até 100 letras, bio até
 // 1200, no máximo 12 habilidades...) e grava. Se veio CPF/CNPJ, confere se é válido antes.
 route("PUT", "/api/me/profile", ({ user, body }) => {
+  if (typeof body.searchVisible === "boolean") run("UPDATE profiles SET search_visible = ? WHERE user_id = ?", body.searchVisible ? 1 : 0, user.id);
   const how = body.how || {};
   run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
     str(body.title, 100), str(body.bio, 1200), str(body.location, 80), int(body.rate, 0, 100000), int(body.hours, 1, 60),
@@ -658,11 +668,8 @@ route("PUT", "/api/me/energy", ({ user, body }) => {
 // título, bio, habilidades e jeito de se comunicar. A outra rota mostra um perfil com avaliações.
 // --- talentos
 route("GET", "/api/talents", ({ query }) => {
-  const q = str(query.get("q") || "", 80).toLowerCase();
-  const rows = all(`SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200`);
-  let out = rows.map(r => profileOf(r.id)).filter(Boolean);
-  if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
-  return { talents: out };
+  const { talents, pagination } = seo.listTalents(query);
+  return { talents, pagination };
 }, { auth: false });
 
 route("GET", "/api/talents/:id", ({ params }) => {
@@ -676,15 +683,8 @@ route("GET", "/api/talents/:id", ({ params }) => {
 // flexível) e sort (ordenar por clareza ou por valor; valor por hora conta como 15 horas).
 // --- vagas
 route("GET", "/api/jobs", ({ query }) => {
-  const rows = all(JOB_SELECT + " WHERE j.status = 'aberta' ORDER BY j.created_at DESC, j.id DESC LIMIT 300").map(jobOut);
-  const q = str(query.get("q") || "", 80).toLowerCase(), cat = query.get("cat") || "";
-  let r = rows.filter(j => (!cat || j.cat === cat)
-    && (query.get("clear") !== "1" || j.clarity >= 80) && (query.get("async") !== "1" || j.async) && (query.get("flex") !== "1" || j.flex)
-    && (!q || (j.title + " " + j.skills.join(" ") + " " + j.client + " " + j.company).toLowerCase().includes(q)));
-  const sort = query.get("sort");
-  if (sort === "clareza") r.sort((a, b) => b.clarity - a.clarity);
-  if (sort === "valor") r.sort((a, b) => (b.budget_type === "hora" ? b.budget * 15 : b.budget) - (a.budget_type === "hora" ? a.budget * 15 : a.budget));
-  return { jobs: r };
+  const { jobs, pagination } = seo.listJobs(query);
+  return { jobs, pagination };
 }, { auth: false });
 
 route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.client_id = ? ORDER BY j.created_at DESC", user.id).map(jobOut) }), { role: "cliente" });
@@ -1482,10 +1482,11 @@ const ADMIN_ENT = {
       WHERE ? = '' OR u.name LIKE ? OR u.email LIKE ? OR p.title LIKE ? ORDER BY u.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, `%${q}%`, off),
     cols: [["name", "Nome"], ["email", "E-mail"], ["role", "Perfil"], ["title", "O que faz"], ["created_at", "Desde"]],
     get: id => one("SELECT u.*, p.* , u.id id FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = ?", id),
-    create: (v, user) => {
+    create: async (v, user) => {
       if (one("SELECT 1 FROM users WHERE email = ?", v.email)) fail(409, "Já existe uma conta com esse e-mail.");
       const pass = crypto.randomBytes(9).toString("base64url");
-      const id = tx(() => { const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", v.name, v.email, hashPassword(pass), v.role).lastInsertRowid);
+      const passHash = await hashPasswordAsync(pass);
+      const id = tx(() => { const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", v.name, v.email, passHash, v.role).lastInsertRowid);
         run("INSERT INTO profiles (user_id) VALUES (?)", uid); return uid; });
       return { id, tempPassword: pass };
     },
@@ -1627,12 +1628,12 @@ for (const [key, ent] of Object.entries(ADMIN_ENT)) {
     return { ok: true };
   }, { auth: false });
   // CRIAR: só onde faz sentido (pessoas e vagas); propostas, contratos e etapas nascem pelo fluxo normal
-  if (ent.canCreate) route("POST", `/api/admin/${key}`, ({ user, body }) => {
+  if (ent.canCreate) route("POST", `/api/admin/${key}`, async ({ user, body }) => {
     needAdmin(user);
     const v = {}; for (const f of adminFields(ent, "create")) if (body[f.k] !== undefined && body[f.k] !== "") v[f.k] = adminValue(f, body[f.k]);
     for (const f of ent.fields) if (f.req && (v[f.k] === undefined || v[f.k] === "")) fail(400, `Preencha "${f.label}".`);
     if (ent.check) ent.check(v, 0);
-    const out = ent.create(v, user);
+    const out = await ent.create(v, user);
     const rest = adminFields(ent, "edit").filter(f => f.tbl === "profiles" && v[f.k] !== undefined);
     for (const f of rest) run(`UPDATE profiles SET ${f.k} = ? WHERE user_id = ?`, f.json ? JSON.stringify(v[f.k]) : v[f.k], out.id);
     adminLog(user, "criar", key, out.id, v);
@@ -1653,11 +1654,12 @@ for (const [key, ent] of Object.entries(ADMIN_ENT)) {
   }, { auth: false });
 }
 // TROCAR SENHA de alguém (ex.: pessoa sem acesso ao e-mail): gera uma senha temporária, mostrada uma vez, e desconecta os aparelhos
-route("POST", "/api/admin/users/:id/password", ({ user, params }) => {
+route("POST", "/api/admin/users/:id/password", async ({ user, params }) => {
   needAdmin(user);
   if (!one("SELECT 1 FROM users WHERE id = ?", params.id)) fail(404, "Registro não encontrado.");
   const pass = crypto.randomBytes(9).toString("base64url");
-  tx(() => { run("UPDATE users SET pass_hash = ? WHERE id = ?", hashPassword(pass), params.id); run("DELETE FROM sessions WHERE user_id = ?", params.id);
+  const passHash = await hashPasswordAsync(pass);
+  tx(() => { run("UPDATE users SET pass_hash = ? WHERE id = ?", passHash, params.id); run("DELETE FROM sessions WHERE user_id = ?", params.id);
     adminLog(user, "trocar senha", "users", params.id, {}); });
   return { tempPassword: pass };
 }, { auth: false });
@@ -2091,8 +2093,7 @@ async function handleAuth(req, res, url, ip) {
   if (!oauth.enabled(k)) return fail2("indisponivel");
   if (!m[2]) {
     if (req.method !== "GET") return send(res, 405, "Método não permitido");
-    // começou por outro endereço (ex.: osmo.com.br, ícone antigo)? Vai antes para o endereço do app:
-    // o bilhete (cookie) precisa ficar no mesmo endereço para onde o Google/GitHub vão devolver a pessoa
+    // OAuth começa no domínio canônico para que o cookie de estado seja válido nele.
     const pub = new URL(PUBLIC_URL);
     if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
     try { limit("oauth:" + ip, 30, 600_000); } catch { return fail2("tentativas"); }
@@ -2105,6 +2106,9 @@ async function handleAuth(req, res, url, ip) {
   }
   // retorno do provedor
   if (req.method !== "GET") return send(res, 405, "Método não permitido");
+  // O provedor pode devolver para o host app. antigo; volta ao canônico antes de ler o cookie.
+  const pub = new URL(PUBLIC_URL);
+  if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
   const params = url.searchParams;
   appendCookie(res, stateCookie("", 0));
   if (params.get("error")) return fail2(params.get("error") === "access_denied" || params.get("error") === "user_cancelled_authorize" ? "cancelado" : "falhou");
@@ -2323,6 +2327,23 @@ const stamp = name => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+const { renderDocument } = require("./dist/seo/seo-document");
+const publicPayments = { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS };
+const seo = require("./dist/seo/seo").createSeo({ one, all, JOB_SELECT, jobOut, profileOf, hasFreelaSQL: HAS("freela"), payments: publicPayments, publicDir: PUBLIC_DIR });
+const editorialPaths = new Set(Object.keys(require("./dist/seo/seo-content").pages));
+const stampHtml = html => html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+function servePublicPage(req, res, url) {
+  if (url.pathname === "/robots.txt") { send(res, 200, req.method === "HEAD" ? "" : seo.robots(), { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=300" }); return true; }
+  if (url.pathname === "/sitemap.xml") { send(res, 200, req.method === "HEAD" ? "" : seo.sitemap(), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" }); return true; }
+  const page = seo.page(url.pathname, url.searchParams);
+  if (!page) return false;
+  if (page.status === 404) page.canonicalPath = url.pathname;
+  const template = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+  const html = renderDocument(template, page, seo.origin, { standalone: editorialPaths.has(url.pathname), payments: publicPayments });
+  send(res, page.status || 200, req.method === "HEAD" ? "" : stampHtml(html), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ...(page.indexable === false ? { "X-Robots-Tag": "noindex, follow" } : {}) });
+  return true;
+}
+
 const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
@@ -2345,13 +2366,16 @@ function serveStatic(req, res, pathname) {
     // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
-    if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
+    if (ext !== ".html" && req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
     if (ext === ".html") {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
-        send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
+        const legal = pathname === "/privacidade" || pathname === "/termos";
+        const title = (html.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "Osmo Talents";
+        const description = (html.match(/<meta name="description" content="([^"]*)"/) || [])[1] || "Área do aplicativo Osmo Talents.";
+        html = renderDocument(html, { title, description, canonicalPath: pathname, indexable: legal }, seo.origin, { payments: publicPayments });
+        send(res, 200, req.method === "HEAD" ? "" : stampHtml(html), { "Content-Type": MIME[".html"], "Cache-Control": "no-cache", ...(!legal ? { "X-Robots-Tag": "noindex, follow" } : {}) });
       });
     }
     fs.readFile(file, (err2, buf) => err2 ? send(res, 404, "Não encontrado") : send(res, 200, buf, headers));
@@ -2370,9 +2394,12 @@ function serveStatic(req, res, pathname) {
 //    Erros esperados viram mensagens amigáveis; erros inesperados viram "algo deu errado"
 //    (e o detalhe vai só para o registro do servidor, nunca para a pessoa).
 const server = http.createServer(async (req, res) => {
+  try {
   const url = new URL(req.url, "http://localhost");
   // o nginx acrescenta o IP real no fim de X-Forwarded-For; o começo pode vir do próprio visitante
-  const ip = (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress;
+  const peer = req.socket.remoteAddress;
+  const trusted = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer);
+  const ip = trusted && (req.headers["x-forwarded-for"] || "").split(",").pop().trim() || peer;
   if (url.pathname.startsWith("/auth/")) {
     return handleAuth(req, res, url, ip).catch(e => { console.error("auth", e); if (!res.headersSent) redirect(res, "/entrar?oauth_error=falhou"); });
   }
@@ -2392,14 +2419,23 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/tv/remote/")) return tvRemote.handle(req, res, url, ip, { send, readBody, limit, HttpError });
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
+    const aliases = { "/index.html": "/", "/termos.html": "/termos", "/privacidade.html": "/privacidade" };
+    const clean = aliases[url.pathname] || (url.pathname.length > 1 && url.pathname.endsWith("/") && (APP_PATH.test(url.pathname) || editorialPaths.has(url.pathname.slice(0, -1))) ? url.pathname.slice(0, -1) : url.pathname);
+    const canonicalHost = new URL(seo.origin).hostname;
+    const incomingHost = (req.headers.host || "").split(":")[0].toLowerCase();
+    const aliasHost = incomingHost === "www." + canonicalHost || incomingHost === "app." + canonicalHost;
+    if (clean !== url.pathname || aliasHost) {
+      return send(res, 301, "", { Location: seo.origin + clean + url.search, "Cache-Control": "no-cache" });
+    }
+    if (servePublicPage(req, res, url)) return;
     return serveStatic(req, res, url.pathname);
   }
   try {
     // proteção CSRF: toda escrita exige o cabeçalho próprio do app (formulários de outros sites não conseguem enviá-lo)
     if (req.method !== "GET" && req.headers["x-osmo"] !== "1" && !url.pathname.startsWith("/api/webhooks/")) fail(403, "Requisição recusada.");
-    const r = routes.find(r => r.method === req.method && r.re.test(url.pathname));
+    const r = router.match(req.method, url.pathname);
     if (!r) fail(404, "Rota não encontrada.");
-    const m = url.pathname.match(r.re); const params = {}; r.keys.forEach((k, i) => params[k] = Number(m[i + 1]));
+    const { params } = r;
     const user = currentUser(req);
     // o site manda o idioma da tela em cada pedido; guardamos para escrever os e-mails nesse idioma
     const hl = i18n.pick(req.headers["x-osmo-lang"]);
@@ -2413,6 +2449,12 @@ const server = http.createServer(async (req, res) => {
     if (e instanceof HttpError) return send(res, e.status, { error: e.message });
     console.error(new Date().toISOString(), req.method, url.pathname, e);
     send(res, 500, { error: "Algo deu errado do nosso lado. Tente de novo em instantes." });
+  }
+  } catch (e) {
+    if (res.headersSent) return res.destroy();
+    const badRequest = e instanceof URIError || e.code === "ERR_INVALID_URL";
+    if (!badRequest) console.error("request", e);
+    send(res, badRequest ? 400 : 500, { error: badRequest ? "Requisição inválida." : "Algo deu errado do nosso lado." });
   }
 });
 
