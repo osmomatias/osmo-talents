@@ -70,7 +70,10 @@ declare const module: { exports: OsmoI18nCore };
   // traduz um pedaço de texto; devolve null se não souber
   function tr(C: OsmoCompiledDictionary, s0: string, depth = 0): string | null {
     const s = norm(s0);
-    if (!s || !LETTER.test(s) || s.length > 600) return null;
+    if (!s || !LETTER.test(s)) return null;
+    // Textos editoriais longos podem ter tradução exata; limita apenas as buscas por moldes.
+    if (C.exact.has(s)) return C.exact.get(s)!;
+    if (s.length > 600) return null;
     let r = whole(C, s, depth);
     if (r != null) return r;
     // pontuação nas pontas: tenta sem ela (de um lado, do outro e dos dois)
@@ -133,10 +136,8 @@ declare const module: { exports: OsmoI18nCore };
   const LANGS: import("../shared/i18n").LanguageEntry[] = [
     ["pt-BR", "Português (Brasil)"],
     ["en-US", "English (US)"],
-    ["es-419", "Español (Latinoamérica)"],
-    ["fr-CA", "Français (Canada)"],
   ];
-  // "en-GB" -> "en-US", "es-MX" -> "es-419", "fr" -> "fr-CA"; o resto cai no português
+  // Somente português e inglês estão ativos. Variações como en-GB usam en-US.
   function pick(list: readonly string[] | null | undefined): OsmoLanguageCode | null {
     for (const raw of list || []) {
       const l = String(raw || "").toLowerCase();

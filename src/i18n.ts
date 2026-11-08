@@ -17,9 +17,9 @@ const core: I18nCore = require(path.join(PROJECT_ROOT, "public", "i18n-core.js")
 const DIR = path.join(PROJECT_ROOT, "public", "i18n");
 const LANGS: string[] = core.LANGS.map(l => l[0]);
 const cache: Record<string, { mtime: number; C: CompiledDictionary }> = {}; // idioma -> { mtime, C }
-// VERSÃO 3.1 (MVP): outros idiomas escondidos, então os e-mails saem sempre em português,
-// mesmo para quem tinha escolhido outro idioma antes. Volta junto com o ATIVO do public/i18n.js.
-const ATIVO = false;
+// Segue os mesmos idiomas ativos do navegador: português e inglês.
+// Preferências antigas em espanhol/francês usam o texto original em português.
+const ATIVO = true;
 function dict(lang: string | null | undefined): CompiledDictionary | null {
   if (!ATIVO || !lang || lang === "pt-BR" || !LANGS.includes(lang)) return null;
   const file = path.join(DIR, lang + ".json");
@@ -29,7 +29,7 @@ function dict(lang: string | null | undefined): CompiledDictionary | null {
     return cache[lang].C;
   } catch { return null; }
 }
-// idioma válido ou null ("en-GB" vira "en-US"; o que não conhecemos vira null)
+// Idioma ativo ou null ("en-GB" vira "en-US"; espanhol/francês não são ativados).
 const pick = (raw: unknown) => (raw ? core.pick([String(raw)]) : null);
 const T = (lang: string | null | undefined, key: string, ...args: unknown[]) => core.format(dict(lang), key, args);
 const tx = (lang: string | null | undefined, s: string) => { const C = dict(lang); if (!C) return s; const r = core.translateText(C, s); return r == null ? s : r; };

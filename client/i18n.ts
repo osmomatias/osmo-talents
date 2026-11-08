@@ -4,7 +4,7 @@
 // É o "tradutor de bolso" do site. O site inteiro foi escrito em português.
 // Quando a pessoa usa outro idioma, este arquivo:
 //   1. descobre o idioma: o que a pessoa escolheu em Ajustes (guardado neste
-//      navegador) ou, na primeira visita, o idioma do navegador. Dá para forçar
+//      navegador) ou, na primeira visita, o idioma do domínio/navegador. Dá para forçar
 //      com ?lang=en-US no endereço (bom para testar e para mandar link);
 //   2. baixa o dicionário daquele idioma (public/i18n/<idioma>.json);
 //   3. fica de olho na página: toda vez que um texto aparece (uma tela nova, um
@@ -17,10 +17,9 @@
   "use strict";
   var core = window.OsmoI18nCore;
   var KEY = "osmo-lang";
-  // VERSÃO 3.1 (MVP): os outros idiomas ficam escondidos e o site fica só em português.
-  // Os dicionários continuam em public/i18n/. Para trazer de volta, troque false por true:
-  // o seletor volta ao rodapé e aos Ajustes, e ?lang=en-US volta a funcionar.
-  var ATIVO = false;
+  // A lista compartilhada habilita português e inglês; os demais dicionários ficam arquivados.
+  // O seletor do rodapé/Ajustes e ?lang=en-US usam a mesma lista de idiomas ativos.
+  var ATIVO = true;
   var SUPPORTED: string[] = core.LANGS.map(function (l) { return l[0]; });
   var html = document.documentElement;
 
@@ -32,6 +31,9 @@
     if (fromUrl) { try { localStorage.setItem(KEY, fromUrl); } catch (e) {} return fromUrl; }
     var s = stored();
     if (s && SUPPORTED.indexOf(s) >= 0) return s;
+    // O domínio britânico abre em inglês; a escolha explícita da pessoa tem prioridade.
+    var host = location.hostname.toLowerCase().replace(/\.$/, "");
+    if (host === "osmodesign.co.uk" || host === "www.osmodesign.co.uk") return "en-US";
     return core.pick(navigator.languages || [navigator.language]) || "pt-BR";
   }
   var lang = detect();

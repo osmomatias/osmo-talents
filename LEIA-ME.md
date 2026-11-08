@@ -349,7 +349,7 @@ Para o MVP focar no caminho vaga → proposta → contrato → entrega → pagam
 | Projetos e tarefas (Minhas tarefas, Projetos, botão "Tarefas" no Painel e no admin) | `tarefas: true` no `RECURSOS`, no começo do `client/app.ts` |
 | Squads | `squads: true` no `RECURSOS` |
 | Relógio Pomodoro | `pomodoro: true` no `RECURSOS` |
-| Inglês, espanhol e francês (site e e-mails) | `ATIVO = true` no `client/i18n.ts` e no `src/i18n.ts` |
+| Espanhol e francês (arquivados) | Incluir os idiomas desejados em `LANGS`, no `client/i18n-core.ts`, e no seletor do `public/index.html`; português e inglês já estão ativos |
 
 Continuam no ar: vidro líquido com o botão de ligar e desligar, animação do botão de trocar de papel, login com Adobe e Microsoft (aparecem quando as credenciais forem configuradas) e o selo de verificado.
 
@@ -359,14 +359,14 @@ As ideias que ficaram de fora estão no relatório [Osmo Talents: ideias fora do
 
 ---
 
-## Idiomas (pt-BR, en-US, es-419, fr-CA)
+## Idiomas ativos (pt-BR, en-US)
 
-O site é escrito em português e traduzido na hora para inglês (EUA), espanhol (América Latina) e francês (Canadá).
+O site é escrito em português e traduzido na hora para inglês (EUA). Somente português e inglês aparecem nos seletores e são aceitos para a interface, e-mails e notificações. Os dicionários de espanhol (América Latina) e francês (Canadá) continuam preservados, mas esses idiomas estão desativados.
 
-- **Como o idioma é escolhido:** na primeira visita, pelo idioma do navegador. Depois, a pessoa troca no rodapé ou em **Ajustes → Idioma** (fica salvo no navegador). Para testar ou mandar link num idioma: `osmo.com.br/?lang=en-US`.
-- **Onde ficam as traduções:** `public/i18n/en-US.json`, `es-419.json` e `fr-CA.json`. Cada linha é `"frase em português": "tradução"`. Frase sem tradução aparece em português, sem quebrar nada.
+- **Como o idioma é escolhido:** um `?lang=` válido tem prioridade, seguido da preferência salva neste navegador. Sem uma escolha explícita, `osmodesign.co.uk` e `www.osmodesign.co.uk` abrem em inglês; nos demais domínios, vale o idioma do navegador, com português como padrão final. A pessoa pode trocar no rodapé ou em **Ajustes → Idioma** (fica salvo neste domínio). Para testar ou mandar link num idioma: `osmo.com.br/?lang=en-US`.
+- **Onde ficam as traduções:** o dicionário ativo de inglês está em `public/i18n/en-US.json`; `es-419.json` e `fr-CA.json` ficam arquivados. Cada linha é `"frase em português": "tradução"`. Frase sem tradução aparece em português, sem quebrar nada.
 - **Lacunas:** `{1}` é qualquer texto (nome, título de vaga) e `{#1}` é um número. Ex.: `"há {#1} min": "{1} min ago"`.
-- **Texto novo no app.js:** escreva em português como sempre e acrescente a frase nos três arquivos `.json`.
+- **Texto novo no `client/app.ts`:** escreva em português como sempre e acrescente a tradução no `public/i18n/en-US.json`.
 - **E-mails e notificações** (senha nova e avisos de conversa) saem no idioma que a pessoa usou por último no site (coluna `users.lang`, criada sozinha ao ligar o servidor).
 - **Privacidade e Termos** têm as quatro versões dentro do próprio arquivo HTML. As traduções são de cortesia: em caso de divergência, vale o português (o aviso aparece no topo). Vale pedir revisão de um advogado.
 - O que as pessoas escrevem (mensagens, propostas, bio, títulos de vaga) não é traduzido.

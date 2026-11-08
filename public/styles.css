@@ -86,7 +86,7 @@ button,input,select,textarea{font:inherit; color:inherit}
 .brand{display:flex; align-items:center; gap:10px; font-family:var(--f-display); font-weight:800; font-size:1.2rem; text-decoration:none; color:var(--fg); background:none; border:0; cursor:pointer; padding:0}
 .brand-mark{width:30px; height:30px; border-radius:50%; background:var(--accent); position:relative}
 .brand-mark::after{content:""; position:absolute; inset:8px; border-radius:50%; background:var(--surface)}
-.nav{display:flex; gap:4px; flex-wrap:wrap; flex:1}
+.nav{display:flex; gap:8px; flex-wrap:wrap; flex:1}
 .nav :is(button,a){background:none; border:0; padding:8px 12px; border-radius:8px; cursor:pointer; color:var(--muted); font-weight:700}
 .nav :is(button,a):hover{background:var(--sunken); color:var(--fg)}
 .nav :is(button,a)[aria-current="page"]{color:var(--fg); background:var(--accent-soft)}
@@ -935,7 +935,7 @@ html.glass .sk-list{border-color:var(--glass-line)} /* a lista fica sólida mesm
 /* iPad deitado e telas de 981 a 1180 px: o menu de cima cabe numa linha só */
 @media (min-width:981px) and (max-width:1180px){
   .top .wrap{flex-wrap:nowrap; gap:12px}
-  .nav{flex-wrap:nowrap; gap:0}
+  .nav{flex-wrap:nowrap}
   .nav :is(button,a){padding:8px 10px; font-size:.95rem; white-space:nowrap}
   .top-actions{flex:none}
 }
