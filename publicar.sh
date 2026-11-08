@@ -11,6 +11,9 @@
 # IP e DOMAIN dizem para onde levar: dá para trocar passando outro valor antes do comando.
 set -e
 cd "$(dirname "$0")"
+# Compila os módulos TypeScript antes de empacotar; a VPS executa o JavaScript gerado.
+if [ ! -x node_modules/.bin/tsc ]; then npm ci --include=dev; fi
+npm run build
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
 # APP_HOST: endereço alternativo do app. O domínio principal serve o app por padrão;

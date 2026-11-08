@@ -34,7 +34,7 @@ const icp = require("./src/icp");
 const i18n = require("./src/i18n"); // tradução dos e-mails (mesmos dicionários do site)
 const wa = require("./src/whatsapp"); // confirmar o celular no cadastro pelo WhatsApp (de graça)
 const tvRemote = require("./src/tv-remote"); // celular como controle remoto do app de TV (/tv/)
-const { createRouter } = require("./src/router");
+const { createRouter } = require("./dist/router/router");
 
 // Configurações gerais:
 // - PORT/HOST: em qual "porta" do computador o servidor fica escutando os pedidos;
@@ -219,6 +219,7 @@ function profileOf(userId) {
     id: u.id, name: u.name, role: u.role, roles: rolesOf(u), title: u.title || "", bio: u.bio || "", location: u.location || "",
     rate: u.rate || 0, hours: u.hours || 20, skills: parse(u.skills || "[]"), portfolio: portfolioOf(u.id),
     how: { com: u.ws_com || "", resp: u.ws_resp || "", fb: u.ws_fb || "", foco: u.ws_foco || "" },
+    searchVisible: !!u.search_visible,
     tag: u.tag || "", company: u.company || "", done: stats.n, avatar: avatarUrl(u.id, u.avatar_v), rating: ratingOf(u.id), verified: u.verified_at || "",
   };
 }
@@ -498,7 +499,7 @@ const unreadCount = id => one(`SELECT COUNT(*) n FROM messages m JOIN threads t 
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id).n;
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id) || {};
@@ -537,6 +538,7 @@ route("POST", "/api/me/role", ({ user, body }) => {
 // SALVAR PERFIL: limpa e corta cada campo no tamanho certo (título até 100 letras, bio até
 // 1200, no máximo 12 habilidades...) e grava. Se veio CPF/CNPJ, confere se é válido antes.
 route("PUT", "/api/me/profile", ({ user, body }) => {
+  if (typeof body.searchVisible === "boolean") run("UPDATE profiles SET search_visible = ? WHERE user_id = ?", body.searchVisible ? 1 : 0, user.id);
   const how = body.how || {};
   run(`UPDATE profiles SET title=?, bio=?, location=?, rate=?, hours=?, skills=?, ws_com=?, ws_resp=?, ws_fb=?, ws_foco=?, tag=?, company=? WHERE user_id=?`,
     str(body.title, 100), str(body.bio, 1200), str(body.location, 80), int(body.rate, 0, 100000), int(body.hours, 1, 60),
@@ -666,11 +668,8 @@ route("PUT", "/api/me/energy", ({ user, body }) => {
 // título, bio, habilidades e jeito de se comunicar. A outra rota mostra um perfil com avaliações.
 // --- talentos
 route("GET", "/api/talents", ({ query }) => {
-  const q = str(query.get("q") || "", 80).toLowerCase();
-  const rows = all(`SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} ORDER BY (p.title != '') DESC, u.id DESC LIMIT 200`);
-  let out = rows.map(r => profileOf(r.id)).filter(Boolean);
-  if (q) out = out.filter(t => [t.name, t.title, t.bio, t.skills.join(" "), t.how.com].join(" ").toLowerCase().includes(q));
-  return { talents: out };
+  const { talents, pagination } = seo.listTalents(query);
+  return { talents, pagination };
 }, { auth: false });
 
 route("GET", "/api/talents/:id", ({ params }) => {
@@ -684,15 +683,8 @@ route("GET", "/api/talents/:id", ({ params }) => {
 // flexível) e sort (ordenar por clareza ou por valor; valor por hora conta como 15 horas).
 // --- vagas
 route("GET", "/api/jobs", ({ query }) => {
-  const rows = all(JOB_SELECT + " WHERE j.status = 'aberta' ORDER BY j.created_at DESC, j.id DESC LIMIT 300").map(jobOut);
-  const q = str(query.get("q") || "", 80).toLowerCase(), cat = query.get("cat") || "";
-  let r = rows.filter(j => (!cat || j.cat === cat)
-    && (query.get("clear") !== "1" || j.clarity >= 80) && (query.get("async") !== "1" || j.async) && (query.get("flex") !== "1" || j.flex)
-    && (!q || (j.title + " " + j.skills.join(" ") + " " + j.client + " " + j.company).toLowerCase().includes(q)));
-  const sort = query.get("sort");
-  if (sort === "clareza") r.sort((a, b) => b.clarity - a.clarity);
-  if (sort === "valor") r.sort((a, b) => (b.budget_type === "hora" ? b.budget * 15 : b.budget) - (a.budget_type === "hora" ? a.budget * 15 : a.budget));
-  return { jobs: r };
+  const { jobs, pagination } = seo.listJobs(query);
+  return { jobs, pagination };
 }, { auth: false });
 
 route("GET", "/api/me/jobs", ({ user }) => ({ jobs: all(JOB_SELECT + " WHERE j.client_id = ? ORDER BY j.created_at DESC", user.id).map(jobOut) }), { role: "cliente" });
@@ -2335,6 +2327,23 @@ const stamp = name => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
+const { renderDocument } = require("./dist/seo/seo-document");
+const publicPayments = { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS };
+const seo = require("./dist/seo/seo").createSeo({ one, all, JOB_SELECT, jobOut, profileOf, hasFreelaSQL: HAS("freela"), payments: publicPayments, publicDir: PUBLIC_DIR });
+const editorialPaths = new Set(Object.keys(require("./dist/seo/seo-content").pages));
+const stampHtml = html => html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
+function servePublicPage(req, res, url) {
+  if (url.pathname === "/robots.txt") { send(res, 200, req.method === "HEAD" ? "" : seo.robots(), { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=300" }); return true; }
+  if (url.pathname === "/sitemap.xml") { send(res, 200, req.method === "HEAD" ? "" : seo.sitemap(), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" }); return true; }
+  const page = seo.page(url.pathname, url.searchParams);
+  if (!page) return false;
+  if (page.status === 404) page.canonicalPath = url.pathname;
+  const template = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+  const html = renderDocument(template, page, seo.origin, { standalone: editorialPaths.has(url.pathname), payments: publicPayments });
+  send(res, page.status || 200, req.method === "HEAD" ? "" : stampHtml(html), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ...(page.indexable === false ? { "X-Robots-Tag": "noindex, follow" } : {}) });
+  return true;
+}
+
 const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res) {
@@ -2357,13 +2366,16 @@ function serveStatic(req, res, pathname) {
     // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
-    if (req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
+    if (ext !== ".html" && req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
     if (ext === ".html") {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
       return fs.readFile(file, "utf8", (err2, html) => {
         if (err2) return send(res, 404, "Não encontrado");
-        html = html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
-        send(res, 200, html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache" });
+        const legal = pathname === "/privacidade" || pathname === "/termos";
+        const title = (html.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "Osmo Talents";
+        const description = (html.match(/<meta name="description" content="([^"]*)"/) || [])[1] || "Área do aplicativo Osmo Talents.";
+        html = renderDocument(html, { title, description, canonicalPath: pathname, indexable: legal }, seo.origin, { payments: publicPayments });
+        send(res, 200, req.method === "HEAD" ? "" : stampHtml(html), { "Content-Type": MIME[".html"], "Cache-Control": "no-cache", ...(!legal ? { "X-Robots-Tag": "noindex, follow" } : {}) });
       });
     }
     fs.readFile(file, (err2, buf) => err2 ? send(res, 404, "Não encontrado") : send(res, 200, buf, headers));
@@ -2407,6 +2419,15 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith("/api/tv/remote/")) return tvRemote.handle(req, res, url, ip, { send, readBody, limit, HttpError });
   if (!url.pathname.startsWith("/api/")) {
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "Método não permitido");
+    const aliases = { "/index.html": "/", "/termos.html": "/termos", "/privacidade.html": "/privacidade" };
+    const clean = aliases[url.pathname] || (url.pathname.length > 1 && url.pathname.endsWith("/") && (APP_PATH.test(url.pathname) || editorialPaths.has(url.pathname.slice(0, -1))) ? url.pathname.slice(0, -1) : url.pathname);
+    const canonicalHost = new URL(seo.origin).hostname;
+    const incomingHost = (req.headers.host || "").split(":")[0].toLowerCase();
+    const aliasHost = incomingHost === "www." + canonicalHost || incomingHost === "app." + canonicalHost;
+    if (clean !== url.pathname || aliasHost) {
+      return send(res, 301, "", { Location: seo.origin + clean + url.search, "Cache-Control": "no-cache" });
+    }
+    if (servePublicPage(req, res, url)) return;
     return serveStatic(req, res, url.pathname);
   }
   try {

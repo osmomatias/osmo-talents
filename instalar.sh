@@ -73,6 +73,10 @@ fi
 if [ ! -f "$APP_DIR/.env" ]; then
   printf "PORT=%s\nHOST=127.0.0.1\nCOOKIE_SECURE=false\n" "$PORT" > "$APP_DIR/.env"
 fi
+# Pacotes publicados já incluem dist. Uma instalação a partir das fontes precisa compilar.
+if ! "$NODE_BIN" "$APP_DIR/scripts/ensure-build.cjs" --check; then
+  (cd "$APP_DIR" && npm ci --include=dev && npm run build && npm prune --omit=dev)
+fi
 PORT="$(grep -E '^PORT=' "$APP_DIR/.env" | cut -d= -f2 || echo 3000)"
 chown -R root:root "$APP_DIR"
 # arquivos vindos do Mac podem chegar só com permissão do dono; o app precisa conseguir ler

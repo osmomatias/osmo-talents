@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.router.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "include": ["src/router.ts", "typecheck/router.ts"]
+}

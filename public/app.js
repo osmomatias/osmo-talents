@@ -344,6 +344,16 @@ function appBadge(n) {
   if (!("setAppBadge" in navigator)) return;
   (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
+// Navegação usa links reais: abrir em nova aba, teclado e crawlers compartilham a mesma URL.
+function upgradeNavigationLinks(root = document) {
+  root.querySelectorAll('button[data-go]').forEach(button => {
+    const anchor = document.createElement("a");
+    for (const attr of button.attributes) if (attr.name !== "type") anchor.setAttribute(attr.name, attr.value);
+    anchor.href = url(button.dataset.go);
+    anchor.innerHTML = button.innerHTML;
+    button.replaceWith(anchor);
+  });
+}
 function renderChrome() {
   const unread = ME ? ME.unread : 0;
   appBadge(unread);
@@ -378,12 +388,13 @@ function renderChrome() {
     : [["inicio", "Início"], ME.role === "cliente" ? ["talentos", "Talentos"] : ["vagas", "Vagas"], ["mensagens", "Mensagens"], ["painel", "Painel"], ["perfil", "Perfil"]];
   $("#tabbar").innerHTML = `<div class="tb-pill">${tabs.map(([k, label]) => `<button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}</span>${k === "mensagens" && unread ? `<span class="badge" aria-label="${unread} não lidas">${unread}</span>` : ""}</button>`).join("")}</div>
     <button class="tb-search" id="tbSearch" aria-label="${ME && ME.role === "cliente" ? "Buscar talentos" : "Buscar vagas"}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.buscar}</svg></button>`;
-  const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled ? `Pagamento protegido pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
+  const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled && !PAY.sandbox ? `Pagamento processado pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
+  upgradeNavigationLinks();
   markNav();
 }
 function markNav() {
   const name = curH().split("-")[0];
-  $$("#nav button, #topActions [data-go], #mmenu [data-go], #tabbar [data-go]").forEach(b => {
+  $$("#nav [data-go], #topActions [data-go], #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go;
     const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name)) || (g === "panorama" && name === "gestao");
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
@@ -431,9 +442,9 @@ function pathToH(pathname, hash) {
 }
 const curH = () => pathToH(location.pathname, location.hash);
 const url = h => hToPath(h); // para links: href="${url("vaga-" + id)}"
-function go(h) {
-  const p = hToPath(h);
-  if (p !== location.pathname + location.hash) history.pushState(null, "", p);
+function go(h, search = "") {
+  const p = hToPath(h) + search;
+  if (p !== location.pathname + location.search + location.hash) history.pushState(null, "", p);
   return route();
 }
 // link antigo "osmo.com.br/#vaga-12" vira "osmo.com.br/vagas/12" (sem criar entrada nova no histórico)
@@ -456,6 +467,17 @@ function needLogin(role) {
 function emptyBox(title, text, goTo, label) {
   return `<div class="empty"><b>${esc(title)}</b>${text ? `<p class="muted">${esc(text)}</p>` : ""}${goTo ? `<button class="btn" data-go="${goTo}">${esc(label)}</button>` : ""}</div>`;
 }
+function renderBreadcrumbs(name, id) {
+  const labels = { inicio: "Início", vagas: "Vagas", vaga: "Detalhes da vaga", talentos: "Talentos", talento: "Perfil do talento", proposta: "Enviar proposta", mensagens: "Mensagens", projetos: "Projetos", projeto: "Detalhes do projeto", contrato: "Contrato", entrar: "Entrar", esqueci: "Esqueci minha senha", recuperar: "Recuperar senha", avisos: "Preferências de avisos", escolher: "Escolher perfil", painel: "Meu painel", perfil: "Meu perfil", publicar: "Publicar vaga", panorama: "Administração", gestao: "Gestão de dados", tarefas: "Tarefas", squads: "Squads", top10: "Top 10" };
+  const items = [{ label: "Início", href: "/" }];
+  const parents = { vaga: ["Vagas", "/vagas"], talento: ["Talentos", "/talentos"], proposta: ["Vagas", "/vagas"], projeto: ["Projetos", "/projetos"], contrato: ["Meu painel", "/painel"], gestao: ["Administração", "/admin"] };
+  if (parents[name]) items.push({ label: parents[name][0], href: parents[name][1] });
+  if (name === "proposta" && id) items.push({ label: "Detalhes da vaga", href: `/vagas/${id}` });
+  if (name === "mensagens" && id) items.push({ label: "Mensagens", href: "/mensagens" });
+  if (name !== "inicio") items.push({ label: name === "mensagens" && id ? "Conversa" : labels[name] || "Página" });
+  const box = $("#breadcrumbs");
+  if (box) box.innerHTML = `<span class="breadcrumbs-label">Você está em</span><ol>${items.map((item, i) => `<li>${i ? '<span class="breadcrumbs-separator" aria-hidden="true">/</span>' : ""}${i === items.length - 1 ? `<span aria-current="page">${esc(item.label)}</span>` : `<a href="${esc(item.href)}">${esc(item.label)}</a>`}</li>`).join("")}</ol>`;
+}
 async function route() {
   if (NEW_VERSION) return location.reload();
   document.body.classList.remove("chat-full");
@@ -464,17 +486,25 @@ async function route() {
   const seq = ++renderSeq;
   const h = curH();
   const [name, idStr] = h.split("-"); const id = Number(idStr) || null;
+  const query = new URLSearchParams(location.search);
+  if (name === "vagas") {
+    S.q = query.get("q") || ""; S.cat = query.get("cat") || "";
+    S.clear = query.get("clear") === "1"; S.async = query.get("async") === "1"; S.flex = query.get("flex") === "1";
+    S.sort = query.get("sort") || "recentes"; S.page = Math.max(1, Number(query.get("page")) || 1);
+  }
+  if (name === "talentos") { S.tq = query.get("q") || ""; S.tpage = Math.max(1, Number(query.get("page")) || 1); }
   const off = recursoDaTela(name); // link antigo para um recurso escondido nesta versão
   if (off) { history.replaceState(null, "", hToPath(DESTINO_ESCONDIDO[off])); return route(); }
   const fn = V[name] || V.inicio;
   markNav();
+  renderBreadcrumbs(name, id);
   // trocou de tela e a resposta demorou: mostra blocos no formato do conteúdo
   const skT = h !== SHOWN ? setTimeout(() => { if (seq === renderSeq) { $("#view").innerHTML = skeleton(name); window.scrollTo(0, 0); } }, 150) : null;
   try {
     const html = await fn(id);
     clearTimeout(skT);
     if (seq !== renderSeq || html === undefined) return;
-    $("#view").innerHTML = html; SHOWN = h;
+    $("#view").innerHTML = html; upgradeNavigationLinks($("#view")); SHOWN = h;
     window.scrollTo(0, 0);
     after[name] && after[name](id);
     admBar(name, id);
@@ -486,6 +516,8 @@ async function route() {
     if (seq !== renderSeq) return;
     if (e.status === 401) { ME = null; renderChrome(); S.next = h; go("entrar"); return; }
     $("#view").innerHTML = emptyBox("Não deu para abrir esta página.", e.message, "inicio", "Voltar ao início");
+    upgradeNavigationLinks($("#view"));
+    updatePageMetadata(name, true);
   }
 }
 window.addEventListener("popstate", route);
@@ -496,15 +528,61 @@ document.addEventListener("click", e => {
   if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.hasAttribute("download")) return;
   const u = new URL(a.getAttribute("href"), location.href);
   if (u.origin !== location.origin || (u.pathname !== "/" && !APP_PATH.test(u.pathname))) return; // arquivos, /privacidade, /api... seguem normal
-  e.preventDefault(); go(pathToH(u.pathname, u.hash));
+  e.preventDefault();
+  if (menuOpen) closeMenu(false);
+  go(pathToH(u.pathname, u.hash), u.search);
 }, true);
 // título da aba: o título da tela (ex.: "Identidade visual para cafeteria · Osmo Talents")
 function setPageTitle(name) {
   TR.flush();
   const h1 = $("#view h1") || $("#view h2"), t = h1 ? h1.textContent.replace(/\s+/g, " ").trim() : "";
-  const title = t && name !== "inicio" ? `${t} · Osmo Talents` : "Osmo Talents";
+  const title = t && name !== "inicio" ? `${t} · Osmo Talents` : "Trabalho freelance com briefing claro | Osmo Talents";
   if (typeof pomoTitle !== "undefined") pomoTitle = title; // o Pomodoro devolve este título quando para
   if (!(typeof POMO !== "undefined" && POMO.on && POMO.running)) document.title = title;
+  updatePageMetadata(name);
+}
+const initialSeoPath = location.pathname + location.search;
+let seoHydrated = false, currentPublicProfileIndexable = false;
+function updatePageMetadata(name, failed = false) {
+  if (!seoHydrated && !failed && location.pathname + location.search === initialSeoPath) { seoHydrated = true; return; }
+  seoHydrated = true;
+  const title = name === "inicio" ? "Trabalho freelance com briefing claro | Osmo Talents" : document.title;
+  const summary = $("#view .brief p") || $("#view .lead") || $("#view .listhead p") || $("#view p");
+  const description = (summary ? summary.textContent.replace(/\s+/g, " ").trim() : "Projetos freelance com briefing claro e comunicação combinada na Osmo Talents.").slice(0, 220);
+  const existing = document.querySelector('link[rel="canonical"]');
+  let origin = location.origin;
+  if (existing) { try { origin = new URL(existing.href).origin; } catch {} }
+  const canonical = new URL(location.pathname, origin);
+  const query = new URLSearchParams(location.search);
+  if (["vagas", "talentos"].includes(name)) for (const key of ["cat", "page", "q", "clear", "async", "flex", "sort"]) {
+    const value = query.get(key);
+    if (value && !(key === "page" && Number(value) <= 1) && !(key === "sort" && value === "recentes")) canonical.searchParams.set(key, value);
+  }
+  const setMeta = (attribute, key, value) => {
+    let element = document.head.querySelector(`meta[${attribute}="${key}"]`);
+    if (!element) { element = document.createElement("meta"); element.setAttribute(attribute, key); document.head.appendChild(element); }
+    element.content = value;
+  };
+  let link = existing;
+  if (!link) { link = document.createElement("link"); link.rel = "canonical"; document.head.appendChild(link); }
+  link.href = canonical.href;
+  setMeta("name", "description", description);
+  for (const [property, value] of [["og:title", title], ["og:description", description], ["og:url", canonical.href]]) setMeta("property", property, value);
+  setMeta("name", "twitter:title", title); setMeta("name", "twitter:description", description);
+  const closed = name === "vaga" && $("#view .status") && $("#view .status").textContent.trim() !== "Aberta";
+  const filtered = ["vagas", "talentos"].includes(name) && [...canonical.searchParams.keys()].some(key => key !== "page" && key !== "cat");
+  const indexable = !failed && !closed && !filtered && (["inicio", "vagas", "vaga", "talentos"].includes(name) || name === "talento" && currentPublicProfileIndexable);
+  setMeta("name", "robots", indexable ? "index, follow" : "noindex, follow");
+  document.querySelectorAll('#seo-schema, #client-seo-schema').forEach(element => element.remove());
+  const crumbs = [...document.querySelectorAll("#breadcrumbs li")].map((li, i) => {
+    const anchor = li.querySelector("a"), current = li.querySelector('[aria-current="page"]');
+    return { "@type": "ListItem", position: i + 1, name: (anchor || current || li).textContent.trim(), item: anchor ? new URL(anchor.getAttribute("href"), origin).href : canonical.href };
+  });
+  if (crumbs.length) {
+    const schema = document.createElement("script"); schema.id = "client-seo-schema"; schema.type = "application/ld+json";
+    schema.textContent = JSON.stringify({ "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: crumbs });
+    document.head.appendChild(schema);
+  }
 }
 // SKELETON: os "blocos cinza" que aparecem enquanto a tela carrega, com o formato aproximado
 // de cada tela, com um brilho suave passando (some para quem pede "menos movimento" no sistema).
@@ -547,7 +625,7 @@ V.inicio = async () => {
 <section class="hero">
   <div>
     <span class="label">Trabalho freelance para mentes neurodivergentes</span>
-    <h1 style="margin-top:12px">Trabalho bom, <em>no seu ritmo</em>, com regras claras.</h1>
+    <h1 style="margin-top:12px">Trabalho freelance, <em>no seu ritmo</em>, com briefing claro.</h1>
     <p class="lead"><span class="only-d">Aqui toda vaga tem briefing estruturado, todo perfil diz como a pessoa prefere se comunicar e nenhuma proposta precisa ser escrita do zero.</span><span class="only-m">Vagas com briefing claro e comunicação combinada antes.</span></p>
     <div class="seg" role="group" aria-label="Eu quero">
       <button aria-pressed="${S.aud === "freela"}" data-aud="freela">Quero trabalhar</button>
@@ -572,14 +650,14 @@ V.inicio = async () => {
 </section>
 <section class="stack" style="margin-top:32px">
   <h2>Explore por área</h2>
-  <div class="cats">${CATS.map(c => `<button class="cat" data-cat="${c.id}"><span class="cat-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${CAT_ICONS[c.id] || CAT_ICONS._}</svg></span><b>${c.n}</b><span class="muted">${c.c}</span></button>`).join("")}</div>
+  <div class="cats">${CATS.map(c => `<a class="cat" href="/vagas?cat=${encodeURIComponent(c.id)}"><span class="cat-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${CAT_ICONS[c.id] || CAT_ICONS._}</svg></span><b>${c.n}</b><span class="muted">${c.c}</span></a>`).join("")}</div>
 </section>
 <section class="stack" style="margin-top:56px">
   <h2>Como funciona</h2>
   <div class="steps">
     <div class="step"><h3>Escolha vagas com briefing claro</h3><p class="muted">Cada vaga mostra a porcentagem de clareza: objetivo, entregas, o que está fora do escopo e como será a comunicação.</p></div>
     <div class="step"><h3>Envie uma proposta guiada</h3><p class="muted">Quatro passos curtos, com perguntas de apoio. O rascunho salva sozinho, então dá para pausar e voltar depois.</p></div>
-    <div class="step"><h3>Receba por etapa entregue</h3><p class="muted">O valor fica protegido e é liberado a cada etapa aprovada. Você sempre sabe o que vem a seguir.</p></div>
+    <div class="step"><h3>${PAY.enabled && !PAY.sandbox ? "Receba por etapa entregue" : "Combine entregas por etapa"}</h3><p class="muted">${PAY.enabled && !PAY.sandbox ? "O pagamento é processado pelo Asaas e liberado conforme as etapas aprovadas e os termos da plataforma." : "Os pagamentos estão em simulação durante o período de testes. Não há cobrança nem proteção de valores pela plataforma nesta fase."} <a href="/pagamentos-e-taxas">Entenda pagamentos e taxas</a>.</p></div>
   </div>
 </section>
 <section class="stack" style="margin-top:56px">
@@ -754,14 +832,14 @@ function jobQuery() {
   const p = new URLSearchParams();
   if (S.q) p.set("q", S.q); if (S.cat) p.set("cat", S.cat);
   if (S.clear) p.set("clear", "1"); if (S.async) p.set("async", "1"); if (S.flex) p.set("flex", "1");
-  p.set("sort", S.sort); return p.toString();
+  p.set("sort", S.sort); p.set("page", S.page || 1); return p.toString();
 }
 function jobCard(j) {
-  return `<button class="job" data-go="vaga-${j.id}">
+  return `<a class="job" href="/vagas/${j.id}" data-go="vaga-${j.id}">
     <div><h3>${esc(j.title)}</h3><p class="muted">${esc(j.company || j.client)} · ${when(j.created_at)} · ${j.proposals} ${j.proposals === 1 ? "proposta" : "propostas"}</p></div>
     <div class="price"><b class="mono">${j.budget_type === "hora" ? brl(j.budget) + "/h" : brl(j.budget)}</b><span class="muted">${j.budget_type === "hora" ? "por hora" : "valor fixo"} · ${esc(j.duration)}</span></div>
     <div class="meta">${clarBar(j.clarity)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>
-  </button>`;
+  </a>`;
 }
 const activeFilters = () => [S.cat, S.clear, S.async, S.flex].filter(Boolean).length;
 // celular: filtros mais usados viram chips no topo da lista (mesmo estilo dos chips das vagas); sincronizam com o painel de filtros
@@ -769,8 +847,8 @@ const QUICK = [["clear", "Briefing claro"], ["async", "Assíncrono"], ["flex", "
 const fchipsHTML = () => QUICK.map(([k, n]) => `<button class="chip ${S[k] ? "accent" : ""}" data-fchip="${k}" aria-pressed="${!!S[k]}">${n}</button>`).join("")
   + CATS.map(c => `<button class="chip ${S.cat === c.id ? "accent" : ""}" data-fcat="${c.id}" aria-pressed="${S.cat === c.id}">${c.n}</button>`).join("");
 async function jobsHTML() {
-  const { jobs } = await api("GET", "/api/jobs?" + jobQuery());
-  return { n: jobs.length, html: jobs.length ? jobs.map(jobCard).join("") : emptyBox("Nenhuma vaga com esses filtros.", "Tente desmarcar um filtro ou buscar outra palavra.") };
+  const { jobs, pagination } = await api("GET", "/api/jobs?" + jobQuery());
+  return { n: pagination ? pagination.total : jobs.length, pagination, html: jobs.length ? jobs.map(jobCard).join("") : emptyBox("Nenhuma vaga com esses filtros.", "Tente desmarcar um filtro ou buscar outra palavra.") };
 }
 V.vagas = async () => {
   const r = await jobsHTML();
@@ -784,20 +862,23 @@ V.vagas = async () => {
       <label class="check"><input type="checkbox" id="f_flex" ${S.flex ? "checked" : ""}><span>Prazo flexível</span></label>
     </div></div></details></aside>
   <section class="stack" style="min-width:0">
-    <div class="listhead"><div><h2>Vagas abertas</h2><p class="muted" id="jcount">${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}</p></div>
+    <div class="listhead"><div><h1>Vagas abertas</h1><p class="muted" id="jcount">${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}</p></div>
       <div class="field" style="min-width:180px"><label for="fsort" class="hint">Ordenar por</label><select class="input" id="fsort">
         <option value="recentes" ${S.sort === "recentes" ? "selected" : ""}>Mais recentes</option>
         <option value="clareza" ${S.sort === "clareza" ? "selected" : ""}>Mais claras</option>
         <option value="valor" ${S.sort === "valor" ? "selected" : ""}>Maior valor</option></select></div></div>
     <div class="fchips" id="fchips" role="group" aria-label="Filtros rápidos">${fchipsHTML()}</div>
-    <div class="list" id="jlist">${r.html}</div>
+    <div class="list" id="jlist">${r.html}</div><div id="jobPages">${paginationHTML("/vagas", r.pagination, new URLSearchParams(jobQuery()))}</div>
   </section></div>`;
 };
 let jobsT;
 async function refreshJobs() {
+  S.page = 1;
+  const query = jobQuery(); history.replaceState(null, "", "/vagas?" + query);
+  updatePageMetadata("vagas");
   clearTimeout(jobsT);
   jobsT = setTimeout(async () => {
-    try { const r = await jobsHTML(); $("#jlist").innerHTML = r.html; $("#jcount").textContent = `${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}`; const sm = $("#fbox>summary"); if (sm) sm.textContent = "Filtros" + (activeFilters() ? ` (${activeFilters()})` : ""); const fc = $("#fchips"); if (fc) fc.innerHTML = fchipsHTML(); }
+    try { const r = await jobsHTML(); $("#jlist").innerHTML = r.html; const pages = $("#jobPages"); if (pages) pages.innerHTML = paginationHTML("/vagas", r.pagination, new URLSearchParams(jobQuery())); $("#jcount").textContent = `${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}`; const sm = $("#fbox>summary"); if (sm) sm.textContent = "Filtros" + (activeFilters() ? ` (${activeFilters()})` : ""); const fc = $("#fchips"); if (fc) fc.innerHTML = fchipsHTML(); }
     catch (e) { toast(e.message); }
   }, 250);
 }
@@ -846,19 +927,19 @@ V.vaga = async id => {
     <div class="stack" style="gap:10px"><span class="label">${catName(j.cat)}</span><h1 style="font-size:clamp(1.7rem,4vw,2.5rem)">${esc(j.title)}</h1>
       <div class="row">${pill(JSTATUS, j.status)}${clarBar(j.clarity)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}</div></div>
     <div class="panel brief">
-      <section><span class="label">Objetivo</span><p>${esc(b.obj) || '<span class="muted">Não informado</span>'}</p></section>
-      <section><span class="label">Entregas</span>${b.ent.length ? `<ul>${b.ent.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : '<p class="muted">Não informado</p>'}</section>
-      <section><span class="label">Fora do escopo</span>${b.fora.length ? `<ul>${b.fora.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : `<p class="muted">O cliente não informou. Você pode perguntar na proposta.</p>`}</section>
-      <section><span class="label">Comunicação</span><p>${esc(b.com) || '<span class="muted">Não informado</span>'}</p></section>
-      <section><span class="label">Feedback</span><p>${esc(b.fb) || '<span class="muted">Não informado</span>'}</p></section>
-      <section><span class="label">Referências</span><p>${esc(b.ref) || '<span class="muted">Não informado</span>'}</p></section>
-      ${j.filesCount || owner ? `<section><span class="label">Arquivos</span><div class="stack" style="gap:10px">
+      <section><h2 class="label">Objetivo</h2><p>${esc(b.obj) || '<span class="muted">Não informado</span>'}</p></section>
+      <section><h2 class="label">Entregas</h2>${b.ent.length ? `<ul>${b.ent.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : '<p class="muted">Não informado</p>'}</section>
+      <section><h2 class="label">Fora do escopo</h2>${b.fora.length ? `<ul>${b.fora.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : `<p class="muted">O cliente não informou. Você pode perguntar na proposta.</p>`}</section>
+      <section><h2 class="label">Comunicação</h2><p>${esc(b.com) || '<span class="muted">Não informado</span>'}</p></section>
+      <section><h2 class="label">Feedback</h2><p>${esc(b.fb) || '<span class="muted">Não informado</span>'}</p></section>
+      <section><h2 class="label">Referências</h2><p>${esc(b.ref) || '<span class="muted">Não informado</span>'}</p></section>
+      ${j.filesCount || owner ? `<section><h2 class="label">Arquivos</h2><div class="stack" style="gap:10px">
         ${!ME ? `<p>${j.filesCount} ${j.filesCount === 1 ? "arquivo anexado" : "arquivos anexados"}. <button class="link-btn" data-act="login-then" data-next="vaga-${j.id}">Entre para ver</button></p>`
           : j.files.length ? `<ul class="files">${j.files.map(f => fileRow(f, owner, j.id)).join("")}</ul>` : `<p class="muted">Nenhum arquivo anexado.</p>`}
         ${owner && j.files.length < 6 ? `<div><label class="btn sm" for="jFiles">Anexar arquivos</label><input type="file" id="jFiles" data-job="${j.id}" multiple accept="${FILE_ACCEPT}" class="sr-only"></div>
           <span class="hint">Até 6 arquivos de 10 MB. Só pessoas com conta na Osmo conseguem abrir.</span>` : ""}
         <div id="jFilesErr" class="err" role="alert" hidden></div></div></section>` : ""}
-      ${j.skills.length ? `<section><span class="label">Habilidades</span><div class="row" style="gap:6px">${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div></section>` : ""}
+      ${j.skills.length ? `<section><h2 class="label">Habilidades</h2><div class="row" style="gap:6px">${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div></section>` : ""}
     </div>
     ${j.clarity < 70 ? `<div class="sunk"><b>Este briefing tem pontos em aberto.</b><p class="muted">A proposta guiada sugere perguntas para esclarecer antes de aceitar.</p></div>` : ""}
     ${props}
@@ -976,19 +1057,25 @@ function reviewBox(c) {
 // habilidades, "como eu trabalho melhor", portfólio, avaliações e botão de conversar/convidar).
 /* ---------- talentos ---------- */
 function talentCard(t) {
-  return `<button class="talent" data-go="talento-${t.id}">
+  return `<a class="talent" href="/talentos/${t.id}" data-go="talento-${t.id}">
     <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}${vbadge(t.verified)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
     ${t.tag ? `<div class="row" style="gap:6px"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}
     <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="row" style="gap:10px">${stars(t.rating.avg, t.rating.n)}<span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></span></div>
     ${t.skills.length ? `<div class="row" style="gap:6px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
-  </button>`;
+  </a>`;
+}
+function paginationHTML(path, pagination, query = new URLSearchParams()) {
+  if (!pagination || pagination.pages <= 1) return "";
+  const href = page => { const p = new URLSearchParams(query); p.set("page", page); return esc(path + "?" + p.toString()); };
+  return `<nav class="pagination row" aria-label="Paginação">${pagination.page > 1 ? `<a class="btn" href="${href(pagination.page - 1)}" rel="prev">Anterior</a>` : ""}<span class="muted">Página ${pagination.page} de ${pagination.pages}</span>${pagination.page < pagination.pages ? `<a class="btn" href="${href(pagination.page + 1)}" rel="next">Próxima</a>` : ""}</nav>`;
 }
 async function talentsHTML(q) {
-  const { talents } = await api("GET", "/api/talents?q=" + encodeURIComponent(q || ""));
-  return talents.length ? talents.map(talentCard).join("") : emptyBox("Nenhum talento encontrado.", "Tente outra habilidade.");
+  const params = new URLSearchParams({ q: q || "", page: S.tpage || 1 });
+  const { talents, pagination } = await api("GET", "/api/talents?" + params);
+  return (talents.length ? talents.map(talentCard).join("") : emptyBox("Nenhum talento encontrado.", "Tente outra habilidade.")) + paginationHTML("/talentos", pagination, params);
 }
 V.talentos = async () => `
-<div class="listhead" style="margin-bottom:20px"><div><h2>Talentos</h2><p class="muted">Cada perfil mostra como a pessoa trabalha melhor. Leia antes de convidar.</p></div>
+<div class="listhead" style="margin-bottom:20px"><div><h1>Talentos</h1><p class="muted">Cada perfil mostra como a pessoa trabalha melhor. Leia antes de convidar.</p></div>
   <div class="field" style="min-width:240px"><label for="tq" class="hint">Buscar talento</label><input class="input" id="tq" placeholder="Habilidade ou nome" value="${esc(S.tq || "")}"></div></div>
 <div class="tgrid" id="tgrid">${await talentsHTML(S.tq)}</div>`;
 
@@ -1026,6 +1113,7 @@ document.addEventListener("click", e => {
 
 V.talento = async id => {
   const { talent: t } = await api("GET", "/api/talents/" + id);
+  currentPublicProfileIndexable = !!t.searchVisible && !!(t.title || "").trim() && (t.bio || "").trim().length >= 40;
   let myJobs = [];
   if (ME && ME.role === "cliente") myJobs = (await api("GET", "/api/me/jobs")).jobs.filter(j => j.status === "aberta");
   const self = ME && ME.id === t.id;
@@ -2152,6 +2240,7 @@ V.perfil = async () => {
       ${p.avatar ? `<button type="button" class="btn sm ghost" data-act="avatar-del">Remover</button>` : ""}</div>
       <div id="avatarErr" class="err" role="alert" hidden></div></div></div>
   <form class="stack" id="profForm">
+    ${isF ? `<div class="panel stack" style="gap:10px"><label class="check"><input type="checkbox" id="p_searchVisible" ${p.searchVisible ? "checked" : ""}><span>Permitir que buscadores encontrem meu perfil público</span></label><p class="hint">Ao ativar, as informações do seu perfil público podem aparecer em buscadores e fora da plataforma. A indexação depende dos buscadores e pode levar algum tempo para mudar. Evite incluir informações pessoais que não queira divulgar.</p>${save}</div>` : ""}
     ${sec("sobre", isF ? "Sobre você" : "Sobre a empresa", f("p_name", isF ? "Nome" : "Seu nome", ME.name, 'autocomplete="name" placeholder="Nome e sobrenome"')
       + (isF ? f("p_title", "O que você faz", p.title, 'placeholder="Ex.: Designer de marca e embalagem"')
         + `<div class="row" style="align-items:flex-start">${f("p_rate", "Valor por hora (R$)", p.rate || "", 'inputmode="numeric" class="input mono" placeholder="Ex.: 80"', "Só números. Dá para negociar em cada proposta.")}${f("p_hours", "Horas por semana", p.hours, 'inputmode="numeric" placeholder="Ex.: 20"', "Define quantas propostas você pode ter abertas.")}</div>`
@@ -2372,9 +2461,10 @@ document.addEventListener("click", async e => {
     return;
   }
   if (t.id === "scrim" || t.closest("#a11yClose")) return closeA11y();
+  if (t.closest("a[href]")) return; // links são tratados no interceptor, inclusive Ctrl/Cmd+clique
   const g = t.closest("[data-go]"); if (g) { e.preventDefault(); if (menuOpen) closeMenu(false); return go(g.dataset.go); }
   const a = t.closest("[data-aud]"); if (a) { S.aud = a.dataset.aud; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", b === a)); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; return; }
-  const c = t.closest("[data-cat]"); if (c) { S.cat = c.dataset.cat; return go("vagas"); }
+  const c = t.closest("[data-cat]"); if (c) { S.cat = c.dataset.cat; return go("vagas", "?cat=" + encodeURIComponent(S.cat)); }
   const fq = t.closest("[data-fchip]"); if (fq) { const k = fq.dataset.fchip; S[k] = !S[k]; const cb = $("#f_" + k); if (cb) cb.checked = S[k]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const fc = t.closest("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat ? "" : fc.dataset.fcat; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const au = t.closest("[data-auth]"); if (au) { authMode = au.dataset.auth; return route(); }
@@ -2510,7 +2600,7 @@ function wizValid() {
 document.addEventListener("input", e => {
   const t = e.target, id = t.id;
   if (id === "fq") { S.q = t.value; refreshJobs(); }
-  if (id === "tq") { S.tq = t.value; clearTimeout(document._tq); document._tq = setTimeout(async () => { try { $("#tgrid").innerHTML = await talentsHTML(S.tq); } catch (err) { toast(err.message); } }, 250); }
+  if (id === "tq") { S.tq = t.value; S.tpage = 1; history.replaceState(null, "", "/talentos?" + new URLSearchParams({ q: S.tq })); updatePageMetadata("talentos"); clearTimeout(document._tq); document._tq = setTimeout(async () => { try { $("#tgrid").innerHTML = await talentsHTML(S.tq); } catch (err) { toast(err.message); } }, 250); }
   if (id === "wtext") { W.text = t.value; $("#wcount").textContent = `${words(W.text)} palavras · de 40 a 150 é um bom tamanho`; saveDraft(); }
   if (id === "wval" || id === "wdays") { const v = t.value.replace(/\D/g, ""); if (t.value !== v) t.value = v; W[id === "wval" ? "value" : "days"] = v; const n = Number(W.value) || 0; $("#wcalc").innerHTML = calcHTML(n, Math.round(n * 0.1)); if (W.split) { const d = $("#msDiff"); if (d) $("#msBox").innerHTML = msRows(); } saveDraft(); }
   if (id === "wqs") { W.qs = t.value; saveDraft(); }
@@ -2557,7 +2647,7 @@ document.addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target, btn = f.querySelector('[type="submit"]');
   const showErr = (box, msg) => { const b = $(box); if (b) { b.textContent = msg; b.hidden = false; b.scrollIntoView({ block: "nearest" }); } else toast(msg); };
-  if (f.id === "heroSearch") { const q = $("#heroQ").value; if (S.aud === "freela") { S.q = q; go("vagas"); } else { S.tq = q; go("talentos"); } return; }
+  if (f.id === "heroSearch") { const q = $("#heroQ").value; if (S.aud === "freela") { S.q = q; go("vagas", "?q=" + encodeURIComponent(q)); } else { S.tq = q; go("talentos", "?q=" + encodeURIComponent(q)); } return; }
   if (btn) btn.disabled = true;
   try {
     if (f.id === "authForm") {
@@ -2605,7 +2695,7 @@ document.addEventListener("submit", async e => {
     }
     if (f.id === "profForm") {
       const v = id => ($("#" + id) || {}).value || "";
-      const body = { name: v("p_name"), title: v("p_title"), rate: Number(v("p_rate")) || 0, hours: Number(v("p_hours")) || 20, location: v("p_loc"),
+      const body = { ...($("#p_searchVisible") ? { searchVisible: $("#p_searchVisible").checked } : {}), name: v("p_name"), title: v("p_title"), rate: Number(v("p_rate")) || 0, hours: Number(v("p_hours")) || 20, location: v("p_loc"),
         skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
         notify: (f.querySelector('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", err.message); }
@@ -3170,7 +3260,7 @@ window.addEventListener("resize", () => { if (menuOpen && !matchMedia("(max-widt
 document.addEventListener("keydown", e => {
   if (menuOpen) {
     if (e.key === "Escape") return closeMenu(true);
-    if (e.key === "Tab") { const f = [...$("#mmenu").querySelectorAll("button")]; const i = f.indexOf(document.activeElement);
+    if (e.key === "Tab") { const f = [...$("#mmenu").querySelectorAll("button, a[href]")]; const i = f.indexOf(document.activeElement);
       if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); } }
     return;
   }
@@ -3193,4 +3283,4 @@ addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
 if (oauthErr) history.replaceState(null, "", location.pathname + location.hash);
 fixLegacyHash();
-Promise.all([refreshMe(), loadTaxonomy(), TR.ready]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } });
+Promise.all([refreshMe(), loadTaxonomy(), TR.ready]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } }).catch(() => { if (!$("#view h1")) $("#view").innerHTML = emptyBox("Não deu para carregar o aplicativo.", "Recarregue a página para tentar novamente."); });

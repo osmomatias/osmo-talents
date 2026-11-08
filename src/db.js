@@ -157,6 +157,8 @@ function addColumn(table, col, def) {
 // Colunas novas para pagamento: o CPF/CNPJ de quem paga, o código do cliente no Asaas e,
 // em cada etapa, o código da cobrança, a situação do pagamento (a pagar, aguardando,
 // pago, liberado), o link da fatura e quando a etapa foi entregue.
+// Search visibility is optional; existing profiles are not opted in automatically.
+addColumn("profiles", "search_visible", "INTEGER NOT NULL DEFAULT 0");
 addColumn("profiles", "cpf_cnpj", "TEXT DEFAULT ''");
 addColumn("profiles", "asaas_customer_id", "TEXT DEFAULT ''");
 addColumn("milestones", "pay_id", "TEXT DEFAULT ''");

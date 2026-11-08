@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.seo.json",
+  "compilerOptions": {
+    "outDir": "dist/router"
+  },
+  "include": ["src/router.ts"]
+}

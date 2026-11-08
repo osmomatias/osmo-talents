@@ -5,3 +5,6 @@ data/
 .DS_Store
 .claude/
 Claude outputs/
+
+# JavaScript gerado a partir dos módulos TypeScript
+dist/
