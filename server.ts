@@ -998,13 +998,15 @@ function ensureContractForProposal(p: AppRow, actorId: number | null = p.client_
   return tx(() => {
     run("UPDATE proposals SET status = 'aceita' WHERE id = ?", p.id);
     const c = Number(run("INSERT INTO contracts (job_id, proposal_id, client_id, freela_id, value) VALUES (?,?,?,?,?)", p.job_id, p.id, p.client_id, p.freela_id, p.value).lastInsertRowid);
-    parse<ProposalMilestone[]>(p.milestones).forEach((m, i) => run("INSERT INTO milestones (contract_id, pos, title, value) VALUES (?,?,?,?)", c, i, m.title, m.value));
+    let ms = parse<ProposalMilestone[]>(p.milestones);
+    if (!ms.length) ms = [{ title: "Entrega completa", value: p.value }];
+    ms.forEach((m, i) => run("INSERT INTO milestones (contract_id, pos, title, value) VALUES (?,?,?,?)", c, i, m.title, m.value));
     run("UPDATE jobs SET status = 'em_andamento' WHERE id = ?", p.job_id);
     const th = threadFor(p.job_id, p.client_id, p.freela_id);
-    postMessage(th, null, `Proposta aceita. Contrato criado com ${parse(p.milestones).length} etapa(s). Cada etapa é paga antecipadamente e o repasse depende da aprovação do cliente.`, actorId);
+    postMessage(th, null, `Proposta aceita. Contrato criado com ${ms.length} etapa(s). Cada etapa é paga antecipadamente e o repasse depende da aprovação do cliente.`, actorId);
     if (PAYMENTS) {
       const hasPayout = stripe.SELECTED
-        ? one("SELECT 1 FROM stripe_accounts WHERE user_id = ? AND charges_enabled = 1 AND payouts_enabled = 1", p.freela_id)
+        ? one("SELECT 1 FROM stripe_accounts WHERE user_id = ? AND active = 1", p.freela_id)
         : one("SELECT 1 FROM payout_accounts WHERE user_id = ?", p.freela_id);
       postMessage(th, null, "Próximo passo: o cliente paga a primeira etapa pelo Painel. O trabalho começa quando o pagamento for confirmado."
         + (hasPayout ? "" : " Freelancer: ative sua conta de recebimento em Meu perfil para a cobrança poder ser gerada."), actorId);
