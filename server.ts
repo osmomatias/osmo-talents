@@ -1656,8 +1656,8 @@ const ADMIN_ENT: Record<string, AdminEntity> = {
       const jid = query ? int(query.get("job_id"), 0) : 0;
       const cleanId = q.replace(/^#/, "");
       return all(`SELECT pr.id, pr.job_id, j.title job, j.status job_status, j.client_id, uc.name client,
-        pr.freela_id, u.name freela, (SELECT v.provider FROM verifications v WHERE v.user_id = u.id LIMIT 1) verified,
-        CASE WHEN p.avatar IS NOT NULL THEN '/avatar/' || u.id ELSE '' END avatar,
+        pr.freela_id, u.name freela, (SELECT 1 FROM verifications v WHERE v.user_id = u.id LIMIT 1) verified,
+        (SELECT a.v FROM avatars a WHERE a.user_id = u.id) avatar_v,
         pr.value, pr.days, pr.status, pr.text, pr.questions, pr.milestones, pr.created_at,
         (SELECT c.id FROM contracts c WHERE c.proposal_id = pr.id LIMIT 1) contract_id
         FROM proposals pr
@@ -1671,6 +1671,7 @@ const ADMIN_ENT: Record<string, AdminEntity> = {
         ORDER BY pr.id DESC LIMIT 50 OFFSET ?`,
         st, st, jid, jid, q, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, cleanId, off).map(r => ({
           ...r,
+          avatar: avatarUrl(Number(r.freela_id), r.avatar_v),
           milestones_list: parse<ProposalMilestone[]>(r.milestones),
           files: attsOf("proposal_id", Number(r.id)),
         }));
