@@ -173,6 +173,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, url: URL, ip: s
       limit("tvpair:" + ip, 12, 600_000);
       const code = String(b.code || "").replace(/\D/g, ""), c = codes.get(code);
       if (!c || c.exp < Date.now()) throw new HttpError(400, "Código não encontrado. Confira os 6 números que aparecem na TV.");
+      codes.delete(code);
       const k = token(); run("INSERT INTO tv_phones (tv_id, key_hash) VALUES (?, ?)", c.tvId, sha(k));
       emit(room(c.tvId).tvs, { type: "paired" });
       return send(res, 200, { k, online: online(c.tvId) });

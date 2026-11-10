@@ -50,7 +50,7 @@ const field = (form: HTMLFormElement, name: string): HTMLInputElement => form.el
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 // IDIOMA: o I18N (i18n.js) diz o idioma escolhido; LOC é o "jeito local" de escrever datas e números
-const TR: Pick<OsmoI18n, "lang" | "locale" | "t" | "tx" | "flush" | "set" | "ready" | "langs"> = window.I18N || { lang: "pt-BR", locale: "pt-BR", t: s => s, tx: s => s, flush() {}, set() {}, ready: Promise.resolve(), langs: [] };
+const TR: Pick<OsmoI18n, "lang" | "locale" | "t" | "tx" | "flush" | "set" | "ready" | "langs" | "withLanguage"> = window.I18N || { lang: "pt-BR", locale: "pt-BR", t: s => s, tx: s => s, flush() {}, set() {}, ready: Promise.resolve(), langs: [], withLanguage: href => href };
 const LOC = TR.locale;
 const brl = (n: unknown) => "R$ " + Number(n || 0).toLocaleString(LOC);
 const dec = (n: unknown) => Number(n || 0).toLocaleString(LOC, { maximumFractionDigits: 1 }); // 4,5 em português; 4.5 em inglês
@@ -318,28 +318,29 @@ const loadLottie = () => LOTTIE_P || (LOTTIE_P = new Promise<OsmoLottie>((ok, no
   const sc = document.createElement("script"); sc.src = "/vendor/lottie_light.min.js"; sc.onload = () => ok(window.lottie!); sc.onerror = no; document.head.appendChild(sc);
 }).catch(() => { LOTTIE_P = null; return null; }));
 const calmMotion = () => document.documentElement.classList.contains("calm") || matchMedia("(prefers-reduced-motion: reduce)").matches;
-async function prepRoleAnim() {
-  const box = $("#mmenu .role-anim") as HTMLElement & { _anim?: OsmoLottieAnimation };
+async function prepRoleAnim(targetBox?: HTMLElement | null) {
+  const box = (targetBox || $("#mmenu .role-anim") || $("#view .role-anim")) as (HTMLElement & { _anim?: OsmoLottieAnimation }) | null;
   if (!box || box._anim || calmMotion()) return box && box._anim;
   const L = await loadLottie(); if (!L || !box.isConnected || box._anim) return box._anim || null;
   const a = box._anim = L.loadAnimation({ container: box, renderer: "svg", loop: false, autoplay: false, path: "/anim/trocar-papel.json" });
   a.addEventListener("DOMLoaded", () => { box.querySelector<HTMLElement>(".ico-static")?.remove(); box.classList.add("on"); });
   return a;
 }
-const playRoleAnim = async () => { const a = await prepRoleAnim(); if (a && a.isLoaded) a.goToAndPlay(0, true); };
+const playRoleAnim = async (targetBox?: HTMLElement | null) => { const a = await prepRoleAnim(targetBox); if (a && a.isLoaded) a.goToAndPlay(0, true); };
 document.addEventListener("pointerover", e => { const target = eventElement(e); if (!target) return;
-  const b = target.closest && target.closest<HTMLElement>(".mm-role");
-  if (b && e.pointerType === "mouse" && !b.contains(e.relatedTarget as Node | null)) playRoleAnim();
+  const b = target.closest && target.closest<HTMLElement>(".mm-role, .role-sub");
+  if (b && e.pointerType === "mouse" && !b.contains(e.relatedTarget as Node | null)) playRoleAnim(b.querySelector<HTMLElement>(".role-anim"));
 });
-async function switchRole(to: string, back?: string) {
+async function switchRole(to: string, back?: string, trigger?: HTMLElement | null) {
   if (!hasBoth()) {
     const ok = await confirmSheet(to === "cliente"
       ? { title: "Usar a conta também para contratar?", text: "Você continua sendo freelancer. Passa a poder publicar vagas e convidar talentos, e troca de papel pelo menu quando quiser.", ok: "Ativar papel de cliente" }
       : { title: "Usar a conta também para trabalhar?", text: "Você continua sendo cliente. Passa a poder enviar propostas para vagas, e troca de papel pelo menu quando quiser.", ok: "Ativar papel de freelancer" });
     if (!ok) return;
   }
-  const t0 = Date.now(), anim = menuOpen && !calmMotion();
-  if (anim) playRoleAnim();
+  const animBox = trigger?.querySelector<HTMLElement>(".role-anim") || (menuOpen ? $("#mmenu .role-anim") : $("#view .role-anim"));
+  const t0 = Date.now(), anim = !!animBox && !calmMotion();
+  if (anim) playRoleAnim(animBox);
   const r = await api<{ role: OsmoRole; added: boolean }>("POST", "/api/me/role", { role: to });
   const left = 950 - (Date.now() - t0); // deixa a animação terminar antes de redesenhar o menu
   if (anim && left > 0) await new Promise(res => setTimeout(res, left));
@@ -378,10 +379,10 @@ function renderChrome() {
       <button class="top-tool" data-go="painel" aria-label="Painel" title="Painel"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.painel}</svg></button>` : ""}
     <button class="top-tool" id="a11yBtn" aria-label="Ajustes" title="Ajustes" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.ajustes}</svg></button>
     </div>
-    ${ME ? `<button class="whoami" data-go="perfil" title="Meu perfil">${esc(ME!.name.split(" ")[0])}</button>` : `<button class="btn sm" data-go="entrar">Entrar</button>`}
+    ${ME ? `<button class="whoami" data-go="perfil" title="Meu perfil">${av(ME!.name, ME!.id, "xs", ME!.profile && ME!.profile.avatar)}<span>${esc(ME!.name.split(" ")[0])}</span></button>` : `<button class="btn sm" data-go="entrar">Entrar</button>`}
     ${ME && ME!.isAdmin ? `<button class="btn sm only-d" data-go="panorama">Admin</button>` : ""}
     ${pub}
-    <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
+    <button class="menu-btn" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="mmenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="badge" data-unread hidden></span></button>`;
   const item = (k: string, label: string, extra = "") => `<li><button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}${extra}</span><span class="chev" aria-hidden="true">›</span></button></li>`;
   $("#mmBody").innerHTML = `
     ${ME ? `<button class="mm-user" data-go="perfil">${av(ME!.name, ME!.id, "", ME!.profile && ME!.profile.avatar)}<span class="mm-user-txt"><b>Olá, ${esc(ME!.name.split(" ")[0])}</b><span>Meu perfil</span></span><span class="chev" aria-hidden="true">›</span></button>${roleSwitch()}` : ""}
@@ -401,7 +402,7 @@ function renderChrome() {
     : [["inicio", "Início"], ME!.role === "cliente" ? ["talentos", "Talentos"] : ["vagas", "Vagas"], ["mensagens", "Mensagens"], ["painel", "Painel"], ["perfil", "Perfil"]];
   $("#tabbar").innerHTML = `<div class="tb-pill">${tabs.map(([k, label]) => `<button data-go="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg><span>${label}</span>${k === "mensagens" && unread ? `<span class="badge" aria-label="${unread} não lidas">${unread}</span>` : ""}</button>`).join("")}</div>
     <button class="tb-search" id="tbSearch" aria-label="${ME && ME!.role === "cliente" ? "Buscar talentos" : "Buscar vagas"}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.buscar}</svg></button>`;
-  const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled && !PAY.sandbox ? `Pagamento processado pelo Asaas · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
+  const pn = $("#payNote"); if (pn) pn.textContent = PAY.enabled ? `Pagamento processado ${PAY.provider === "stripe" ? "pela Stripe" : "pelo Asaas"}${PAY.sandbox ? " · ambiente de testes" : ""} · taxa Osmo ${PAY.fee}%` : "Pagamentos ainda simulados durante o período de testes.";
   upgradeNavigationLinks();
   markNav();
 }
@@ -409,7 +410,7 @@ function markNav() {
   const name = curH().split("-")[0];
   $$("#nav [data-go], #topActions [data-go], #mmenu [data-go], #tabbar [data-go]").forEach(b => {
     const g = b.dataset.go!;
-    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name)) || (g === "panorama" && name === "gestao");
+    const on = g === name || (g === "vagas" && (name === "vaga" || name === "proposta")) || (g === "talentos" && name === "talento") || (g === "tarefas" && ["projeto", "projetos", "contrato"].includes(name)) || (g === "panorama" && (name === "gestao" || name === "propostas"));
     on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
   });
 }
@@ -430,12 +431,13 @@ function markNav() {
 const ID_PATHS: Record<string, string> = { vaga: "vagas", talento: "talentos", mensagens: "mensagens", contrato: "contratos", projeto: "projetos" };
 const SECRET = ["recuperar", "avisos", "escolher"];
 // endereços que são telas do app (o servidor usa a mesma lista para entregar o site em vez da 404)
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|propostas|tarefas|squads|gestao|top10|admin(?:\/(?:dados|propostas))?)\/?$/;
 function hToPath(h: string) {
   const i = h.indexOf("-"), name = i < 0 ? h : h.slice(0, i), id = i < 0 ? "" : h.slice(i + 1);
   if (!name || name === "inicio") return "/";
-  if (name === "panorama") return "/admin";       // área do admin: visão geral
-  if (name === "gestao") return "/admin/dados";   // área do admin: dados
+  if (name === "panorama") return "/admin";           // área do admin: visão geral
+  if (name === "propostas") return "/admin/propostas"; // área do admin: painel de propostas
+  if (name === "gestao") return "/admin/dados";       // área do admin: dados
   if (SECRET.includes(name)) return `/${name}${id ? "#" + id : ""}`;
   if (name === "proposta") return `/vagas/${id}/proposta`;
   if (ID_PATHS[name] && id) return `/${ID_PATHS[name]}/${id}`;
@@ -445,6 +447,7 @@ function pathToH(pathname: string, hash: string) {
   const p = pathname.replace(/\/+$/, "") || "/", code = (hash || "").slice(1);
   if (p === "/") return "inicio";
   if (p === "/admin") return "panorama";
+  if (p === "/admin/propostas") return "propostas";
   if (p === "/admin/dados") return "gestao";
   let m = p.match(/^\/vagas\/(\d+)\/proposta$/);
   if (m) return "proposta-" + m[1];
@@ -454,9 +457,9 @@ function pathToH(pathname: string, hash: string) {
   return SECRET.includes(name) && code ? name + "-" + code : name;
 }
 const curH = () => pathToH(location.pathname, location.hash);
-const url = (h: string) => hToPath(h); // para links: href="${url("vaga-" + id)}"
+const url = (h: string) => TR.withLanguage(hToPath(h)); // para links: href="${url("vaga-" + id)}"
 function go(h: string, search = "") {
-  const p = hToPath(h) + search;
+  const p = TR.withLanguage(hToPath(h) + search);
   if (p !== location.pathname + location.search + location.hash) history.pushState(null, "", p);
   return route();
 }
@@ -465,7 +468,7 @@ function fixLegacyHash() {
   if (location.pathname !== "/" || location.hash.length < 2) return false;
   const old = location.hash.slice(1), name = old.split("-")[0];
   if (!V[name]) return false;
-  history.replaceState(null, "", hToPath(old)); return true;
+  history.replaceState(null, "", TR.withLanguage(hToPath(old))); return true;
 }
 function needLogin(role?: OsmoRole) {
   if (!ME) { S.next = curH(); go("entrar"); return true; }
@@ -481,15 +484,22 @@ function emptyBox(title: string, text: string, goTo?: string, label?: string) {
   return `<div class="empty"><b>${esc(title)}</b>${text ? `<p class="muted">${esc(text)}</p>` : ""}${goTo ? `<button class="btn" data-go="${goTo}">${esc(label)}</button>` : ""}</div>`;
 }
 function renderBreadcrumbs(name: string, id: number | null) {
-  const labels: Record<string, string> = { inicio: "Início", vagas: "Vagas", vaga: "Detalhes da vaga", talentos: "Talentos", talento: "Perfil do talento", proposta: "Enviar proposta", mensagens: "Mensagens", projetos: "Projetos", projeto: "Detalhes do projeto", contrato: "Contrato", entrar: "Entrar", esqueci: "Esqueci minha senha", recuperar: "Recuperar senha", avisos: "Preferências de avisos", escolher: "Escolher perfil", painel: "Meu painel", perfil: "Meu perfil", publicar: "Publicar vaga", panorama: "Administração", gestao: "Gestão de dados", tarefas: "Tarefas", squads: "Squads", top10: "Top 10" };
+  const box = $("#breadcrumbs");
+  if (!box) return;
+  if (name === "inicio") {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  const labels: Record<string, string> = { inicio: "Início", vagas: "Vagas", vaga: "Detalhes da vaga", talentos: "Talentos", talento: "Perfil do talento", proposta: "Enviar proposta", mensagens: "Mensagens", projetos: "Projetos", projeto: "Detalhes do projeto", contrato: "Contrato", entrar: "Entrar", esqueci: "Esqueci minha senha", recuperar: "Recuperar senha", avisos: "Preferências de avisos", escolher: "Escolher perfil", painel: "Meu painel", perfil: "Meu perfil", publicar: "Publicar vaga", panorama: "Administração", propostas: "Gerenciar propostas", gestao: "Gestão de dados", tarefas: "Tarefas", squads: "Squads", top10: "Top 10" };
   const items: { label: string; href?: string }[] = [{ label: "Início", href: "/" }];
-  const parents: Record<string, [string, string]> = { vaga: ["Vagas", "/vagas"], talento: ["Talentos", "/talentos"], proposta: ["Vagas", "/vagas"], projeto: ["Projetos", "/projetos"], contrato: ["Meu painel", "/painel"], gestao: ["Administração", "/admin"] };
+  const parents: Record<string, [string, string]> = { vaga: ["Vagas", "/vagas"], talento: ["Talentos", "/talentos"], proposta: ["Vagas", "/vagas"], projeto: ["Projetos", "/projetos"], contrato: ["Meu painel", "/painel"], propostas: ["Administração", "/admin"], gestao: ["Administração", "/admin"] };
   if (parents[name]) items.push({ label: parents[name][0], href: parents[name][1] });
   if (name === "proposta" && id) items.push({ label: "Detalhes da vaga", href: `/vagas/${id}` });
   if (name === "mensagens" && id) items.push({ label: "Mensagens", href: "/mensagens" });
-  if (name !== "inicio") items.push({ label: name === "mensagens" && id ? "Conversa" : labels[name] || "Página" });
-  const box = $("#breadcrumbs");
-  if (box) box.innerHTML = `<span class="breadcrumbs-label">Você está em</span><ol>${items.map((item, i) => `<li>${i ? '<span class="breadcrumbs-separator" aria-hidden="true">/</span>' : ""}${i === items.length - 1 ? `<span aria-current="page">${esc(item.label)}</span>` : `<a href="${esc(item.href)}">${esc(item.label)}</a>`}</li>`).join("")}</ol>`;
+  items.push({ label: name === "mensagens" && id ? "Conversa" : labels[name] || "Página" });
+  box.innerHTML = `<span class="breadcrumbs-label">Você está em</span><ol>${items.map((item, i) => `<li>${i ? '<span class="breadcrumbs-separator" aria-hidden="true">/</span>' : ""}${i === items.length - 1 ? `<span aria-current="page">${esc(item.label)}</span>` : `<a href="${esc(item.href)}">${esc(item.label)}</a>`}</li>`).join("")}</ol>`;
 }
 async function route() {
   if (NEW_VERSION) return location.reload();
@@ -507,7 +517,7 @@ async function route() {
   }
   if (name === "talentos") { S.tq = query.get("q") || ""; S.tpage = Math.max(1, Number(query.get("page")) || 1); }
   const off = recursoDaTela(name); // link antigo para um recurso escondido nesta versão
-  if (off) { history.replaceState(null, "", hToPath(DESTINO_ESCONDIDO[off])); return route(); }
+  if (off) { history.replaceState(null, "", TR.withLanguage(hToPath(DESTINO_ESCONDIDO[off]))); return route(); }
   const fn = V[name] || V.inicio;
   markNav();
   renderBreadcrumbs(name, id);
@@ -518,6 +528,7 @@ async function route() {
     if (skT !== null) clearTimeout(skT);
     if (seq !== renderSeq || html === undefined) return;
     $("#view").innerHTML = html; upgradeNavigationLinks($("#view")); SHOWN = h;
+    $$("#view .role-anim").forEach(el => prepRoleAnim(el));
     window.scrollTo(0, 0);
     after[name] && after[name](id);
     admBar(name, id);
@@ -541,6 +552,8 @@ document.addEventListener("click", e => { const target = eventElement(e); if (!t
   if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.hasAttribute("download")) return;
   const u = new URL(a.getAttribute("href")!, location.href);
   if (u.origin !== location.origin || (u.pathname !== "/" && !APP_PATH.test(u.pathname))) return; // arquivos, /privacidade, /api... seguem normal
+  const requestedLanguage = window.OsmoI18nCore?.pick([u.searchParams.get("lang") || ""]);
+  if (requestedLanguage && requestedLanguage !== TR.lang) return; // outra língua precisa carregar o dicionário desde o início
   e.preventDefault();
   if (menuOpen) closeMenu(false);
   go(pathToH(u.pathname, u.hash), u.search);
@@ -670,7 +683,7 @@ V.inicio = async () => {
   <div class="steps">
     <div class="step"><h3>Escolha vagas com briefing claro</h3><p class="muted">Cada vaga mostra a porcentagem de clareza: objetivo, entregas, o que está fora do escopo e como será a comunicação.</p></div>
     <div class="step"><h3>Envie uma proposta guiada</h3><p class="muted">Quatro passos curtos, com perguntas de apoio. O rascunho salva sozinho, então dá para pausar e voltar depois.</p></div>
-    <div class="step"><h3>${PAY.enabled && !PAY.sandbox ? "Receba por etapa entregue" : "Combine entregas por etapa"}</h3><p class="muted">${PAY.enabled && !PAY.sandbox ? "O pagamento é processado pelo Asaas e liberado conforme as etapas aprovadas e os termos da plataforma." : "Os pagamentos estão em simulação durante o período de testes. Não há cobrança nem proteção de valores pela plataforma nesta fase."} <a href="/pagamentos-e-taxas">Entenda pagamentos e taxas</a>.</p></div>
+    <div class="step"><h3>${PAY.enabled ? "Receba por etapa entregue" : "Combine entregas por etapa"}</h3><p class="muted">${PAY.enabled ? `O pagamento é processado ${PAY.provider === "stripe" ? "pela Stripe" : "pelo Asaas"}${PAY.sandbox ? " (ambiente de testes)" : ""} e liberado conforme as etapas aprovadas e os termos da plataforma.` : "Os pagamentos estão em simulação durante o período de testes. Não há cobrança nem proteção de valores pela plataforma nesta fase."} <a href="/pagamentos-e-taxas">Entenda pagamentos e taxas</a>.</p></div>
   </div>
 </section>
 <section class="stack" style="margin-top:56px">
@@ -775,12 +788,17 @@ const SOCIAL: Record<string, string[]> = {
   linkedin: ["LinkedIn", '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0A66C2"/><path fill="#fff" d="M6.9 9.5h-3v9.8h3zM5.4 4.7a1.7 1.7 0 1 0 0 3.5 1.7 1.7 0 0 0 0-3.5zM20.1 13.9c0-2.9-1.6-4.6-4-4.6a3.5 3.5 0 0 0-3.2 1.7V9.5H10v9.8h3v-5.3c0-1.4.6-2.4 1.9-2.4s1.8.9 1.8 2.4v5.3h3z"/></svg>'],
   github: ["GitHub", '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.01 8.01 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82a7.6 7.6 0 0 0-4 0c-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A8 8 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>'],
 };
+function socialURL(provider: string, role = "") {
+  const query = new URLSearchParams({ lang: TR.lang });
+  if (role) query.set("role", role);
+  return `/auth/${provider}?${query}`;
+}
 function socialHTML(reg: boolean) {
   // no app de TV (OsmoTV) o login social não funciona: Google e outros bloqueiam login dentro de WebView
   if (!OAUTH.length || /OsmoTV/.test(navigator.userAgent)) return "";
   const role = reg ? "freela" : ""; // a tela nasce com "freelancer" marcado; trocar o perfil atualiza os links (ouvinte de "change")
   return `<div class="stack" style="gap:10px" id="socialBox">
-    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="/auth/${k}${role ? "?role=" + role : ""}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
+    ${OAUTH.filter(k => SOCIAL[k]).map(k => `<a class="btn social" data-social="${k}" href="${esc(socialURL(k, role))}">${SOCIAL[k][1]}<span>Continuar com ${SOCIAL[k][0]}</span></a>`).join("")}
     <div class="divider"><span>${reg ? "ou crie a conta com e-mail" : "ou entre com e-mail"}</span></div></div>`;
 }
 const OAUTH_ERR: Record<string, string> = {
@@ -875,7 +893,7 @@ V.vagas = async () => {
       <label class="check"><input type="checkbox" id="f_flex" ${S.flex ? "checked" : ""}><span>Prazo flexível</span></label>
     </div></div></details></aside>
   <section class="stack" style="min-width:0">
-    <div class="listhead"><div><h1>Vagas abertas</h1><p class="muted" id="jcount">${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}</p></div>
+    <div class="listhead"><div><h1>Vagas abertas</h1><p class="muted" id="jcount" role="status" aria-live="polite">${r.n} ${r.n === 1 ? "vaga encontrada" : "vagas encontradas"}</p></div>
       <div class="field" style="min-width:180px"><label for="fsort" class="hint">Ordenar por</label><select class="input" id="fsort">
         <option value="recentes" ${S.sort === "recentes" ? "selected" : ""}>Mais recentes</option>
         <option value="clareza" ${S.sort === "clareza" ? "selected" : ""}>Mais claras</option>
@@ -887,7 +905,7 @@ V.vagas = async () => {
 let jobsT: number | undefined, talentsSearchTimer: number | undefined;
 async function refreshJobs() {
   S.page = 1;
-  const query = jobQuery(); history.replaceState(null, "", "/vagas?" + query);
+  const query = jobQuery(); history.replaceState(null, "", TR.withLanguage("/vagas?" + query));
   updatePageMetadata("vagas");
   clearTimeout(jobsT);
   jobsT = setTimeout(async () => {
@@ -901,7 +919,7 @@ async function refreshJobs() {
 // - quem trabalha vê o botão de mandar proposta (ou a proposta que já mandou);
 // - PSTATUS e JSTATUS traduzem as situações ("enviada" vira "Aguardando resposta").
 /* ---------- detalhe da vaga ---------- */
-const PSTATUS: Record<string, string[]> = { enviada: ["Aguardando resposta", "wait"], aceita: ["Aceita", "ok"], recusada: ["Não escolhida", "off"], retirada: ["Retirada", "off"] };
+const PSTATUS: Record<string, string[]> = { enviada: ["Aguardando resposta", "wait"], aceita: ["Escolhida", "ok"], recusada: ["Não escolhida", "off"], retirada: ["Retirada", "off"] };
 const JSTATUS: Record<string, string[]> = { aberta: ["Aberta", "ok"], em_andamento: ["Em andamento", "hi"], concluida: ["Concluída", "off"], fechada: ["Fechada", "off"] };
 const pill = (map: Record<string, string[]>, k: string) => `<span class="status ${(map[k] || ["", "off"])[1]}">${(map[k] || [k])[0]}</span>`;
 // Os arquivos da proposta do próprio freela: enquanto ela espera resposta, dá para tirar e pôr.
@@ -918,13 +936,17 @@ V.vaga = async id => {
   const owner = ME && ME!.id === j.client_id;
   let action = "";
   if (!ME) action = `<button class="btn hl" data-act="login-then" data-next="proposta-${j.id}">Entrar para enviar proposta</button>`;
-  else if (ME!.role === "freela") action = d.mine ? `<div class="stack" style="gap:6px"><span class="label">Sua proposta</span>${pill(PSTATUS, d.mine.status)}<p class="mono">${brl(d.mine.value)} · ${d.mine.days} dias úteis</p>${mineFiles(d.mine)}</div>`
-    : j.status === "aberta" ? `<button class="btn hl" data-go="proposta-${j.id}">Enviar proposta guiada</button>` : "";
-  else if (owner && j.status === "aberta") action = `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>`;
+  else if (owner) action = `<p class="hint">Esta vaga foi publicada pela sua conta.</p>${j.status === "aberta" ? `<button class="btn" data-act="close-job" data-id="${j.id}">Fechar vaga</button>` : ""}`;
+  else if (d.mine) action = `<div class="stack" style="gap:8px"><span class="label">Sua proposta</span>${pill(PSTATUS, d.mine.status)}<p class="mono">${brl(d.mine.value)} · ${d.mine.days} dias úteis</p>${mineFiles(d.mine)}<button class="btn sm" data-act="chat" data-with="${j.client_id}" data-job="${j.id}">Conversar sobre a vaga</button></div>`;
+  else if (j.status === "aberta") action = ME!.role === "freela"
+    ? `<div class="stack" style="gap:8px"><button class="btn hl" data-go="proposta-${j.id}">Enviar proposta guiada</button><button class="btn ghost sm" data-act="chat" data-with="${j.client_id}" data-job="${j.id}">Tirar dúvida com quem contrata</button></div>`
+    : `<div class="stack" style="gap:8px"><button class="btn hl" data-act="switch-role" data-role="freela" data-back="proposta-${j.id}">Enviar proposta guiada</button><button class="btn ghost sm" data-act="chat" data-with="${j.client_id}" data-job="${j.id}">Tirar dúvida com quem contrata</button><p class="hint">Você está como Cliente · ao clicar em enviar proposta, mudamos seu modo para Freelancer.</p></div>`;
   // no celular, valor e botão principal ficam fixos embaixo (o mesmo botão do painel lateral)
-  const barAction = !ME ? action : ME!.role === "freela" && !d.mine && j.status === "aberta" ? action : "";
+  const barAction = !ME ? action : !owner && !d.mine && j.status === "aberta"
+    ? (ME!.role === "freela" ? `<button class="btn hl" data-go="proposta-${j.id}">Enviar proposta guiada</button>` : `<button class="btn hl" data-act="switch-role" data-role="freela" data-back="proposta-${j.id}">Enviar proposta guiada</button>`) : "";
   const price = j.budget_type === "hora" ? brl(j.budget) + "/h" : brl(j.budget);
-  const props = owner ? `<section class="panel stack"><h2>Propostas (${d.proposals.length})</h2>${d.proposals.length ? d.proposals.map(p => `
+  const canManageProps = !!(ME && (ME!.id === j.client_id || ME!.isAdmin)) && Array.isArray(d.proposals);
+  const props = canManageProps ? `<section class="panel stack"><h2>Propostas (${d.proposals.length})</h2>${d.proposals.length ? d.proposals.map(p => `
     <div class="prop">
       <div class="row" style="justify-content:space-between"><div class="row">${av(p.freela_name, p.freela_id, "sm", p.freela.avatar)}<div><button class="back" style="margin:0; color:var(--fg)" data-go="talento-${p.freela_id}">${esc(p.freela_name)}</button>${vbadge(p.freela.verified)}<p class="hint">${esc(p.freela.title || "")}</p></div></div>${pill(PSTATUS, p.status)}</div>
       <p class="mono"><b>${brl(p.value)}</b> · ${p.days} dias úteis · você recebe a entrega em ${p.milestones.length} etapa(s)</p>
@@ -932,7 +954,9 @@ V.vaga = async id => {
       ${p.freela.how.com ? `<p class="hint">Como trabalha melhor: ${esc(p.freela.how.com)} ${esc(p.freela.how.resp)}</p>` : ""}
       ${p.milestones.length > 1 ? `<ul style="margin:0; padding-left:20px">${p.milestones.map(m => `<li>${esc(m.title)}: <span class="mono">${brl(m.value)}</span></li>`).join("")}</ul>` : ""}
       ${p.files.length ? `<div class="stack" style="gap:8px"><span class="label">Arquivos da proposta</span>${attList(p.files)}</div>` : ""}
-      ${p.status === "enviada" && j.status === "aberta" ? `<div class="row"><button class="btn hl sm" data-act="accept" data-id="${p.id}">Aceitar e criar contrato</button><button class="btn sm" data-act="decline" data-id="${p.id}">Recusar</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>` : ""}
+      ${p.status === "enviada" ? `<div class="row"><button class="btn hl sm" data-act="accept" data-id="${p.id}">Escolher proposta e criar contrato</button><button class="btn sm" data-act="decline" data-id="${p.id}">Não escolher</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>`
+        : p.status === "recusada" ? `<div class="row"><button class="btn hl sm" data-act="accept" data-id="${p.id}">Escolher proposta e criar contrato</button><button class="btn sm" data-act="reopen" data-id="${p.id}">Voltar para aguardando resposta</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>`
+        : p.status === "aceita" ? `<div class="row"><button class="btn sm primary" data-go="painel">Ver contrato no Painel</button><button class="btn sm ghost" data-act="chat" data-with="${p.freela_id}" data-job="${j.id}">Conversar</button></div>` : ""}
     </div>`).join("") : `<p class="muted">Ainda não chegaram propostas. Você pode convidar talentos pela página de cada perfil.</p>`}</section>` : "";
   return `<button class="back" data-go="vagas">← Voltar para vagas</button>
 <div class="detail">
@@ -1152,10 +1176,12 @@ V.talento = async id => {
       ${t.rating.n ? `<div class="kv"><span class="muted">Avaliação</span>${stars(t.rating.avg, t.rating.n)}</div>` : ""}
       <div class="field"><span class="flabel">Disponível ${t.hours} h por semana</span><div class="avail" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<i class="${i < Math.round(t.hours / 5) ? "on" : ""}"></i>`).join("")}</div></div>
       ${self ? `<button class="btn primary" data-go="perfil">Editar meu perfil</button>` : ""}
-      ${!ME ? `<button class="btn hl" data-act="login-then" data-next="talento-${t.id}">Entrar para convidar</button>` : ""}
-      ${ME && ME!.role === "cliente" ? (myJobs.length ? `<div class="field"><label for="invJob">Convidar para a vaga</label><select class="input" id="invJob">${myJobs.map(j => `<option value="${j.id}">${esc(j.title)}</option>`).join("")}</select></div>
-        <button class="btn hl" data-act="invite" data-id="${t.id}">Enviar convite</button>` : `<p class="hint">Publique uma vaga para poder convidar.</p>`)
-        + `<button class="btn" data-act="chat" data-with="${t.id}">Enviar mensagem</button>` : ""}
+      ${!ME ? `<button class="btn hl" data-act="login-then" data-next="talento-${t.id}">Entrar para enviar mensagem</button>` : ""}
+      ${ME && !self ? (ME!.role === "cliente"
+        ? (myJobs.length ? `<div class="field"><label for="invJob">Convidar para a vaga</label><select class="input" id="invJob">${myJobs.map(j => `<option value="${j.id}">${esc(j.title)}</option>`).join("")}</select></div>
+          <button class="btn hl" data-act="invite" data-id="${t.id}">Enviar convite</button><button class="btn" data-act="chat" data-with="${t.id}">Enviar mensagem</button>`
+          : `<button class="btn hl" data-act="chat" data-with="${t.id}">Enviar mensagem</button><p class="hint">Publique uma vaga se quiser enviar um convite formal.</p>`)
+        : `<button class="btn hl" data-act="chat" data-with="${t.id}">Enviar mensagem</button><button type="button" class="btn sm ghost role-sub" data-act="switch-role" data-role="cliente" data-back="talento-${t.id}"><span class="mm-role-ico" aria-hidden="true"><span class="role-anim"><svg class="ico-static" viewBox="0 0 24 24">${ICONS.shuffle}</svg></span></span><span class="role-sub-txt">Trocar para Cliente<br>para convidar para uma vaga</span></button>`) : ""}
     </div>
     ${t.skills.length ? `<div class="panel side-extra"><span class="label">Habilidades</span><div class="row" style="gap:6px; margin-top:10px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div></div>` : ""}
   </aside>
@@ -1256,7 +1282,7 @@ V.squads = async () => {
   if (SQ.open && !SQ.data!.squads.some(s => s.id === SQ.open)) SQ.open = null;
   SQ.found = (await api<OsmoTalentsResponse>("GET", "/api/talents?q=" + encodeURIComponent(SQ.q))).talents.slice(0, 40).map(toPerson);
   return `<div id="sq" class="stack" style="gap:24px">
-  <div class="listhead"><div><h2>Squads</h2><p class="muted">Junte pessoas em círculos para montar equipes. Arraste alguém até um círculo, ou toque na pessoa e depois no círculo. Só você vê os seus squads.</p></div>
+  <div class="listhead"><div><h1>Squads</h1><p class="muted">Junte pessoas em círculos para montar equipes. Arraste alguém até um círculo, ou toque na pessoa e depois no círculo. Só você vê os seus squads.</p></div>
     <div class="field" style="min-width:240px"><label for="sqq" class="hint">Buscar pessoas</label><input class="input" id="sqq" placeholder="Nome ou habilidade" value="${esc(SQ.q)}" autocomplete="off"></div></div>
   <section class="panel stack" id="sqPeople" style="gap:14px">${sqPeopleHTML()}</section>
   <section class="stack" style="gap:12px"><h3>Seus squads</h3><div id="sqCircles">${sqCirclesHTML()}</div></section>
@@ -1358,7 +1384,7 @@ V.mensagens = async id => {
   const { threads } = await api<{ threads: OsmoThreadSummary[] }>("GET", "/api/threads");
   // contratante (cliente) tem um canal direto com a Osmo; o admin abre as conversas pela área do admin
   const canSupport = ME!.role === "cliente" && !ME!.isAdmin;
-  const head = `<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:18px"><h2>Mensagens</h2>${canSupport ? `<button class="btn sm" data-act="support">Falar com a Osmo</button>` : ""}</div>`;
+  const head = `<div class="row" style="justify-content:space-between; align-items:center; margin-bottom:18px"><h1>Mensagens</h1>${canSupport ? `<button class="btn sm" data-act="support">Falar com a Osmo</button>` : ""}</div>`;
   if (!threads.length) return head + emptyBox("Nenhuma conversa ainda.", "As conversas começam quando alguém envia uma proposta, um convite ou uma mensagem direta.", "vagas", "Ver vagas");
   const openId = id || (isMobile() ? null : threads[0].id);
   TH = openId ? await api<OsmoThreadResponse>("GET", "/api/threads/" + openId) : null;
@@ -1369,11 +1395,39 @@ V.mensagens = async id => {
   <div class="convo">${TH ? convoHTML() : ""}</div>
 </div>`;
 };
+const OSMO_SYMBOL_SVG = `<span class="sys-mark" aria-hidden="true"><svg viewBox="0 0 30 30"><path fill="currentColor" d="M15.12,10.53c-2.49,0-4.5,2.02-4.5,4.5s2.02,4.5,4.5,4.5,4.5-2.02,4.5-4.5-2.02-4.5-4.5-4.5ZM25.84,4.36C22.9,1.45,19.32,0,15.09,0S7.29,1.45,4.37,4.36C1.46,7.27,0,10.8,0,14.97s1.46,7.74,4.37,10.66,6.49,4.37,10.72,4.37,7.79-1.46,10.73-4.37c.65-.65,1.22-1.33,1.73-2.04-1.76-2.49-2.65-5.36-2.65-8.62s.89-6.11,2.66-8.59c-.51-.7-1.07-1.38-1.72-2.03ZM21.93,21.94c-1.89,1.92-4.18,2.89-6.86,2.89s-4.96-.96-6.84-2.87c-1.88-1.91-2.82-4.24-2.82-6.99s.94-5.01,2.82-6.93c1.88-1.91,4.16-2.87,6.84-2.87s4.97.96,6.86,2.87c1.89,1.91,2.84,4.22,2.84,6.93s-.95,5.05-2.84,6.97Z"/></svg></span>`;
+function sysBubble(m: { body?: string; created_at: string }) {
+  const txt = m.body || "";
+  const [tone, tag] = /confirmado|aprovada|liberado|aceita! Contrato/i.test(txt) ? ["ok", "Confirmado"]
+    : /estornado|contestado|recusada|devolvido/i.test(txt) ? ["err", "Atenção"]
+    : /aguardando|entregue|ajustes|checkout aberto/i.test(txt) ? ["wait", "Acompanhamento"]
+    : /convidou/i.test(txt) ? ["info", "Convite"]
+    : /proposta/i.test(txt) ? ["info", "Proposta"]
+    : ["info", "Sistema"];
+  return `<div class="bub sys sys-${tone}" role="status">
+    <div class="sys-head">${OSMO_SYMBOL_SVG}<span class="sys-brand">Osmo</span><span class="sys-tag">${tag}</span><small>${hm(m.created_at)}</small></div>
+    <p class="sys-body">${esc(txt)}</p>
+  </div>`;
+}
 function bubbles() {
-  return TH!.messages.map(m => m.system ? `<div class="bub sys">${esc(m.body)}<small>${hm(m.created_at)}</small></div>`
+  return TH!.messages.map(m => m.system ? sysBubble(m)
     : m.file ? `<div class="bub file ${m.mine ? "me" : ""}"><a class="bub-file" href="/arquivo/a/${m.file.id}" target="_blank" rel="noopener"><span class="file-ext" aria-hidden="true">${esc(m.file.ext)}</span><span class="bf-name" translate="no">${esc(m.file.name)}</span><span class="bf-size">${fileSize(m.file.size)}</span></a><small>${hm(m.created_at)}</small></div>`
     : `<div class="bub ${m.mine ? "me" : ""}"><span translate="no">${esc(m.body)}</span><small>${hm(m.created_at)}</small></div>`).join("");
 }
+function fitMsgIn(el = $("#msgIn")) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+document.addEventListener("keydown", e => {
+  const t = eventInput(e);
+  if (!t || t.id !== "msgIn" || e.key !== "Enter" || e.isComposing) return;
+  if (e.shiftKey) return; // Shift+Return (Mac) ou Shift+Enter (PC) quebra para a próxima linha
+  if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    $("#compose")?.requestSubmit();
+  }
+});
 function convoHTML() {
   const t = TH!.thread;
   return `<div class="convo-head"><button class="back only-m" data-go="mensagens" style="margin:0">← Conversas</button>
@@ -1385,7 +1439,7 @@ function convoHTML() {
       <button type="button" class="btn sm newmsg" id="newMsg" hidden></button>
       ${t.support ? "" : `<div class="quick">${["Recebi, vou olhar até amanhã.", "Pode me mandar por escrito?", "Preciso de mais 1 dia.", "Entrega enviada, aguardo retorno."].map(q => `<button type="button" data-quick="${esc(q)}">${q}</button>`).join("")}</div>`}
       <div class="row"><label class="btn attach-btn" for="msgFile" title="Anexar arquivo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg><span class="sr-only">Anexar arquivo</span></label><input type="file" id="msgFile" multiple accept="${FILE_ACCEPT}" class="sr-only">
-        <input class="input" id="msgIn" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"><button class="btn primary" type="submit">Enviar</button></div>
+        <textarea class="input msg-in" id="msgIn" rows="1" style="flex:1; min-width:0" placeholder="Escreva sua mensagem" aria-label="Mensagem" maxlength="3000"></textarea><button class="btn primary" type="submit">Enviar</button></div>
     </form>`;
 }
 // ARQUIVO NA CONVERSA: cada arquivo vira uma mensagem. Depois de enviar, recarrega a conversa
@@ -1447,13 +1501,13 @@ after.mensagens = () => {
 // Ao lado: para o freela, a energia da semana e as propostas; para o cliente, as vagas dele.
 /* ---------- painel ---------- */
 const MSTATUS: Record<string, string[]> = { pendente: ["A seguir", "off", ""], andamento: ["Em andamento", "hi", "now"], entregue: ["Entregue, aguardando aprovação", "wait", "now"], ajustes: ["Ajustes pedidos", "wait", "now"], aprovada: ["Aprovada e paga", "ok", "done"] };
-const PAYST: Record<string, string[]> = { a_pagar: ["A pagar", "off"], aguardando: ["Aguardando pagamento", "wait"], pago: ["Pago · protegido", "ok"], liberado: ["Liberado", "ok"], estornado: ["Estornado", "off"] };
+const PAYST: Record<string, string[]> = { a_pagar: ["A pagar", "off"], aguardando: ["Aguardando pagamento", "wait"], pago: ["Pagamento confirmado", "ok"], liberado: ["Liberado", "ok"], estornado: ["Estornado", "off"] };
 function msActions(c: OsmoContract, m: OsmoMilestone) {
   const isF = ME!.id === c.freela_id;
   const paid = !PAY.enabled || m.pay_status === "pago" || m.pay_status === "liberado";
   if (PAY.enabled && !isF && m.status !== "aprovada") {
     if (m.pay_status === "a_pagar") return `<button class="btn sm hl" data-act="pay" data-id="${m.id}">Pagar etapa</button>`;
-    if (m.pay_status === "aguardando") return `<a class="btn sm hl" href="${esc(m.invoice_url)}" target="_blank" rel="noopener">Abrir cobrança</a><span class="hint">Pix, boleto ou cartão. A confirmação chega aqui sozinha.</span>`;
+    if (m.pay_status === "aguardando") return `<a class="btn sm hl" href="${esc(m.invoice_url)}" target="_blank" rel="noopener">Abrir cobrança</a><span class="hint">${PAY.provider === "stripe" ? "Cartão ou Pix, se habilitado na conta Stripe." : "Pix, boleto ou cartão."} A confirmação chega aqui sozinha.</span>`;
   }
   if (isF && !paid && m.status === "pendente") return `<span class="hint">Aguardando o cliente pagar esta etapa.</span>`;
   if (isF && (m.status === "pendente" || m.status === "ajustes")) return `<button class="btn sm" data-act="ms" data-a="start" data-id="${m.id}">Começar</button>`;
@@ -1494,10 +1548,10 @@ V.painel = async () => {
   } else {
     side = `<section class="stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h2>Minhas vagas</h2><button class="btn sm hl" data-go="publicar">Publicar vaga</button></div>${extra.jobs.length ? `<div class="panel stack" style="gap:0">${extra.jobs.map(j => `<div class="ms" style="grid-template-columns:minmax(0,1fr) auto"><div><a href="${url("vaga-" + (j.id))}"><b>${esc(j.title)}</b></a><p class="hint">${when(j.created_at)} · ${j.proposals} ${j.proposals === 1 ? "proposta" : "propostas"} · ${j.clarity}% claro</p></div>${pill(JSTATUS, j.status)}</div>`).join("")}</div>` : emptyBox("Você ainda não publicou vagas.", "Uma vaga clara recebe propostas mais certeiras.", "publicar", "Publicar a primeira vaga")}</section>`;
   }
-  return `<div class="listhead" style="margin-bottom:20px"><div><h2>Painel</h2><p class="muted">O que está em andamento e o que vem a seguir.</p></div></div>
+  return `<div class="listhead" style="margin-bottom:20px"><div><h1>Painel</h1><p class="muted">O que está em andamento e o que vem a seguir.</p></div></div>
 <div class="stats" style="margin-bottom:24px">
   <div class="panel stat"><span class="label">${isF ? "Recebido (líquido)" : "Pago até agora"}</span><b class="mono">${brl(isF ? st.net : st.paid)}</b></div>
-  <div class="panel stat"><span class="label">Protegido, a liberar</span><b class="mono">${brl(st.held)}</b></div>
+  <div class="panel stat"><span class="label">Pago, aguardando repasse</span><b class="mono">${brl(st.held)}</b></div>
   ${st.payments ? `<div class="panel stat"><span class="label">${isF ? "Aguardando pagamento" : "A pagar"}</span><b class="mono">${brl(st.toPay)}</b></div>` : ""}
   <div class="panel stat"><span class="label">Contratos ativos</span><b class="mono">${cs.contracts.filter(c => c.status === "ativo").length}</b></div>
 </div>
@@ -1531,9 +1585,9 @@ function hBars(rows: [string, number, string?][]) {
 const admList = <T>(title: string, items: T[], row: (item: T) => string, empty: string) => `<div class="panel stack" style="gap:10px"><div class="row" style="justify-content:space-between"><h3>${title}</h3><span class="badge ${items.length ? "" : "off"}">${items.length}</span></div>
   ${items.length ? `<ul class="adm-list">${items.map(row).join("")}</ul>` : `<p class="hint">${empty}</p>`}</div>`;
 // ÁREA DO ADMIN: a mesma barra no topo de todas as telas do dono, para pular entre elas
-// (Visão geral = /admin, Dados = /admin/dados, Registro = o que o dono mudou, Projetos internos).
+// (Visão geral = /admin, Propostas = /admin/propostas, Dados = /admin/dados, Registro = o que o dono mudou, Projetos internos).
 function admNav(active: string) {
-  const tabs = [["panorama", "Visão geral"], ["gestao", "Dados"], ["log", "Registro"], ...(RECURSOS.tarefas ? [["projetos", "Projetos"]] : [])];
+  const tabs = [["panorama", "Visão geral"], ["propostas", "Propostas"], ["gestao", "Dados"], ["log", "Registro"], ...(RECURSOS.tarefas ? [["projetos", "Projetos"]] : [])];
   return `<div class="adm-head stack" style="gap:10px"><span class="label">Área do admin · só para a Osmo</span>
   <nav class="seg adm-tabs adm-nav" aria-label="Área do admin">${tabs.map(([k, l]) => `<button type="button" data-adm-nav="${k}" ${k === active ? 'aria-current="page"' : ""}>${l}</button>`).join("")}</nav>
   ${admModeSwitch()}</div>`;
@@ -1552,12 +1606,12 @@ function admTarget(name: string, id?: number | null) {
 }
 function admBar(name: string, id?: number | null) {
   let bar = $("#admBar");
-  if (!admModeOn() || name === "panorama" || name === "gestao") { if (bar) bar.remove(); return; }
+  if (!admModeOn() || name === "panorama" || name === "gestao" || name === "propostas") { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement("div"); bar.id = "admBar"; bar.className = "adm-bar-fixed"; bar.setAttribute("role", "region"); bar.setAttribute("aria-label", "Modo admin"); document.body.appendChild(bar); }
   const t = admTarget(name, id);
   bar.innerHTML = `<span class="label">Modo admin</span>${t ? `<span class="adm-bar-what">${t[2]} #${t[1]}</span>
-    <button class="btn sm" data-admq="edit" data-ent="${t[0]}" data-id="${t[1]}">Editar</button><button class="btn sm ghost" data-admq="del" data-ent="${t[0]}" data-id="${t[1]}" data-back="${t[3]}">Apagar</button>` : `<span class="adm-bar-what hint">Nada para editar nesta tela</span>`}
-    <button class="btn sm ghost" data-go="panorama">Área do admin</button><button class="btn sm ghost" data-adm-mode-off aria-label="Desligar o modo admin">Desligar</button>`;
+    <button class="btn sm" data-admq="edit" data-ent="${t[0]}" data-id="${t[1]}">Editar</button><button class="btn sm ghost" data-admq="del" data-ent="${t[0]}" data-id="${t[1]}" data-back="${t[3]}">Apagar</button>${name === "vaga" && id ? `<button class="btn sm ghost" data-adm-job-props="${id}">Propostas desta vaga</button>` : ""}` : `<span class="adm-bar-what hint">Nada para editar nesta tela</span>`}
+    <button class="btn sm ghost" data-go="propostas">Painel de propostas</button><button class="btn sm ghost" data-go="panorama">Área do admin</button><button class="btn sm ghost" data-adm-mode-off aria-label="Desligar o modo admin">Desligar</button>`;
 }
 document.addEventListener("change", e => { const target = eventInput(e); if (!target) return;
   if (!target.matches || !target.matches("[data-adm-mode]")) return;
@@ -1566,6 +1620,8 @@ document.addEventListener("change", e => { const target = eventInput(e); if (!ta
 });
 document.addEventListener("click", async e => { const target = eventElement(e); if (!target) return;
   if (target.closest && target.closest<HTMLElement>("[data-adm-mode-off]")) { store.set("admMode", null); admBar(""); toast("Modo admin desligado"); return; }
+  const jp = target.closest && target.closest<HTMLElement>("[data-adm-job-props]");
+  if (jp) { ADM.ent = "proposals"; ADM.jobId = Number(jp.dataset.admJobProps) || 0; ADM.pstatus = ""; ADM.q = ""; ADM.page = 0; return go("propostas"); }
   const b = target.closest && target.closest<HTMLElement>("[data-admq]"); if (!b) return;
   try { if (!ADM.schema) ADM.schema = await api<OsmoAdminSchema>("GET", "/api/admin/schema"); } catch (err) { return toast(errorMessage(err)); }
   ADM.ent = b.dataset.ent!; ADM.back = b.dataset.back || "";
@@ -1578,7 +1634,8 @@ document.addEventListener("click", e => { const target = eventElement(e); if (!t
   const b = target.closest && target.closest<HTMLElement>("[data-adm-nav]"); if (!b) return;
   const k = b.dataset.admNav!;
   if (k === "log") { ADM.ent = "log"; ADM.q = ""; ADM.page = 0; return go("gestao"); }
-  if (k === "gestao" && ADM.ent === "log") { ADM.ent = "users"; ADM.q = ""; ADM.page = 0; }
+  if (k === "propostas") { ADM.ent = "proposals"; ADM.q = ""; ADM.pstatus = ""; ADM.jobId = 0; ADM.page = 0; return go("propostas"); }
+  if (k === "gestao" && (ADM.ent === "log" || curH() === "propostas")) { ADM.ent = "users"; ADM.q = ""; ADM.page = 0; }
   go(k);
 });
 V.panorama = async () => {
@@ -1594,7 +1651,7 @@ V.panorama = async () => {
   <div class="row" style="justify-content:space-between; align-items:flex-end">
     <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Visão geral da plataforma</h1>
       <p class="hint">Atualizado ${when(d.generatedAt.replace("T", " ").slice(0, 19))}, de novo a cada minuto enquanto esta tela estiver aberta.</p></div>
-    <div class="row" style="gap:6px">${chip(d.config.payments, `Pagamentos ligados · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
+    <div class="row" style="gap:6px">${chip(d.config.payments, `Pagamentos ligados (${PAY.provider === "stripe" ? "Stripe" : "Asaas"}${PAY.sandbox ? " · teste" : ""}) · taxa ${d.config.fee}%`, "Pagamentos simulados")}${chip(d.config.mail, "E-mail ligado", "E-mail desligado")}${chip(d.config.oauth.length, "Login social: " + d.config.oauth.join(", "), "Sem login social")}</div>
   </div>
 
   <div class="adm-kpis">
@@ -1617,7 +1674,7 @@ V.panorama = async () => {
   </div>
 
   <div class="adm-two">
-    <div class="panel stack" style="gap:12px"><h3>Funil de contratação</h3>
+    <div class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between"><h3>Funil de contratação</h3><a class="btn sm" href="${url("propostas")}">Gerenciar propostas</a></div>
       ${hBars([["Vagas publicadas", f.published], ["Receberam proposta", f.withProposal, pct(f.withProposal, f.published)], ["Viraram contrato", f.hired, pct(f.hired, f.published)], ["Contrato concluído", f.done, pct(f.done, f.published)]])}
       <p class="hint">${d.proposals.perJob} propostas por vaga em média · ${num(d.proposals.byStatus.enviada || 0)} propostas aguardando resposta agora.</p></div>
     <div class="panel stack" style="gap:12px"><h3>Saúde da comunidade</h3>
@@ -1650,7 +1707,7 @@ V.panorama = async () => {
   <div class="panel adm-table"><h3>Contratos</h3><table><thead><tr><th>Vaga</th><th>Cliente</th><th>Freela</th><th>Valor</th><th>Etapas</th><th>Quando</th></tr></thead><tbody>
     ${d.recent.contracts.map(c => `<tr><td>${esc(c.job)}</td><td>${esc(c.client)}</td><td>${esc(c.freela)}</td><td class="mono">${brl(c.value)}</td><td class="mono">${c.done}/${c.total}${c.status === "concluido" ? " ✓" : ""}</td><td>${when(c.at)}</td></tr>`).join("")}
   </tbody></table></div>
-  <p class="hint">Versão ${esc(d.config.version)} · liberação automática após ${d.config.autoRelease} dias sem resposta.</p>
+  <p class="hint">Versão ${esc(d.config.version)} · ${d.config.autoRelease ? `liberação automática após ${d.config.autoRelease} dias sem resposta.` : "repasse após aprovação explícita do cliente."}</p>
 </div>`;
 };
 after.panorama = () => {
@@ -1660,13 +1717,13 @@ after.panorama = () => {
   }, 60_000);
 };
 
-// GESTÃO DE DADOS (#gestao): outra tela escondida do dono, aberta pelo panorama. É o "CRUD":
-// criar, ler, editar e apagar pessoas, vagas, propostas, contratos, etapas e avaliações.
+// GESTÃO DE DADOS (#gestao) E PAINEL DE PROPOSTAS (#propostas): telas do dono para criar, ler, editar e apagar
+// pessoas, vagas, propostas, contratos, etapas e avaliações.
 // O servidor manda a "receita" de cada aba (quais colunas mostrar e quais campos editar), e esta tela só
-// desenha: uma tabela com busca e, ao clicar em Editar ou Novo, um painel lateral com o formulário.
-// Apagar sempre pede confirmação, e tudo o que o dono faz aparece na aba "Registro".
-/* ---------- gestão de dados (CRUD do dono) ---------- */
-const ADM: { schema: OsmoAdminSchema | null; ent: string; q: string; page: number; rows: OsmoAdminRow[]; log: OsmoAdminLog[] | null; back?: string; fromPage?: boolean; t?: number } = { schema: null, ent: "users", q: "", page: 0, rows: [], log: null };
+// desenha: uma tabela com busca (ou cartões completos no painel de propostas) e, ao clicar em Editar ou Novo,
+// um painel lateral com o formulário. Apagar sempre pede confirmação, e tudo o que o dono faz aparece no Registro.
+/* ---------- gestão de dados e painel de propostas (CRUD do dono) ---------- */
+const ADM: { schema: OsmoAdminSchema | null; ent: string; q: string; pstatus: string; jobId: number; page: number; rows: OsmoAdminRow[]; propSummary: OsmoAdminProposalSummary | null; log: OsmoAdminLog[] | null; back?: string; fromPage?: boolean; t?: number } = { schema: null, ent: "users", q: "", pstatus: "", jobId: 0, page: 0, rows: [], propSummary: null, log: null };
 const admEnt = () => ADM.schema!.entities.find(e => e.k === ADM.ent)!;
 // mostra cada célula do jeito certo: datas como "há 2 h", situações com o nome bonito, valores em reais
 function admCell(e: OsmoAdminEntity, k: string, v: OsmoAdminValue | undefined) {
@@ -1678,10 +1735,76 @@ function admCell(e: OsmoAdminEntity, k: string, v: OsmoAdminValue | undefined) {
   if (k === "value") return brl(v);
   return esc(String(v).length > 80 ? String(v).slice(0, 80) + "…" : v);
 }
+function admProposalsPanel() {
+  const s = ADM.propSummary || { total: ADM.rows.length, totalValue: 0, byStatus: {} };
+  const bs = s.byStatus || {};
+  const kpi = (label: string, value: string, note: string, st = "") =>
+    `<button type="button" class="panel adm-kpi adm-kpi-btn ${ADM.pstatus === st ? "active" : ""}" data-adm-pstatus="${st}"><span class="label">${label}</span><b class="mono">${value}</b><span class="hint">${note}</span></button>`;
+  const filters: [string, string, number][] = [
+    ["", "Todas", s.total || 0],
+    ["enviada", "Aguardando resposta", bs.enviada || 0],
+    ["aceita", "Escolhidas", bs.aceita || 0],
+    ["recusada", "Não escolhidas", bs.recusada || 0],
+    ["retirada", "Retiradas", bs.retirada || 0],
+  ];
+  const cards = ADM.rows.map(raw => {
+    const r = raw as unknown as OsmoAdminProposalFull;
+    const ms = r.milestones_list || [];
+    return `<article class="panel stack adm-prop-card" data-prop-id="${r.id}">
+      <div class="row adm-prop-head">
+        <div class="row" style="gap:10px">
+          ${av(r.freela, r.freela_id, "sm", r.avatar)}
+          <div class="stack" style="gap:2px">
+            <div class="row" style="gap:6px"><a href="${url("talento-" + r.freela_id)}"><b>${esc(r.freela)}</b></a>${vbadge(r.verified)}<span class="mono hint">#${r.id}</span></div>
+            <span class="hint">Enviada ${when(r.created_at)}</span>
+          </div>
+        </div>
+        <div class="row" style="gap:8px">
+          ${r.contract_id ? `<a class="btn sm ghost" href="${url("contrato-" + r.contract_id)}">Contrato #${r.contract_id}</a>` : ""}
+          ${pill(PSTATUS, r.status)}
+        </div>
+      </div>
+      <div class="adm-prop-job">
+        <div class="stack" style="gap:2px"><span class="label">Vaga #${r.job_id}</span><div class="row" style="gap:8px"><a href="${url("vaga-" + r.job_id)}"><b>${esc(r.job)}</b></a>${pill(JSTATUS, r.job_status || "aberta")}</div></div>
+        <div class="stack" style="gap:2px"><span class="label">Cliente</span><b>${esc(r.client || "–")}</b></div>
+        <div class="stack" style="gap:2px"><span class="label">Condições</span><b>${brl(r.value)} · ${r.days || "–"} dias úteis</b><span class="hint">${ms.length || 1} etapa(s)</span></div>
+      </div>
+      ${ms.length > 1 ? `<ul class="ms-mini">${ms.map(m => `<li><span>${esc(m.title)}</span><b>${brl(m.value)}</b></li>`).join("")}</ul>` : ""}
+      <p class="adm-prop-text">${esc(r.text)}</p>
+      ${r.questions ? `<div class="adm-prop-qs"><span class="label">Dúvidas enviadas pelo talento</span><p>${esc(r.questions)}</p></div>` : ""}
+      ${r.files && r.files.length ? attList(r.files) : ""}
+      <div class="row adm-prop-actions">
+        ${r.status !== "aceita" ? `<button type="button" class="btn sm hl" data-adm-pact="accept" data-id="${r.id}">Escolher proposta e criar contrato</button>` : ""}
+        ${r.status === "recusada" || r.status === "retirada" ? `<button type="button" class="btn sm" data-adm-pact="reopen" data-id="${r.id}">Voltar para aguardando resposta</button>` : ""}
+        ${r.status === "enviada" || r.status === "retirada" ? `<button type="button" class="btn sm ghost" data-adm-pact="decline" data-id="${r.id}">Marcar como não escolhida</button>` : ""}
+        <a class="btn sm ghost" href="${url("vaga-" + r.job_id)}">Abrir vaga</a>
+        <button type="button" class="btn sm" data-adm-edit="${r.id}">Editar proposta</button>
+        <button type="button" class="btn sm ghost" data-adm-del="${r.id}">Apagar</button>
+      </div>
+    </article>`;
+  }).join("");
+  return `<div class="adm-kpis">
+    ${kpi("Total de propostas", num(s.total), `soma ${brl(s.totalValue)}`, "")}
+    ${kpi("Aguardando resposta", num(bs.enviada || 0), "prontas para decisão", "enviada")}
+    ${kpi("Escolhidas", num(bs.aceita || 0), "viraram contrato", "aceita")}
+    ${kpi("Não escolhidas", num(bs.recusada || 0), "podem ser reconsideradas", "recusada")}
+    ${kpi("Retiradas", num(bs.retirada || 0), "retiradas pelo talento", "retirada")}
+  </div>
+  <div class="row" style="justify-content:space-between; gap:10px; flex-wrap:wrap">
+    <div class="seg adm-tabs" role="group" aria-label="Filtrar por situação">
+      ${filters.map(([k, l, n]) => `<button type="button" data-adm-pstatus="${k}" aria-pressed="${ADM.pstatus === k}">${l} <span class="mono">(${num(n)})</span></button>`).join("")}
+    </div>
+    ${ADM.jobId ? `<div class="row" style="gap:8px"><span class="status warn">Filtrando pela vaga #${ADM.jobId}</span><button type="button" class="btn sm ghost" data-adm-clear-job="1">Mostrar todas as vagas</button></div>` : ""}
+  </div>
+  ${ADM.rows.length ? `<div class="stack adm-prop-list">${cards}</div>` : `<div class="panel"><p class="hint">Nenhuma proposta encontrada para este filtro.</p></div>`}
+  <div class="row" style="justify-content:space-between"><span class="hint">Página ${ADM.page + 1} · até 50 por página</span>
+    <div class="row" style="gap:6px"><button class="btn sm" data-adm-page="-1" ${ADM.page ? "" : "disabled"}>Anterior</button><button class="btn sm" data-adm-page="1" ${ADM.rows.length === 50 ? "" : "disabled"}>Próxima</button></div></div>`;
+}
 function gestaoTable() {
   if (ADM.ent === "log") return `<div class="panel adm-table"><table><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Registro</th><th>Detalhes</th></tr></thead><tbody>
     ${ADM.log!.length ? ADM.log!.map(l => `<tr><td>${when(l.created_at)}</td><td>${esc(l.admin || "–")}</td><td>${esc(l.action)}</td><td>${esc((ADM.schema!.entities.find(e => e.k === l.entity) || { label: l.entity }).label)} #${l.entity_id}</td><td class="adm-detail">${esc(l.detail.length > 160 ? l.detail.slice(0, 160) + "…" : l.detail)}</td></tr>`).join("") : `<tr><td colspan="5" class="hint">Nada registrado ainda.</td></tr>`}
   </tbody></table></div>`;
+  if (ADM.ent === "proposals") return admProposalsPanel();
   const e = admEnt();
   return `<div class="panel adm-table"><table><thead><tr><th>#</th>${e.cols.map(([, l]) => `<th>${esc(l)}</th>`).join("")}<th><span class="sr-only">Ações</span></th></tr></thead><tbody>
     ${ADM.rows.length ? ADM.rows.map(r => `<tr><td class="mono">${r.id}</td>${e.cols.map(([k]) => `<td>${admCell(e, k, r[k])}</td>`).join("")}
@@ -1693,9 +1816,29 @@ function gestaoTable() {
 }
 async function admLoad() {
   if (ADM.ent === "log") ADM.log = (await api<{ log: OsmoAdminLog[] }>("GET", "/api/admin/log")).log;
-  else ADM.rows = (await api<{ rows: OsmoAdminRow[] }>("GET", `/api/admin/${ADM.ent}?q=${encodeURIComponent(ADM.q)}&page=${ADM.page}`)).rows;
+  else {
+    const extra = ADM.ent === "proposals" ? `&status=${encodeURIComponent(ADM.pstatus)}&job_id=${ADM.jobId || 0}` : "";
+    const res = await api<{ rows: OsmoAdminRow[]; summary?: OsmoAdminProposalSummary }>("GET", `/api/admin/${ADM.ent}?q=${encodeURIComponent(ADM.q)}&page=${ADM.page}${extra}`);
+    ADM.rows = res.rows;
+    if (res.summary) ADM.propSummary = res.summary;
+  }
 }
 async function admRefresh() { try { await admLoad(); const b = $("#admBox"); if (b) b.innerHTML = gestaoTable(); } catch (err) { toast(errorMessage(err)); } }
+V.propostas = async () => {
+  if (needLogin()) return;
+  ADM.ent = "proposals";
+  try { if (!ADM.schema) ADM.schema = await api<OsmoAdminSchema>("GET", "/api/admin/schema"); await admLoad(); }
+  catch (e) { if (errorStatus(e) === 404) return emptyBox("Página não encontrada.", "", "inicio", "Voltar ao início"); throw e; }
+  return `<div class="adm stack">
+  ${admNav("propostas")}
+  <div class="row" style="justify-content:space-between; align-items:flex-end">
+    <div><h1 style="font-size:clamp(1.8rem,4vw,2.4rem)">Gerenciar propostas</h1>
+      <p class="hint">Acompanhe todas as propostas enviadas, mude a situação (escolhida, aguardando resposta ou não escolhida), crie contratos ou edite valores e textos.</p></div>
+  </div>
+  <input class="input" id="admQ" type="search" placeholder="Buscar por vaga, talento, cliente, texto ou #id…" value="${esc(ADM.q)}" autocomplete="off">
+  <div id="admBox" class="stack" style="gap:12px">${admProposalsPanel()}</div>
+</div>`;
+};
 V.gestao = async () => {
   if (needLogin()) return;
   try { if (!ADM.schema) ADM.schema = await api<OsmoAdminSchema>("GET", "/api/admin/schema"); await admLoad(); }
@@ -1746,7 +1889,19 @@ function showTempPassword(name: unknown, pass: string) {
 }
 document.addEventListener("click", async ev => { const target = eventElement(ev); if (!target) return;
   const t = target;
-  const tab = t.closest<HTMLElement>("[data-adm-tab]"); if (tab) { ADM.ent = tab.dataset.admTab!; ADM.q = ""; ADM.page = 0; return route(); }
+  const tab = t.closest<HTMLElement>("[data-adm-tab]"); if (tab) { ADM.ent = tab.dataset.admTab!; ADM.q = ""; ADM.pstatus = ""; ADM.jobId = 0; ADM.page = 0; return route(); }
+  const pst = t.closest<HTMLElement>("[data-adm-pstatus]"); if (pst) { ADM.pstatus = pst.dataset.admPstatus || ""; ADM.page = 0; return admRefresh(); }
+  if (t.closest<HTMLElement>("[data-adm-clear-job]")) { ADM.jobId = 0; ADM.page = 0; return admRefresh(); }
+  const pact = t.closest<HTMLElement>("[data-adm-pact]"); if (pact) {
+    const id = Number(pact.dataset.id), act = pact.dataset.admPact;
+    if (act === "decline" && !await confirmSheet({ title: "Marcar proposta como não escolhida?", text: "Você poderá voltar atrás ou escolhê-la depois, se quiser.", ok: "Marcar como não escolhida" })) return;
+    try {
+      if (act === "accept") { await api("POST", `/api/proposals/${id}/accept`); toast("Proposta escolhida e contrato criado!"); }
+      else if (act === "reopen") { await api("POST", `/api/proposals/${id}/reopen`); toast("Proposta voltou para aguardando resposta."); }
+      else if (act === "decline") { await api("POST", `/api/proposals/${id}/decline`); toast("Proposta marcada como não escolhida."); }
+      return admRefresh();
+    } catch (err) { return toast(errorMessage(err)); }
+  }
   const pg = t.closest<HTMLElement>("[data-adm-page]"); if (pg) { ADM.page = Math.max(0, ADM.page + Number(pg.dataset.admPage)); return admRefresh(); }
   if (t.closest<HTMLElement>("[data-adm-close]")) { $("#layer").innerHTML = ""; return; }
   if (t.closest<HTMLElement>("[data-adm-new]")) return openAdmForm(null);
@@ -1875,7 +2030,7 @@ after.projeto = () => { if (PJ.open) { const id = PJ.open; PJ.open = null; openT
 V.contrato = async id => {
   if (needLogin()) return;
   const r = await api<{ id: number }>("GET", `/api/contracts/${id}/project`);
-  location.replace("#projeto-" + r.id);
+  location.replace(TR.withLanguage("#projeto-" + r.id));
 };
 V.projetos = async () => {
   if (needLogin()) return;
@@ -2085,7 +2240,19 @@ async function refreshPushBox() {
   // já inscrito: reenvia a inscrição em silêncio (o servidor pode ter apagado, ou outra conta usou este navegador)
   if (st.s === "on") api("POST", "/api/push/subscribe", { subscription: st.sub!.toJSON(), device: deviceName() }).catch(() => {});
 }
-after.perfil = () => { if (PUSH) refreshPushBox(); };
+after.perfil = () => {
+  if (PUSH) refreshPushBox();
+  if (PAY.provider === "stripe" && (ME?.role === "freela" || ME?.roles?.includes("freela")) && ME.payout?.connected && !ME.payout.active) {
+    api<{ payout: OsmoUser["payout"] }>("POST", "/api/me/payout/sync", {}).then(r => {
+      if (r.payout?.active && ME) {
+        ME.payout = r.payout;
+        updateProfMeta();
+        const box = $("#payoutBox"); if (box) box.outerHTML = payoutHTML();
+        toast("Conta Stripe verificada e ativa!");
+      }
+    }).catch(() => {});
+  }
+};
 async function pushOn() {
   try {
     const perm = await Notification.requestPermission(); // o pedido do navegador aparece só agora, depois do toque
@@ -2127,7 +2294,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
   const data: unknown = e.data;
   const p = isRecord(data) && data.type === "osmo-open" && data.path;
   if (typeof p !== "string" || !p.startsWith("/") || p.startsWith("//")) return;
-  if (p !== location.pathname + location.search + location.hash) history.pushState(null, "", p);
+  const destination = TR.withLanguage(p);
+  if (destination !== location.pathname + location.search + location.hash) history.pushState(null, "", destination);
   route();
 });
 
@@ -2217,7 +2385,7 @@ function profMeta(p: OsmoProfile) {
       habil: p.skills.length ? p.skills.slice(0, 3).join(", ") + (p.skills.length > 3 ? ` e mais ${p.skills.length - 3}` : "") : "Nenhuma ainda",
       port: p.portfolio.length ? `${p.portfolio.length} ${p.portfolio.length === 1 ? "projeto" : "projetos"}` : "Nenhum projeto ainda",
       selo: p.verified ? "Verificado" : "Opcional",
-      receb: ME!.payout ? "Conta ativa" : "Ainda não ativado",
+      receb: ME!.payout?.active ? "Conta ativa" : ME!.payout?.connected ? "Verificação pendente" : (isF || ME!.roles?.includes("freela")) ? "Ainda não ativado" : `${PAY.provider === "stripe" ? "Stripe" : "Asaas"} ativo`,
       avisos: NOTE[ME!.notify || "tudo"],
     },
   };
@@ -2278,7 +2446,9 @@ V.perfil = async () => {
   ${isF ? `<div class="stack" style="margin-top:18px">
     ${sec("port", "Portfólio", `<div class="stack" id="portBox">${portBoxHTML()}</div>`)}
     ${sec("selo", "Selo de verificado", verifyHTML(p))}
-    ${PAY.enabled ? sec("receb", "Receber pagamentos", payoutHTML()) : ""}</div>` : ""}
+    ${PAY.enabled ? sec("receb", "Receber pagamentos", payoutHTML()) : ""}</div>`
+  : PAY.enabled ? `<div class="stack" style="margin-top:18px">${sec("receb", "Pagamentos e recebimentos",
+    `<div class="panel stack" style="gap:10px"><h2>Pagamentos ${PAY.provider === "stripe" ? "pela Stripe" : "pelo Asaas"}${PAY.sandbox ? " · modo de testes" : ""}</h2><p><span class="status ok">Checkout ${PAY.provider === "stripe" ? "Stripe" : "Asaas"} ativo</span></p><p class="muted">Como cliente, você paga cada etapa direto pelo Checkout da ${PAY.provider === "stripe" ? "Stripe" : "Asaas"} dentro do contrato e libera os 90% ao talento somente quando aprovar a entrega.</p><div class="row"><button class="btn sm hl" type="button" data-act="switch-role" data-role="freela" data-back="perfil">${ME!.roles?.includes("freela") ? "Trocar para Freelancer e configurar recebimento Stripe" : "Ativar perfil de Freelancer para receber pagamentos"}</button></div></div>`)}</div>` : ""}
   <div class="row" style="margin-top:18px"><button class="btn ghost" type="button" data-act="logout">Sair da conta</button></div></div>`;
 };
 document.addEventListener("toggle", e => { const target = eventElement(e); if (!target) return;
@@ -2294,7 +2464,18 @@ function payoutDocKind() {
   if (b) b.hidden = n > 11; if (t) t.hidden = n > 0 && n <= 11;
 }
 function payoutHTML() {
-  if (ME!.payout) return `<div class="panel stack" style="gap:8px"><h2>Receber pagamentos</h2><p><span class="status ok">Conta de recebimento ativa</span></p>
+  if (PAY.provider === "stripe") {
+    const mode = PAY.sandbox ? " · modo de testes" : "";
+    if (ME!.payout?.active) return `<div class="panel stack" id="payoutBox" style="gap:10px"><h2>Receber pela Stripe${mode}</h2><p><span class="status ok">Conta Stripe ativa</span></p>
+      <p class="muted">Sua conta está pronta para receber. Cada etapa é cobrada antes do início e 90% do valor bruto é transferido automaticamente após a aprovação explícita do cliente.</p>
+      <div class="row"><button class="btn sm" type="button" data-act="payout">Atualizar dados na Stripe</button></div></div>`;
+    if (ME!.payout?.connected) return `<div class="panel stack" id="payoutBox" style="gap:10px"><h2>Receber pela Stripe${mode}</h2><p><span class="status wait">Verificação pendente na Stripe</span></p>
+      <p class="muted">Você já iniciou a conexão, mas a Stripe ainda aguarda a conclusão da verificação de transferências e repasses (payouts) para liberar cobranças nas suas etapas.</p>
+      <div class="row" style="gap:8px; flex-wrap:wrap"><button class="btn hl" type="button" data-act="payout">Continuar cadastro na Stripe</button><button class="btn" type="button" data-act="payout-sync">Já concluí · verificar agora</button></div></div>`;
+    return `<div class="panel stack" id="payoutBox"><h2>Receber pela Stripe${mode}</h2><p>Conecte sua conta na Stripe para receber pelas etapas entregues. Cada etapa é cobrada antes do início e o repasse de 90% é liberado mediante aprovação explícita do cliente. A Osmo assume as taxas da Stripe.</p><button class="btn hl" type="button" data-act="payout">Conectar conta Stripe</button></div>`;
+  }
+  if (ME!.payout && !ME!.payout.active) return `<div class="panel stack"><h2>Receber pagamentos</h2><p>A ativação da garantia está pendente. Os recebimentos estão bloqueados até a conclusão.</p><button class="btn hl" type="button" data-act="payout">Tentar ativar novamente</button></div>`;
+  if (ME!.payout?.active) return `<div class="panel stack" style="gap:8px"><h2>Receber pagamentos</h2><p><span class="status ok">Conta de recebimento ativa</span></p>
     <p class="muted">Os valores das etapas chegam na sua conta Asaas e ficam protegidos até a aprovação. Para sacar, entre no Asaas pelo e-mail de ativação que você recebeu.</p></div>`;
   const i = (id: string, label: string, attrs = "", hint = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" ${attrs}>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
   return `<div class="panel stack" id="payoutBox"><div><h2>Receber pagamentos</h2><p class="muted">Para receber, criamos uma conta no Asaas em seu nome. Depois o Asaas manda um e-mail para você enviar um documento com foto. É feito uma vez só.</p></div>
@@ -2489,7 +2670,7 @@ document.addEventListener("click", async e => { const target = eventElement(e); 
   }
   if (t.classList.contains("skillbox") || t.classList.contains("sk-tags")) { const i = $("#p_skills_in"); if (i && !i.disabled) i.focus(); return; } // tocar no espaço vazio do campo foca a digitação
   const sd = t.closest<HTMLElement>("[data-skill-del]"); if (sd) { skillSet(skillsOf($("#p_skills").value).filter(k => k !== sd.dataset.skillDel)); const i = $("#p_skills_in"); if (i) i.focus(); return; }
-  const q = t.closest<HTMLElement>("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = q.dataset.quick!; mi.focus(); } return; }
+  const q = t.closest<HTMLElement>("[data-quick]"); if (q) { const mi = $("#msgIn"); if (mi) { mi.value = q.dataset.quick!; fitMsgIn(mi); mi.focus(); } return; }
   if (t.closest<HTMLElement>("#newMsg")) { const b = $("#bubbles"); if (b) b.scrollTop = b.scrollHeight; return showNewMsgs(0); }
   if (t.closest<HTMLElement>("#pinText")) { $("#pinBox")?.classList.toggle("open"); return; } // no celular o combinado fica em 1 linha; toque abre
   const qs = t.closest<HTMLElement>("[data-q]"); if (qs) { const ta = $("#wqs"); if (ta) { ta.value = (ta.value ? ta.value + "\n" : "") + qs.dataset.q; W!.qs = ta.value; saveDraft(); } return; }
@@ -2498,7 +2679,7 @@ document.addEventListener("click", async e => { const target = eventElement(e); 
   const id = Number(act.dataset.id);
   const busy = (fn: () => unknown | Promise<unknown>) => async () => { act.disabled = true; try { await fn(); } catch (err) { toast(errorMessage(err)); } finally { act.disabled = false; } };
   switch (act.dataset.act) {
-    case "switch-role": return busy(() => switchRole(act.dataset.role!, act.dataset.back))();
+    case "switch-role": return busy(() => switchRole(act.dataset.role!, act.dataset.back, act))();
     case "push-on": return pushOn();
     case "push-off": return pushOff();
     case "push-test": return pushTest();
@@ -2573,21 +2754,35 @@ document.addEventListener("click", async e => { const target = eventElement(e); 
       toast("Proposta enviada"); go("painel");
     })();
     case "pay": return busy(async () => { await api("POST", `/api/milestones/${id}/pay`); toast("Cobrança gerada. Clique em Abrir cobrança para pagar."); route(); })();
+    case "payout-sync": return busy(async () => {
+      const r = await api<{ payout: OsmoUser["payout"] }>("POST", "/api/me/payout/sync", {});
+      await refreshMe(); route();
+      toast(r.payout?.active ? "Conta Stripe verificada e ativa!" : "A Stripe ainda aguarda a conclusão da verificação.");
+    })();
     case "payout": return busy(async () => {
+      if (PAY.provider === "stripe") { const result = await api<{url: string}>("POST", "/api/me/payout", {}); location.assign(result.url); return; }
       const v = (k: string) => ($("#" + k) as HTMLInputElement | null)?.value || "";
       const body = { cpfCnpj: v("po_doc"), birthDate: v("po_birth"), companyType: v("po_type"), mobilePhone: v("po_phone"), incomeValue: Number(v("po_income").replace(/\D/g, "")) || 0,
         postalCode: v("po_cep"), address: v("po_addr"), addressNumber: v("po_num"), complement: v("po_comp"), province: v("po_prov") };
-      try { const r = await api<{ escrow: boolean }>("POST", "/api/me/payout", body); toast(r.escrow ? "Recebimentos ativados" : "Recebimentos ativados (sem garantia automática)"); await refreshMe(); route(); }
-      catch (err) { const b = $("#poErr"); if (b) { b.textContent = errorMessage(err); b.hidden = false; } else toast(errorMessage(err)); }
+      try { await api<{ escrow: boolean }>("POST", "/api/me/payout", body); toast("Recebimentos ativados"); await refreshMe(); route(); }
+      catch (err) {
+        await refreshMe();
+        if (ME?.payout && !ME.payout.active) { route(); toast(errorMessage(err)); }
+        else { const b = $("#poErr"); if (b) { b.textContent = errorMessage(err); b.hidden = false; } else toast(errorMessage(err)); }
+      }
     })();
     case "close-job": return busy(async () => { await api("POST", `/api/jobs/${id}/close`); toast("Vaga fechada"); route(); })();
-    case "accept": return busy(async () => { await api("POST", `/api/proposals/${id}/accept`); toast("Contrato criado"); go("painel"); })();
-    case "decline": return busy(async () => { await api("POST", `/api/proposals/${id}/decline`); toast("Proposta recusada"); route(); })();
+    case "accept": return busy(async () => { await api("POST", `/api/proposals/${id}/accept`); toast("Proposta escolhida e contrato criado"); route(); })();
+    case "decline": return busy(async () => {
+      if (!await confirmSheet({ title: "Marcar proposta como não escolhida?", text: "Você ainda poderá reconsiderar e escolher esta proposta depois na página da vaga.", ok: "Marcar como não escolhida" })) return;
+      await api("POST", `/api/proposals/${id}/decline`); toast("Proposta marcada como não escolhida"); route();
+    })();
+    case "reopen": return busy(async () => { await api("POST", `/api/proposals/${id}/reopen`); toast("Proposta voltou para aguardando resposta"); route(); })();
     case "withdraw": return busy(async () => { await api("POST", `/api/proposals/${id}/withdraw`); toast("Proposta retirada"); route(); })();
     case "invite": return busy(async () => { const inv = $("#invJob"); if (!inv) return; const r = await api<{ thread: number }>("POST", `/api/jobs/${inv.value}/invite`, { talentId: id }); toast("Convite enviado"); go("mensagens-" + r.thread); })();
     case "support": return busy(async () => { const r = await api<{ thread: number }>("POST", "/api/support"); go("mensagens-" + r.thread); })();
     case "adm-support": return busy(async () => { const r = await api<{ thread: number }>("POST", `/api/admin/support/${id}`); go("mensagens-" + r.thread); })();
-    case "chat": return busy(async () => { const r = await api<{ thread: number }>("POST", "/api/threads", { withId: Number(act.dataset.with) }); go("mensagens-" + r.thread); })();
+    case "chat": return busy(async () => { const r = await api<{ thread: number }>("POST", "/api/threads", { withId: Number(act.dataset.with), jobId: Number(act.dataset.job) || undefined }); go("mensagens-" + r.thread); })();
     case "ms": return busy(async () => { await api("POST", `/api/milestones/${id}/${act.dataset.a!}`, {}); toast({ start: "Etapa iniciada", deliver: "Entrega registrada", approve: "Etapa aprovada e valor liberado" }[act.dataset.a! as "start" | "deliver" | "approve"]); route(); })();
     case "ms-changes": { const box = $("#msa-" + id); if (!box) return; box.innerHTML = `<input class="input" id="chg-${id}" placeholder="O que precisa ajustar?" style="flex:1; min-width:180px"><button class="btn sm hl" data-act="ms-changes-send" data-id="${id}">Enviar pedido</button>`; const chg = $("#chg-" + id); if (chg) chg.focus(); return; }
     case "ms-changes-send": return busy(async () => { const inp = $("#chg-" + id) as HTMLInputElement; const note = inp ? inp.value.trim() : ""; if (!note) return toast("Escreva o que precisa ajustar."); await api("POST", `/api/milestones/${id}/changes`, { note }); toast("Pedido de ajustes enviado"); route(); })();
@@ -2613,8 +2808,9 @@ function wizValid() {
 // enquanto você digita. "change" cuida de caixinhas, seleções e arquivos escolhidos.
 document.addEventListener("input", e => { const target = eventInput(e); if (!target) return;
   const t = target, id = t.id;
+  if (id === "msgIn") { fitMsgIn(t as HTMLTextAreaElement); return; }
   if (id === "fq") { S.q = t.value; refreshJobs(); }
-  if (id === "tq") { S.tq = t.value; S.tpage = 1; history.replaceState(null, "", "/talentos?" + new URLSearchParams({ q: S.tq })); updatePageMetadata("talentos"); clearTimeout(talentsSearchTimer); talentsSearchTimer = setTimeout(async () => { try { $("#tgrid").innerHTML = await talentsHTML(S.tq); } catch (err) { toast(errorMessage(err)); } }, 250); }
+  if (id === "tq") { S.tq = t.value; S.tpage = 1; history.replaceState(null, "", TR.withLanguage("/talentos?" + new URLSearchParams({ q: S.tq }))); updatePageMetadata("talentos"); clearTimeout(talentsSearchTimer); talentsSearchTimer = setTimeout(async () => { try { $("#tgrid").innerHTML = await talentsHTML(S.tq); } catch (err) { toast(errorMessage(err)); } }, 250); }
   if (id === "wtext") { W!.text = t.value; $("#wcount").textContent = `${words(W!.text)} palavras · de 40 a 150 é um bom tamanho`; saveDraft(); }
   if (id === "wval" || id === "wdays") { const v = t.value.replace(/\D/g, ""); if (t.value !== v) t.value = v; W![id === "wval" ? "value" : "days"] = v; const n = Number(W!.value) || 0; $("#wcalc").innerHTML = calcHTML(n, Math.round(n * 0.1)); if (W!.split) { const d = $("#msDiff"); if (d) $("#msBox").innerHTML = msRows(); } saveDraft(); }
   if (id === "wqs") { W!.qs = t.value; saveDraft(); }
@@ -2627,7 +2823,7 @@ document.addEventListener("change", e => { const target = eventInput(e); if (!ta
   const t = target, id = t.id;
   const checked = t instanceof HTMLInputElement && t.checked;
   const files = t instanceof HTMLInputElement ? [...(t.files || [])] : [];
-  if (t.name === "role") $$("[data-social]").forEach(a => { a.href = `/auth/${a.dataset.social}?role=${t.value}`; });
+  if (t.name === "role") $$("[data-social]").forEach(a => { a.href = socialURL(a.dataset.social!, t.value); });
   if (id === "fcat") { S.cat = t.value; refreshJobs(); }
   if (id === "fsort") { S.sort = t.value; refreshJobs(); }
   if (["f_clear", "f_async", "f_flex"].includes(id)) { S[id.slice(2) as "clear" | "async" | "flex"] = checked; refreshJobs(); }
@@ -2689,7 +2885,7 @@ document.addEventListener("submit", async e => { const target = eventForm(e); if
     }
     if (f.id === "resetForm") {
       try { await api("POST", "/api/auth/reset", { token: f.dataset.token, password: $("#a_pass").value }); } catch (err) { return showErr("#resetErr", errorMessage(err)); }
-      history.replaceState(null, "", "/painel"); await refreshMe(); toast("Senha nova salva"); return route();
+      history.replaceState(null, "", TR.withLanguage("/painel")); await refreshMe(); toast("Senha nova salva"); return route();
     }
     if (f.classList.contains("review-form")) {
       const rating = Number((f.querySelector<HTMLInputElement>('input[name="rating"]:checked') || {}).value || 0);
@@ -2707,7 +2903,7 @@ document.addEventListener("submit", async e => { const target = eventForm(e); if
     if (f.id === "compose") {
       const v = $("#msgIn").value.trim(); if (!v) return;
       try { await api("POST", `/api/threads/${TH!.thread.id}/messages`, { body: v }); } catch (err) { return toast(errorMessage(err)); }
-      $("#msgIn").value = ""; TH = await api<OsmoThreadResponse>("GET", "/api/threads/" + TH!.thread.id); const b = $("#bubbles"); b.innerHTML = bubbles(); b.scrollTop = b.scrollHeight; $("#msgIn").focus(); return;
+      $("#msgIn").value = ""; fitMsgIn($("#msgIn")); TH = await api<OsmoThreadResponse>("GET", "/api/threads/" + TH!.thread.id); const b = $("#bubbles"); b.innerHTML = bubbles(); b.scrollTop = b.scrollHeight; $("#msgIn").focus(); return;
     }
     if (f.id === "profForm") {
       const v = (id: string) => ($("#" + id) as HTMLInputElement | null)?.value || "";
@@ -3297,7 +3493,7 @@ applyPrefs();
 function syncTopSize() { const y = scrollY, r = document.documentElement; if (y <= 8) r.classList.add("top-big"); else if (y > 40) r.classList.remove("top-big"); }
 addEventListener("scroll", syncTopSize, { passive: true }); syncTopSize();
 const oauthErr = new URLSearchParams(location.search).get("oauth_error");
-if (oauthErr) history.replaceState(null, "", location.pathname + location.hash);
+if (oauthErr) history.replaceState(null, "", TR.withLanguage(location.pathname + location.hash));
 fixLegacyHash();
 Promise.all([refreshMe(), loadTaxonomy(), TR.ready]).then(route).then(() => { if (oauthErr) { const b = $("#authErr"); const msg = OAUTH_ERR[oauthErr] || OAUTH_ERR.falhou; if (b) { b.textContent = msg; b.hidden = false; } else toast(msg); } }).catch(() => { if (!$("#view h1")) $("#view").innerHTML = emptyBox("Não deu para carregar o aplicativo.", "Recarregue a página para tentar novamente."); });
 

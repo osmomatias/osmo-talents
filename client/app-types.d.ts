@@ -16,10 +16,10 @@ interface OsmoProfile {
 interface OsmoUser {
   id: number; name: string; role: OsmoRole; roles: OsmoRole[]; email: string;
   unread: number; isAdmin: boolean; needPhone: boolean; profile: OsmoProfile;
-  hasDoc: boolean; payout: { active: boolean; escrow: boolean } | null; energy: string; notify: string;
+  hasDoc: boolean; payout: { active: boolean; escrow: boolean; connected?: boolean } | null; energy: string; notify: string;
 }
 interface OsmoTalent extends OsmoProfile { id: number; name: string; reviews: OsmoReview[] }
-interface OsmoPayments { enabled: boolean; fee: number; autoRelease: number; sandbox?: boolean }
+interface OsmoPayments { provider?: string; enabled: boolean; fee: number; autoRelease: number; sandbox?: boolean }
 interface OsmoMeResponse { v: string; user: OsmoUser | null; payments?: OsmoPayments; oauth?: string[]; mail?: boolean; phone?: boolean; push?: string; analytics?: string }
 interface OsmoBrief { obj: string; ent: string[]; fora: string[]; com: string; fb: string; ref: string }
 interface OsmoJob { id: number; title: string; company: string; client: string; client_id: number; created_at: string; proposals: number; budget_type: string; budget: number; duration: string; clarity: number; async: OsmoFlag; flex: OsmoFlag; skills: string[]; cat: string; status: string; brief: OsmoBrief }
@@ -53,6 +53,15 @@ interface OsmoAdminEntity { k: string; label: string; fields: OsmoAdminField[]; 
 interface OsmoAdminSchema { entities: OsmoAdminEntity[] }
 interface OsmoAdminLog { created_at: string; admin: string; action: string; entity: string; entity_id: number; detail: string }
 interface OsmoAdminRow { id: number; [key: string]: OsmoAdminValue }
+interface OsmoAdminProposalSummary { total: number; totalValue: number; byStatus: Record<string, number> }
+interface OsmoAdminProposalFull {
+  id: number; job_id: number; job: string; job_status: string; client_id: number; client: string;
+  freela_id: number; freela: string; verified: string; avatar: string;
+  value: number; days: number; status: string; text: string; questions: string;
+  milestones_list?: { title: string; value: number }[];
+  files?: OsmoAttachment[];
+  contract_id?: number | null; created_at: string;
+}
 interface OsmoWeekly { week: string; users: number; jobs: number; contracts: number; value: number }
 interface OsmoAttention { id: number; job_id: number; title: string; value: number; job: string; client: string; freela: string; at: string; clarity: number }
 interface OsmoOverview {
@@ -104,7 +113,7 @@ interface OsmoElementIds {
   "menuBtn": HTMLButtonElement;
   "mmA11y": HTMLButtonElement;
   "msgFile": HTMLInputElement;
-  "msgIn": HTMLInputElement;
+  "msgIn": HTMLTextAreaElement;
   "newMsg": HTMLButtonElement;
   "notifyForm": HTMLFormElement;
   "pFiles": HTMLInputElement;

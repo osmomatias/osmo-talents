@@ -9,6 +9,7 @@ interface OsmoI18n {
   ativo: boolean;
   langs: import("../shared/i18n").LanguageEntry[];
   ready: Promise<void>;
+  withLanguage(href: string): string;
   t(key: string, ...args: unknown[]): string;
   tx(text: string): string;
   flush(): void;

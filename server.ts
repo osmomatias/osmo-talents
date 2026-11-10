@@ -27,6 +27,8 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { one as dbOne, all as dbAll, run, tx } from "./src/db";
 import * as asaas from "./src/asaas";
+import * as stripe from "./src/stripe";
+const PAYMENTS = stripe.SELECTED || asaas.ENABLED;
 import * as oauth from "./src/oauth";
 import * as mail from "./src/mail";
 import * as push from "./src/push";
@@ -60,7 +62,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 const COOKIE_SECURE = process.env.COOKIE_SECURE === "true";
 const PUBLIC_DIR = path.join(PROJECT_ROOT, "public");
-const FEE = asaas.FEE_PCT / 100; // taxa da plataforma (FEE_PCT no .env)
+const FEE = stripe.SELECTED ? 0.1 : asaas.FEE_PCT / 100; // taxa da plataforma (FEE_PCT no .env)
 const SESSION_DAYS = 30;
 // Google Analytics: o código de medição (G-XXXXXXX) vem do .env; vazio = Analytics desligado
 const GA_ID = /^G-[A-Z0-9]{4,20}$/.test(process.env.GA_MEASUREMENT_ID || "") ? process.env.GA_MEASUREMENT_ID : "";
@@ -450,18 +452,22 @@ route("POST", "/api/auth/forgot", ({ req, body, ip }) => {
   run("DELETE FROM password_resets WHERE user_id = ?", u.id);
   run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)", sha(token), u.id, new Date(Date.now() + RESET_MIN * 60e3).toISOString());
   const link = `${PUBLIC_URL}/recuperar#${token}`, first = u.name.split(" ")[0];
-  const escHtml = (s: unknown) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   // idioma do e-mail: o da tela de quem pediu (ou o último que a pessoa usou)
   const lang = i18n.pick(req.headers["x-osmo-lang"]) || u.lang, T = (k: string, ...a: unknown[]) => i18n.T(lang, k, ...a);
+  const subject = T("Criar uma senha nova na Osmo Talents");
   mail.send({
-    to: u.email, subject: T("Criar uma senha nova na Osmo Talents"),
+    to: u.email, subject,
     text: `${T("Olá, {1}.", first)}\n\n${T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents.")}\n\n${T("Para escolher a senha nova, abra este link (vale por {1} minutos e funciona uma vez só):", RESET_MIN)}\n${link}\n\n${T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.")}\n\nOsmo Talents`,
-    html: `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>${escHtml(T("Olá, {1}.", first))}</p>
-<p>${escHtml(T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents."))}</p>
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Criar senha nova"))}</a></p>
-<p style="color:#666">${escHtml(T("O link vale por {1} minutos e funciona uma vez só.", RESET_MIN))}<br>${escHtml(T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma."))}</p>
-<p>Osmo Talents</p></div>`,
+    html: mail.renderEmailTemplate({
+      eyebrow: "Segurança da conta",
+      title: subject,
+      greeting: T("Olá, {1}.", first),
+      intro: T("Recebemos um pedido para criar uma senha nova na sua conta da Osmo Talents."),
+      ctaLabel: T("Criar senha nova"),
+      ctaUrl: link,
+      outro: `${T("O link vale por {1} minutos e funciona uma vez só.", RESET_MIN)}\n${T("Se não foi você, pode ignorar este e-mail. Sua senha atual continua a mesma.")}`,
+      publicUrl: PUBLIC_URL,
+    }),
   }).catch(e => console.error(new Date().toISOString(), "mail", e.message));
   return { ok: true };
 }, { auth: false });
@@ -496,12 +502,14 @@ function pendingRow(token: unknown) {
   run("DELETE FROM oauth_pending WHERE created_at < datetime('now', '-20 minutes')");
   return one("SELECT * FROM oauth_pending WHERE token = ?", t);
 }
-route("GET", "/api/auth/oauth/pending", ({ query }) => {
+route("GET", "/api/auth/oauth/pending", ({ query, ip }) => {
+  limit("oauth-pend:" + ip, 30, 60_000);
   const r = pendingRow(query.get("token"));
   if (!r) fail(404, "Esse link expirou. Entre de novo pelo botão do provedor.");
   return { name: r.name, email: r.email, provider: (oauth.P[r.provider] || {}).name || r.provider };
 }, { auth: false });
-route("POST", "/api/auth/oauth/complete", ({ body, res }) => {
+route("POST", "/api/auth/oauth/complete", ({ body, res, ip }) => {
+  limit("oauth-pend:" + ip, 30, 60_000);
   const r = pendingRow(body.token);
   if (!r) fail(404, "Esse link expirou. Entre de novo pelo botão do provedor.");
   const role = body.role === "cliente" ? "cliente" : body.role === "freela" ? "freela" : "";
@@ -521,15 +529,18 @@ const unreadCount = (id: number) => one(`SELECT COUNT(*) n FROM messages m JOIN 
     WHERE (t.client_id = ? AND m.created_at > t.client_read_at OR t.freela_id = ? AND m.created_at > t.freela_read_at)
     AND (m.sender_id IS NULL OR m.sender_id != ?)`, id, id, id)!.n;
 route("GET", "/api/me", ({ user }) => {
-  const pub = { payments: { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
+  const pub = { payments: { enabled: PAYMENTS, provider: stripe.SELECTED ? "stripe" : "asaas", sandbox: stripe.SELECTED ? stripe.SANDBOX : /sandbox/.test(asaas.BASE), fee: stripe.SELECTED ? 10 : asaas.FEE_PCT, autoRelease: stripe.SELECTED ? 0 : asaas.AUTO_RELEASE_DAYS }, oauth: oauth.list(), mail: mail.ENABLED, phone: wa.ENABLED, push: push.ENABLED ? push.PUBLIC_KEY : "", analytics: GA_ID, v: appVersion() };
   if (!user) return { user: null, ...pub };
   const unread = unreadCount(user.id);
   const pr = one("SELECT cpf_cnpj FROM profiles WHERE user_id = ?", user.id);
-  const payout = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
+  const payout = stripe.SELECTED ? stripe.accountStatus(user.id) : (() => {
+    const p = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", user.id);
+    return p ? { active: !!p.escrow, escrow: !!p.escrow } : null;
+  })();
   // needPhone: a conta ainda não tem celular confirmado (login social ou conta antiga).
   // Com o WhatsApp ligado, o site trava numa caixa até a pessoa confirmar.
   const needPhone = wa.ENABLED && !user.phone;
-  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr?.cpf_cnpj, payout: payout ? { active: true, escrow: !!payout.escrow } : null, needPhone },
+  return { user: { ...user, isAdmin: isAdmin(user), profile: profileOf(user.id), unread, hasDoc: !!pr?.cpf_cnpj, payout, needPhone },
     ...pub };
 }, { auth: false });
 
@@ -720,11 +731,11 @@ route("GET", "/api/jobs/:id", ({ params, user }) => {
   type ProposalOutput = Omit<ProposalRow, "milestones"> & {milestones: ProposalMilestone[];files: AppRow[];freela?: ReturnType<typeof profileOf>};
   const out: {job: ReturnType<typeof jobOut> & {clientRating: ReturnType<typeof ratingOf>;clientReviews: ReturnType<typeof reviewsOf>;files: AppRow[];filesCount: number};proposals?: ProposalOutput[];mine?: ProposalOutput} = { job: { ...jobOut(j), clientRating: ratingOf(j.client_id), clientReviews: reviewsOf(j.client_id).slice(0, 5),
     files: user ? files : [], filesCount: files.length } };
-  if (user && user.id === j.client_id) {
+  if (user && (user.id === j.client_id || isAdmin(user))) {
     out.proposals = all<ProposalRow>(`SELECT pr.*, u.name freela_name FROM proposals pr JOIN users u ON u.id = pr.freela_id WHERE pr.job_id = ? ORDER BY pr.created_at`, j.id)
       .map(p => ({ ...p, milestones: parse<ProposalMilestone[]>(p.milestones), freela: profileOf(p.freela_id), files: attsOf("proposal_id", p.id) }));
   }
-  if (user && user.role === "freela") {
+  if (user) {
     const mine = one<ProposalRow>("SELECT * FROM proposals WHERE job_id = ? AND freela_id = ?", j.id, user.id);
     if (mine) out.mine = { ...mine, milestones: parse<ProposalMilestone[]>(mine.milestones), files: attsOf("proposal_id", mine.id) };
   }
@@ -826,7 +837,7 @@ function serveAttachment(req: http.IncomingMessage, res: http.ServerResponse, id
   const user = currentUser(req);
   if (!user) return send(res, 401, "Entre na sua conta para baixar este arquivo.", { "Content-Type": "text/plain; charset=utf-8" });
   const f = one(ATT_OWNERS + " WHERE a.id = ?", id);
-  if (!f || (f.client_id !== user.id && f.freela_id !== user.id)) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
+  if (!f || (f.client_id !== user.id && f.freela_id !== user.id && !(f.proposal_id && isAdmin(user)))) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   sendBlob(res, f);
 }
 function sendBlob(res: http.ServerResponse, f: AppRow) {
@@ -974,8 +985,32 @@ route("GET", "/api/me/proposals", ({ user }) => {
 // de vaga dos outros).
 function ownProposalAsClient(user: SessionUser, id: number) {
   const p = one("SELECT pr.*, j.client_id, j.title job_title, j.status job_status FROM proposals pr JOIN jobs j ON j.id = pr.job_id WHERE pr.id = ?", id);
-  if (!p || p.client_id !== user.id) fail(404, "Proposta não encontrada.");
+  if (!p || (p.client_id !== user.id && !isAdmin(user))) fail(404, "Proposta não encontrada.");
   return p;
+}
+function ensureContractForProposal(p: AppRow, actorId: number | null = p.client_id): number {
+  const existing = one<{ id: number }>("SELECT id FROM contracts WHERE proposal_id = ?", p.id);
+  if (existing) {
+    run("UPDATE proposals SET status = 'aceita' WHERE id = ?", p.id);
+    run("UPDATE jobs SET status = 'em_andamento' WHERE id = ? AND status IN ('aberta', 'fechada')", p.job_id);
+    return existing.id;
+  }
+  return tx(() => {
+    run("UPDATE proposals SET status = 'aceita' WHERE id = ?", p.id);
+    const c = Number(run("INSERT INTO contracts (job_id, proposal_id, client_id, freela_id, value) VALUES (?,?,?,?,?)", p.job_id, p.id, p.client_id, p.freela_id, p.value).lastInsertRowid);
+    parse<ProposalMilestone[]>(p.milestones).forEach((m, i) => run("INSERT INTO milestones (contract_id, pos, title, value) VALUES (?,?,?,?)", c, i, m.title, m.value));
+    run("UPDATE jobs SET status = 'em_andamento' WHERE id = ?", p.job_id);
+    const th = threadFor(p.job_id, p.client_id, p.freela_id);
+    postMessage(th, null, `Proposta aceita. Contrato criado com ${parse(p.milestones).length} etapa(s). Cada etapa é paga antecipadamente e o repasse depende da aprovação do cliente.`, actorId);
+    if (PAYMENTS) {
+      const hasPayout = stripe.SELECTED
+        ? one("SELECT 1 FROM stripe_accounts WHERE user_id = ? AND charges_enabled = 1 AND payouts_enabled = 1", p.freela_id)
+        : one("SELECT 1 FROM payout_accounts WHERE user_id = ?", p.freela_id);
+      postMessage(th, null, "Próximo passo: o cliente paga a primeira etapa pelo Painel. O trabalho começa quando o pagamento for confirmado."
+        + (hasPayout ? "" : " Freelancer: ative sua conta de recebimento em Meu perfil para a cobrança poder ser gerada."), actorId);
+    }
+    return c;
+  });
 }
 // ACEITAR PROPOSTA = nasce o CONTRATO. Numa tacada só (tx):
 // 1. a proposta vira "aceita";
@@ -985,32 +1020,32 @@ function ownProposalAsClient(user: SessionUser, id: number) {
 //    o cliente paga a primeira etapa antes do trabalho começar.
 route("POST", "/api/proposals/:id/accept", ({ user, params }) => {
   const p = ownProposalAsClient(user, params.id);
-  if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
-  const cid = tx(() => {
-    run("UPDATE proposals SET status = 'aceita' WHERE id = ?", p.id);
-    const c = Number(run("INSERT INTO contracts (job_id, proposal_id, client_id, freela_id, value) VALUES (?,?,?,?,?)", p.job_id, p.id, user.id, p.freela_id, p.value).lastInsertRowid);
-    parse<ProposalMilestone[]>(p.milestones).forEach((m, i) => run("INSERT INTO milestones (contract_id, pos, title, value) VALUES (?,?,?,?)", c, i, m.title, m.value));
-    run("UPDATE jobs SET status = 'em_andamento' WHERE id = ?", p.job_id);
-    const th = threadFor(p.job_id, user.id, p.freela_id);
-    postMessage(th, null, `Proposta aceita. Contrato criado com ${parse(p.milestones).length} etapa(s). O valor fica protegido e é liberado a cada etapa aprovada.`, user.id);
-    if (asaas.ENABLED) {
-      const hasPayout = one("SELECT 1 FROM payout_accounts WHERE user_id = ?", p.freela_id);
-      postMessage(th, null, "Próximo passo: o cliente paga a primeira etapa pelo Painel. O trabalho começa quando o pagamento for confirmado."
-        + (hasPayout ? "" : " Freelancer: ative sua conta de recebimento em Meu perfil para a cobrança poder ser gerada."), user.id);
-    }
-    return c;
-  });
+  if (!["enviada", "recusada"].includes(p.status) && !(isAdmin(user) && p.status === "retirada")) fail(409, "Essa proposta não pode mais ser escolhida.");
+  const cid = ensureContractForProposal(p, user.id);
+  if (isAdmin(user)) adminLog(user, "escolher-proposta", "proposals", p.id, { status: "aceita", contract: cid });
   return { contract: cid };
-}, { role: "cliente" });
+});
 
 // RECUSAR (cliente) ou RETIRAR (freela) uma proposta que ainda espera resposta.
 route("POST", "/api/proposals/:id/decline", ({ user, params }) => {
   const p = ownProposalAsClient(user, params.id);
-  if (p.status !== "enviada") fail(409, "Essa proposta não está mais aguardando resposta.");
+  if (p.status !== "enviada" && !(isAdmin(user) && p.status === "retirada")) fail(409, "Essa proposta não está mais aguardando resposta.");
   run("UPDATE proposals SET status = 'recusada' WHERE id = ?", p.id);
-  postMessage(threadFor(p.job_id, user.id, p.freela_id), null, "A proposta não foi escolhida desta vez. Obrigado pelo tempo dedicado.", user.id);
+  postMessage(threadFor(p.job_id, p.client_id, p.freela_id), null, "A proposta não foi escolhida desta vez. Obrigado pelo tempo dedicado.", user.id);
+  if (isAdmin(user)) adminLog(user, "recusar-proposta", "proposals", p.id, { antes: p.status, depois: "recusada" });
   return { ok: true };
-}, { role: "cliente" });
+});
+
+// REABRIR (cliente): volta uma proposta marcada como "não escolhida" para "aguardando resposta".
+route("POST", "/api/proposals/:id/reopen", ({ user, params }) => {
+  const p = ownProposalAsClient(user, params.id);
+  if (p.status !== "recusada" && !(isAdmin(user) && p.status === "retirada")) fail(409, "Essa proposta não está marcada como não escolhida.");
+  run("UPDATE proposals SET status = 'enviada' WHERE id = ?", p.id);
+  run("UPDATE jobs SET status = 'aberta' WHERE id = ? AND status = 'fechada'", p.job_id);
+  postMessage(threadFor(p.job_id, p.client_id, p.freela_id), null, "A proposta voltou para análise pelo cliente.", user.id);
+  if (isAdmin(user)) adminLog(user, "reabrir-proposta", "proposals", p.id, { antes: p.status, depois: "enviada" });
+  return { ok: true };
+});
 
 route("POST", "/api/proposals/:id/withdraw", ({ user, params }) => {
   const p = one("SELECT * FROM proposals WHERE id = ? AND freela_id = ?", params.id, user.id);
@@ -1041,7 +1076,7 @@ route("GET", "/api/contracts", ({ user }) => {
   const mine = cs.flatMap(c => c.milestones.map(m => ({ ...m, side: c.freela_id === user.id ? "freela" : "cliente" })));
   const sum = (arr: {value: number}[]) => arr.reduce((a, m) => a + m.value, 0);
   let paid, held, toPay;
-  if (asaas.ENABLED) {
+  if (PAYMENTS) {
     paid = sum(mine.filter(m => m.pay_status === "liberado"));
     held = sum(mine.filter(m => m.pay_status === "pago"));
     toPay = sum(mine.filter(m => m.pay_status === "a_pagar" || m.pay_status === "aguardando"));
@@ -1049,7 +1084,7 @@ route("GET", "/api/contracts", ({ user }) => {
     paid = sum(mine.filter(m => m.status === "aprovada")); held = sum(mine.filter(m => m.status !== "aprovada")); toPay = 0;
   }
   for (const c of cs) for (const m of c.milestones) { delete m.pay_id; }
-  return { contracts: cs, stats: { paid, held, toPay, net: Math.round(paid * (1 - FEE)), fee: FEE, payments: asaas.ENABLED } };
+  return { contracts: cs, stats: { paid, held, toPay, net: Math.round(paid * (1 - FEE)), fee: FEE, payments: PAYMENTS } };
 });
 
 // AS REGRAS DO JOGO DAS ETAPAS. Cada etapa anda por casinhas, como num tabuleiro:
@@ -1060,7 +1095,7 @@ route("GET", "/api/contracts", ({ user }) => {
 // "msg" é a frase que aparece na conversa.
 const MS_FLOW: Record<string, MilestoneFlow> = {
   start: { who: "freela", from: ["pendente", "ajustes"], to: "andamento", msg: m => `Etapa "${m.title}" em andamento.` },
-  deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` + (asaas.ENABLED ? ` Se não houver resposta em ${asaas.AUTO_RELEASE_DAYS} dias, o valor é liberado automaticamente.` : "") },
+  deliver: { who: "freela", from: ["andamento"], to: "entregue", msg: m => `Etapa "${m.title}" entregue. Aguardando aprovação.` + (!stripe.SELECTED && asaas.ENABLED ? ` Se não houver resposta em ${asaas.AUTO_RELEASE_DAYS} dias, o valor é liberado automaticamente.` : "") },
   approve: { who: "cliente", from: ["entregue"], to: "aprovada", msg: m => `Etapa "${m.title}" aprovada. ${brl(m.value)} liberado.` },
   changes: { who: "cliente", from: ["entregue"], to: "ajustes", msg: m => `Pedido de ajustes na etapa "${m.title}".` },
 };
@@ -1078,10 +1113,11 @@ async function releaseEscrow(m: AppRow) {
     try {
       const e = await asaas.api.getPaymentEscrow(m.pay_id, k);
       const id = e && (e.id || (e.data && e.data[0] && e.data[0].id));
-      if (!id || e.status === "DONE" || e.status === "FINISHED") return;
+      if (e.status === "DONE" || e.status === "FINISHED") return;
+      if (!id) throw new HttpError(502, "Garantia da cobrança não encontrada no Asaas.");
       await asaas.api.finishEscrow(id, k);
       return;
-    } catch (err) { if (errorStatus(err) === 404) return; lastErr = err; }
+    } catch (err) { lastErr = err; }
   }
   if (lastErr) throw new HttpError(502, "Não foi possível liberar o valor no Asaas: " + errorMessage(lastErr));
 }
@@ -1110,9 +1146,12 @@ for (const [action, f] of Object.entries(MS_FLOW)) {
   route("POST", `/api/milestones/:id/${action}`, async ({ user, params, body }) => {
     const m = one(MS_SELECT, params.id);
     if (!m || (f.who === "freela" ? m.freela_id : m.client_id) !== user.id) fail(404, "Etapa não encontrada.");
+    if (stripe.SELECTED && action !== "approve" && one("SELECT 1 FROM stripe_payments WHERE milestone_id=? AND release_started>0", m.id)) fail(409, "Repasse em processamento. Aguarde a conclusão ou conciliação.");
     if (!f.from.includes(m.status)) fail(409, "Essa ação não vale para o estado atual da etapa.");
-    if (action === "start" && asaas.ENABLED && m.pay_status !== "pago") fail(409, "Espere o cliente pagar esta etapa. O valor fica protegido antes de você começar.");
-    if (action === "approve") await releaseEscrow(m);
+    if (action === "start" && PAYMENTS && m.pay_status !== "pago") fail(409, "Espere a confirmação do pagamento desta etapa antes de começar.");
+    if (action === "approve") {
+      if (stripe.SELECTED) await stripe.release(m.id); else await releaseEscrow(m);
+    }
     applyMilestone(m, f, user.id, str(body && body.note, 1000));
     return { ok: true };
   });
@@ -1123,6 +1162,7 @@ for (const [action, f] of Object.entries(MS_FLOW)) {
 // sem receber porque o cliente sumiu.
 // liberação automática: etapa entregue sem resposta do cliente
 async function autoRelease() {
+  if (stripe.SELECTED) return;
   const due = all(`SELECT id FROM milestones WHERE status = 'entregue' AND delivered_at != '' AND delivered_at < datetime('now', ?)`, `-${asaas.AUTO_RELEASE_DAYS} days`);
   for (const { id } of due) {
     const m = one(MS_SELECT, id)!;
@@ -1135,10 +1175,39 @@ setInterval(() => autoRelease().catch(e => console.error("auto-release", e)), 36
 // ATIVAR CONTA DE RECEBIMENTO (freela): confere CPF/CNPJ, CEP, celular, data de nascimento e
 // endereço, cria a subconta no Asaas e liga o cofre (escrow). A chave da subconta é guardada
 // trancada (asaas.seal).
+route("POST", "/api/webhooks/stripe", async ({req, body}) => {
+  const out = await stripe.webhook(Buffer.isBuffer(body) ? body : Buffer.from(""), header(req, "stripe-signature"));
+  if (out?.milestoneId && out.status) {
+    const m = one(MS_SELECT, out.milestoneId);
+    if (m) {
+      const th = threadFor(m.job_id, m.client_id, m.freela_id);
+      if (out.status === "pago") postMessage(th, null, `Pagamento da etapa "${m.title}" confirmado via Stripe. O trabalho pode começar.`);
+      else if (out.status === "estornado") postMessage(th, null, `O pagamento da etapa "${m.title}" foi estornado ou contestado na Stripe.`);
+    }
+  }
+  return {received: true};
+}, {auth: false, raw: 200_000});
+
+route("POST", "/api/me/payout/sync", async ({ user }) => {
+  if (!stripe.SELECTED) fail(400, "Rota exclusiva para Stripe.");
+  return { payout: await stripe.syncAccount(user.id) };
+}, { role: "freela" });
+
 // --- pagamentos (Asaas)
 route("POST", "/api/me/payout", async ({ user, body }) => {
+  if (stripe.SELECTED) return stripe.onboarding(user.id, PUBLIC_URL);
   if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
-  if (one("SELECT 1 FROM payout_accounts WHERE user_id = ?", user.id)) fail(409, "Sua conta de recebimento já está ativa.");
+  const existing = one("SELECT * FROM payout_accounts WHERE user_id = ?", user.id);
+  if (existing?.escrow) fail(409, "Sua conta de recebimento já está ativa.");
+  // Retry the same subaccount after a failure; its one-time API key is already encrypted.
+  if (existing) {
+    try { await asaas.api.enableEscrow(String(existing.asaas_account_id), Math.max(30, asaas.AUTO_RELEASE_DAYS * 6)); }
+    catch { fail(502, "Não foi possível ativar a garantia no Asaas. Os recebimentos continuam bloqueados. Tente novamente."); }
+    run("UPDATE payout_accounts SET escrow = 1 WHERE user_id = ?", user.id);
+    return { ok: true, escrow: true };
+  }
+  try { asaas.assertEncryptionConfigured(); }
+  catch { fail(503, "Configure APP_SECRET com pelo menos 24 caracteres antes de ativar recebimentos."); }
   const doc = String(body.cpfCnpj || "").replace(/\D/g, "");
   if (!validDoc(doc)) fail(400, "CPF ou CNPJ inválido. Confira os números.");
   const cep = String(body.postalCode || "").replace(/\D/g, ""), phone = String(body.mobilePhone || "").replace(/\D/g, "");
@@ -1154,12 +1223,14 @@ route("POST", "/api/me/payout", async ({ user, body }) => {
   if (!payload.address || !payload.addressNumber || !payload.province) fail(400, "Complete o endereço: rua, número e bairro.");
   let acc;
   try { acc = await asaas.api.createSubaccount(payload); } catch (e) { fail(errorStatus(e) === 400 ? 400 : 502, errorMessage(e)); }
-  if (!acc.walletId || !acc.apiKey) fail(502, "O Asaas não devolveu os dados da conta. Tente de novo.");
-  let escrow = 0;
-  try { await asaas.api.enableEscrow(acc.id, Math.max(30, asaas.AUTO_RELEASE_DAYS * 6)); escrow = 1; } catch (e) { console.error("escrow", errorMessage(e)); }
-  run("INSERT INTO payout_accounts (user_id, asaas_account_id, wallet_id, api_key_enc, escrow) VALUES (?,?,?,?,?)", user.id, String(acc.id || ""), acc.walletId, asaas.seal(acc.apiKey), escrow);
+  if (!acc.id || !acc.walletId || !acc.apiKey) fail(502, "O Asaas não devolveu os dados da conta. Tente de novo.");
+  // Preserve the one-time key before requesting escrow, so a failed activation can be retried.
+  run("INSERT INTO payout_accounts (user_id, asaas_account_id, wallet_id, api_key_enc, escrow) VALUES (?,?,?,?,0)", user.id, acc.id, acc.walletId, asaas.seal(acc.apiKey));
   run("UPDATE profiles SET cpf_cnpj = ? WHERE user_id = ?", doc, user.id);
-  return { ok: true, escrow: !!escrow };
+  try { await asaas.api.enableEscrow(acc.id, Math.max(30, asaas.AUTO_RELEASE_DAYS * 6)); }
+  catch { fail(502, "Não foi possível ativar a garantia no Asaas. Os recebimentos continuam bloqueados. Tente novamente."); }
+  run("UPDATE payout_accounts SET escrow = 1 WHERE user_id = ?", user.id);
+  return { ok: true, escrow: true };
 }, { role: "freela" });
 
 // PAGAR UMA ETAPA (cliente):
@@ -1169,13 +1240,23 @@ route("POST", "/api/me/payout", async ({ user, body }) => {
 // 4. cria a cobrança com vencimento em 3 dias e o SPLIT: 90% para o freela, 10% para a Osmo;
 // 5. devolve o link da fatura, onde o cliente escolhe Pix, boleto ou cartão.
 route("POST", "/api/milestones/:id/pay", async ({ user, params }) => {
+  if (stripe.SELECTED) {
+    const m = one(MS_SELECT, params.id);
+    if (!m || m.client_id !== user.id) fail(404, "Etapa não encontrada.");
+    if (m.status !== "pendente" || !["a_pagar", "aguardando"].includes(m.pay_status)) fail(409, "Etapa indisponível para cobrança.");
+    const wasUnpaid = m.pay_status === "a_pagar";
+    const out = await stripe.checkout(m.id, m.freela_id, m.value, m.title, PUBLIC_URL);
+    if (wasUnpaid) postMessage(threadFor(m.job_id, m.client_id, m.freela_id), null, `Cobrança da etapa "${m.title}" gerada na Stripe (${brl(m.value)}).`, user.id);
+    return out;
+  }
   if (!asaas.ENABLED) fail(503, "Pagamentos ainda não estão ativos na plataforma.");
   const m = one(MS_SELECT, params.id);
   if (!m || m.client_id !== user.id) fail(404, "Etapa não encontrada.");
+  const acc = one("SELECT wallet_id, escrow FROM payout_accounts WHERE user_id = ?", m.freela_id);
+  if (!acc) fail(409, "O freelancer ainda não ativou a conta de recebimento. Avisamos na conversa.");
+  if (!acc.escrow) fail(409, "A garantia da conta do freelancer ainda não foi ativada. A cobrança está bloqueada.");
   if (m.pay_status === "aguardando" && m.invoice_url) return { invoiceUrl: m.invoice_url };
   if (m.pay_status !== "a_pagar") fail(409, "Esta etapa já foi paga.");
-  const acc = one("SELECT wallet_id FROM payout_accounts WHERE user_id = ?", m.freela_id);
-  if (!acc) fail(409, "O freelancer ainda não ativou a conta de recebimento. Avisamos na conversa.");
   const pr = one("SELECT cpf_cnpj, asaas_customer_id, company FROM profiles WHERE user_id = ?", user.id)!;
   if (!pr.cpf_cnpj) fail(400, "Informe seu CPF ou CNPJ em Meu perfil para gerar a cobrança.");
   let customer = pr.asaas_customer_id;
@@ -1318,10 +1399,18 @@ route("PUT", "/api/threads/:id/pin", ({ user, params, body }) => {
 });
 route("POST", "/api/threads", ({ user, body }) => {
   const other = one("SELECT id, role, roles FROM users WHERE id = ?", int(body.withId));
-  const want = user.role === "cliente" ? "freela" : "cliente"; // conversa direta: o outro lado precisa ter o papel oposto ao seu
-  if (!other || other.id === user.id || !rolesOf(other).includes(want)) fail(400, "Conversas são entre quem contrata e quem trabalha.");
-  const th = user.role === "cliente" ? threadFor(null, user.id, other.id) : threadFor(null, other.id, user.id);
-  return { thread: th };
+  if (!other || other.id === user.id) fail(400, "Escolha outra pessoa para conversar.");
+  const jobId = body.jobId ? int(body.jobId) : null;
+  if (jobId) {
+    const j = one("SELECT id, client_id FROM jobs WHERE id = ?", jobId);
+    if (!j || (j.client_id !== user.id && j.client_id !== other.id)) fail(400, "Conversas sobre uma vaga são entre quem publicou e quem trabalha.");
+    const freelaId = j.client_id === user.id ? other.id : user.id;
+    return { thread: threadFor(j.id, j.client_id, freelaId) };
+  }
+  const existing = one<{id: number}>("SELECT id FROM threads WHERE job_id IS NULL AND kind = '' AND ((client_id = ? AND freela_id = ?) OR (client_id = ? AND freela_id = ?))", user.id, other.id, other.id, user.id);
+  if (existing) return { thread: existing.id };
+  const [cId, fId] = user.role === "cliente" ? [user.id, other.id] : other.role === "cliente" ? [other.id, user.id] : [user.id, other.id];
+  return { thread: threadFor(null, cId, fId) };
 });
 
 // SUPORTE OSMO: conversa entre o admin (a Osmo) e um contratante (cliente). Usa o mesmo sistema de
@@ -1370,16 +1459,20 @@ function supportNotify(t: AppRow, sender: SessionUser, text: string) {
       .catch(e => console.error(new Date().toISOString(), "push suporte", e.message));
   }
   if (!mail.ENABLED) return;
-  const escHtml = (s: unknown) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   const first = to.name.split(" ")[0];
   const reply = T("Para responder, abra a conversa (responder este e-mail não chega até nós):");
   const text2 = `${T("Olá, {1}.", first)}\n\n${who}:\n${text}\n\n${reply}\n${link}\n\n--\nOsmo Talents · ${T("Cópia de uma mensagem do suporte.")}`;
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>${escHtml(T("Olá, {1}.", first))}</p>
-<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1"><b>${escHtml(who)}</b><br>${escHtml(text).replace(/\n/g, "<br>")}</p>
-<p style="color:#666;font-size:14px">${escHtml(reply)}</p>
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Abrir conversa"))}</a></p>
-<p style="color:#666;font-size:13px">Osmo Talents · ${escHtml(T("Cópia de uma mensagem do suporte."))}</p></div>`;
+  const html = mail.renderEmailTemplate({
+    eyebrow: "Suporte Osmo",
+    title: subject,
+    greeting: T("Olá, {1}.", first),
+    items: [{ sender: who, body: text, system: false }],
+    ctaLabel: T("Abrir conversa"),
+    ctaUrl: link,
+    outro: reply,
+    footerNote: T("Cópia de uma mensagem do suporte."),
+    publicUrl: PUBLIC_URL,
+  });
   mail.send({ to: to.email, subject, text: text2, html }).catch(e => console.error(new Date().toISOString(), "e-mail suporte", e.message));
 }
 
@@ -1406,14 +1499,14 @@ route("GET", "/api/admin/overview", ({ user }) => {
   // dinheiro: com pagamentos ligados vale o que o Asaas confirmou; sem eles, etapa aprovada conta como paga (simulação)
   const ms = all("SELECT status, pay_status, value FROM milestones");
   const sum = (f: (milestone: AppRow) => boolean) => ms.filter(f).reduce((a, m) => a + m.value, 0);
-  const released = asaas.ENABLED ? sum(m => m.pay_status === "liberado") : sum(m => m.status === "aprovada");
-  const held = asaas.ENABLED ? sum(m => m.pay_status === "pago") : sum(m => m.status !== "aprovada");
-  const toPay = asaas.ENABLED ? sum(m => ["a_pagar", "aguardando"].includes(m.pay_status)) : 0;
+  const released = PAYMENTS ? sum(m => m.pay_status === "liberado") : sum(m => m.status === "aprovada");
+  const held = PAYMENTS ? sum(m => m.pay_status === "pago") : sum(m => m.status !== "aprovada");
+  const toPay = PAYMENTS ? sum(m => ["a_pagar", "aguardando"].includes(m.pay_status)) : 0;
 
   const jobsTotal = count("SELECT COUNT(*) n FROM jobs");
   return {
     generatedAt: new Date().toISOString(),
-    config: { payments: asaas.ENABLED, fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS, mail: mail.ENABLED, oauth: oauth.list(), version: appVersion() },
+    config: { payments: PAYMENTS, fee: FEE * 100, autoRelease: stripe.SELECTED ? 0 : asaas.AUTO_RELEASE_DAYS, mail: mail.ENABLED, oauth: oauth.list(), version: appVersion() },
     people: {
       freelas: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")}`), clientes: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("cliente")}`),
       both: count(`SELECT COUNT(*) n FROM users u WHERE ${HAS("freela")} AND ${HAS("cliente")}`),
@@ -1421,7 +1514,7 @@ route("GET", "/api/admin/overview", ({ user }) => {
       new30: count("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-30 days')"),
       active7: count("SELECT COUNT(DISTINCT sender_id) n FROM messages WHERE sender_id IS NOT NULL AND created_at >= datetime('now', '-7 days')"),
       verified: count("SELECT COUNT(*) n FROM verifications"),
-      withPayout: count("SELECT COUNT(*) n FROM payout_accounts"),
+      withPayout: count(stripe.SELECTED ? "SELECT COUNT(*) n FROM stripe_accounts" : "SELECT COUNT(*) n FROM payout_accounts"),
       profilesReady: count(`SELECT COUNT(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE ${HAS("freela")} AND p.title != '' AND p.skills NOT IN ('', '[]') AND p.bio != ''`),
     },
     jobs: { byStatus: byKey("SELECT status k, COUNT(*) n FROM jobs GROUP BY status"), total: jobsTotal,
@@ -1454,7 +1547,7 @@ route("GET", "/api/admin/overview", ({ user }) => {
       jobsNoProposal: all(`SELECT j.id, j.title, j.clarity, j.created_at at, u.name client FROM jobs j JOIN users u ON u.id = j.client_id
         WHERE j.status = 'aberta' AND j.created_at < datetime('now', '-7 days') AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.job_id = j.id)
         ORDER BY j.created_at LIMIT 20`),
-      unpaid: asaas.ENABLED ? all(`SELECT ms.id, ms.title, ms.value, j.title job, uc.name client FROM milestones ms JOIN contracts c ON c.id = ms.contract_id
+      unpaid: PAYMENTS ? all(`SELECT ms.id, ms.title, ms.value, j.title job, uc.name client FROM milestones ms JOIN contracts c ON c.id = ms.contract_id
         JOIN jobs j ON j.id = c.job_id JOIN users uc ON uc.id = c.client_id WHERE ms.pay_status = 'aguardando' LIMIT 20`) : [],
     },
     recent: {
@@ -1477,13 +1570,13 @@ const adminLog = (user: SessionUser, action: string, entity: string, id: number,
   run("INSERT INTO admin_log (admin_id, action, entity, entity_id, detail) VALUES (?,?,?,?,?)", user.id, action, entity, id, JSON.stringify(detail || {}).slice(0, 4000));
 const opt = (...pairs: [string, string][]) => pairs.map(([v, l]) => ({ v, l }));
 const ST_JOB = opt(["aberta", "Aberta"], ["em_andamento", "Em andamento"], ["concluida", "Concluída"], ["fechada", "Fechada"]);
-const ST_PROP = opt(["enviada", "Aguardando resposta"], ["aceita", "Aceita"], ["recusada", "Recusada"], ["retirada", "Retirada"]);
+const ST_PROP = opt(["enviada", "Aguardando resposta"], ["aceita", "Escolhida"], ["recusada", "Não escolhida"], ["retirada", "Retirada"]);
 const ST_MS = opt(["pendente", "A seguir"], ["andamento", "Em andamento"], ["entregue", "Entregue"], ["ajustes", "Ajustes pedidos"], ["aprovada", "Aprovada"]);
 const ST_PAY = opt(["a_pagar", "A pagar"], ["aguardando", "Aguardando pagamento"], ["pago", "Pago (protegido)"], ["liberado", "Liberado"], ["estornado", "Estornado"]);
 // dinheiro de verdade envolvido? (com Asaas ligado, etapa cobrada, paga ou liberada não pode sumir do banco)
 const MONEY = "pay_status IN ('aguardando','pago','liberado')";
 const moneyGuard = (where: string, ...p: SQLInputValue[]) => {
-  if (asaas.ENABLED && one(`SELECT 1 FROM milestones WHERE ${MONEY} AND ${where}`, ...p))
+  if (PAYMENTS && one(`SELECT 1 FROM milestones WHERE ${MONEY} AND ${where}`, ...p))
     fail(409, "Tem etapa com cobrança gerada, paga ou liberada no Asaas. Resolva o pagamento (estorno) antes de apagar.");
 };
 // campos: k = nome, label = rótulo, type = text | textarea | email | int | select | bool | list,
@@ -1556,10 +1649,46 @@ const ADMIN_ENT: Record<string, AdminEntity> = {
     fields: [{ k: "status", label: "Situação", type: "select", options: ST_PROP }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
       { k: "days", label: "Prazo (dias úteis)", type: "int", min: 0, max: 365, ph: "Ex.: 15" }, { k: "text", label: "Texto da proposta", type: "textarea", max: 4000 },
       { k: "questions", label: "Perguntas", type: "textarea", max: 2000 }],
-    list: (q, off) => all(`SELECT pr.id, j.title job, u.name freela, pr.value, pr.status, pr.created_at FROM proposals pr JOIN jobs j ON j.id = pr.job_id JOIN users u ON u.id = pr.freela_id
-      WHERE ? = '' OR j.title LIKE ? OR u.name LIKE ? ORDER BY pr.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
-    cols: [["job", "Vaga"], ["freela", "Freela"], ["value", "Valor R$"], ["status", "Situação"], ["created_at", "Enviada"]],
+    list: (q, off, query) => {
+      const st = query ? str(query.get("status") || "", 20) : "";
+      const jid = query ? int(query.get("job_id"), 0) : 0;
+      const cleanId = q.replace(/^#/, "");
+      return all(`SELECT pr.id, pr.job_id, j.title job, j.status job_status, j.client_id, uc.name client,
+        pr.freela_id, u.name freela, (SELECT v.provider FROM verifications v WHERE v.user_id = u.id LIMIT 1) verified,
+        CASE WHEN p.avatar IS NOT NULL THEN '/avatar/' || u.id ELSE '' END avatar,
+        pr.value, pr.days, pr.status, pr.text, pr.questions, pr.milestones, pr.created_at,
+        (SELECT c.id FROM contracts c WHERE c.proposal_id = pr.id LIMIT 1) contract_id
+        FROM proposals pr
+        JOIN jobs j ON j.id = pr.job_id
+        JOIN users u ON u.id = pr.freela_id
+        LEFT JOIN profiles p ON p.user_id = pr.freela_id
+        JOIN users uc ON uc.id = j.client_id
+        WHERE (? = '' OR pr.status = ?)
+          AND (? = 0 OR pr.job_id = ?)
+          AND (? = '' OR j.title LIKE ? OR u.name LIKE ? OR uc.name LIKE ? OR pr.text LIKE ? OR CAST(pr.id AS TEXT) = ?)
+        ORDER BY pr.id DESC LIMIT 50 OFFSET ?`,
+        st, st, jid, jid, q, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, cleanId, off).map(r => ({
+          ...r,
+          milestones_list: parse<ProposalMilestone[]>(r.milestones),
+          files: attsOf("proposal_id", Number(r.id)),
+        }));
+    },
+    summary: () => {
+      const byStatus: Record<string, number> = { enviada: 0, aceita: 0, recusada: 0, retirada: 0 };
+      let total = 0, totalValue = 0;
+      for (const r of all("SELECT status, COUNT(*) n, COALESCE(SUM(value), 0) v FROM proposals GROUP BY status")) {
+        byStatus[String(r.status)] = Number(r.n) || 0;
+        total += Number(r.n) || 0;
+        totalValue += Number(r.v) || 0;
+      }
+      return { total, totalValue, byStatus };
+    },
+    cols: [["job", "Vaga"], ["client", "Cliente"], ["freela", "Freela"], ["value", "Valor R$"], ["days", "Prazo (dias)"], ["status", "Situação"], ["created_at", "Enviada"]],
     get: id => one("SELECT * FROM proposals WHERE id = ?", id),
+    after: id => {
+      const p = one("SELECT pr.*, j.client_id FROM proposals pr JOIN jobs j ON j.id = pr.job_id WHERE pr.id = ?", id);
+      if (p && p.status === "aceita") ensureContractForProposal(p, p.client_id);
+    },
     beforeDelete: id => { if (one("SELECT 1 FROM contracts WHERE proposal_id = ?", id)) fail(409, "Essa proposta virou contrato. Apague o contrato antes."); },
   },
   contracts: {
@@ -1578,7 +1707,7 @@ const ADMIN_ENT: Record<string, AdminEntity> = {
     fields: [{ k: "title", label: "Etapa", type: "text", max: 120, req: true, ph: "Ex.: Primeiras propostas de logotipo" }, { k: "value", label: "Valor (R$)", type: "int", min: 0, max: 10_000_000 },
       { k: "status", label: "Situação", type: "select", options: ST_MS },
       // com o Asaas ligado, a situação do pagamento só muda pelo próprio Asaas (o banco não pode mentir sobre dinheiro)
-      { k: "pay_status", label: "Pagamento", type: "select", options: ST_PAY, locked: () => asaas.ENABLED }],
+      { k: "pay_status", label: "Pagamento", type: "select", options: ST_PAY, locked: () => PAYMENTS }],
     list: (q, off) => all(`SELECT ms.id, j.title job, ms.title, ms.value, ms.status, ms.pay_status FROM milestones ms JOIN contracts c ON c.id = ms.contract_id
       JOIN jobs j ON j.id = c.job_id WHERE ? = '' OR j.title LIKE ? OR ms.title LIKE ? ORDER BY ms.id DESC LIMIT 50 OFFSET ?`, q, `%${q}%`, `%${q}%`, off),
     cols: [["job", "Vaga"], ["title", "Etapa"], ["value", "Valor R$"], ["status", "Situação"], ["pay_status", "Pagamento"]],
@@ -1622,7 +1751,7 @@ for (const [key, ent] of Object.entries(ADMIN_ENT)) {
   route("GET", `/api/admin/${key}`, ({ user, query }) => {
     needAdmin(user);
     const page = int(query.get("page"), 0, 10_000);
-    return { rows: ent.list(str(query.get("q") || "", 80), page * 50), page };
+    return { rows: ent.list(str(query.get("q") || "", 80), page * 50, query), page, ...(ent.summary ? { summary: ent.summary() } : {}) };
   }, { auth: false });
   // LER UM: todos os campos editáveis de um registro
   route("GET", `/api/admin/${key}/:id`, ({ user, params }) => {
@@ -2008,18 +2137,24 @@ function noticeParts(p: AppRow, msgs: AppRow[], max = 400) {
   return { T, subject, line };
 }
 async function sendNotice(p: AppRow, msgs: AppRow[]) {
-  const escHtml = (s: unknown) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   const link = `${PUBLIC_URL}/mensagens/${p.thread_id}`, prefs = `${PUBLIC_URL}/avisos#${notifyToken(p.user_id)}`;
   const { T, subject, line } = noticeParts(p, msgs);
   const shown = msgs.slice(-5), more = msgs.length - shown.length;
   const first = p.name.split(" ")[0];
   const moreTxt = more ? T(more > 1 ? "(e mais {1} mensagens antes)" : "(e mais {1} mensagem antes)", more) : "";
   const text = `${T("Olá, {1}.", first)}\n\n${more ? moreTxt + "\n" : ""}${shown.map(line).join("\n\n")}\n\n${T("Abrir a conversa:")} ${link}\n\n--\nOsmo Talents. ${T("Para mudar ou desligar estes avisos:")} ${prefs}`;
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.6;color:#1C0B12;max-width:520px">
-<p>${escHtml(T("Olá, {1}.", first))}</p>${more ? `<p style="color:#666">${escHtml(moreTxt)}</p>` : ""}
-${shown.map(m => `<p style="margin:0 0 12px;padding:12px 14px;border-radius:12px;background:#F6EEF1">${m.sender ? `<b>${escHtml(m.sender)}</b><br>` : ""}${escHtml(line({ ...m, sender: "" })).replace(/\n/g, "<br>")}</p>`).join("")}
-<p><a href="${link}" style="display:inline-block;background:#7A0B3C;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600">${escHtml(T("Abrir conversa"))}</a></p>
-<p style="color:#666;font-size:13px">Osmo Talents · <a href="${prefs}" style="color:#666">${escHtml(T("Mudar ou desligar estes avisos"))}</a></p></div>`;
+  const html = mail.renderEmailTemplate({
+    eyebrow: p.job_title ? p.job_title : "Conversas · Osmo Talents",
+    title: subject,
+    greeting: T("Olá, {1}.", first),
+    intro: moreTxt || undefined,
+    items: shown.map(m => ({ sender: m.sender || undefined, body: line({ ...m, sender: "" }), system: m.sender_id == null })),
+    ctaLabel: T("Abrir conversa"),
+    ctaUrl: link,
+    unsubscribeUrl: prefs,
+    unsubscribeLabel: T("Mudar ou desligar estes avisos"),
+    publicUrl: PUBLIC_URL,
+  });
   await mail.send({ to: p.email, subject, text, html, headers: { "List-Unsubscribe": `<${prefs}>` } });
 }
 // A notificação é curtinha: o mesmo título do e-mail e as últimas 3 mensagens, cada uma com até
@@ -2049,12 +2184,14 @@ if (mail.ENABLED || push.ENABLED) setInterval(() => { try { notifySweep(); } cat
 // Rotas desse link do rodapé: ver e trocar a preferência de avisos.
 // preferências pelo link do e-mail (sem precisar entrar na conta)
 const byNotifyToken = (t: unknown) => /^[a-f0-9]{48}$/.test(String(t || "")) ? one("SELECT id, name, notify_level FROM users WHERE notify_token = ?", String(t)) : null;
-route("GET", "/api/notify", ({ query }) => {
+route("GET", "/api/notify", ({ query, ip }) => {
+  limit("notify:" + ip, 30, 60_000);
   const u = byNotifyToken(query.get("token"));
   if (!u) fail(404, "Esse link não funciona mais. Entre na sua conta e ajuste os avisos em Meu perfil.");
   return { name: u.name, level: u.notify_level };
 }, { auth: false });
-route("POST", "/api/notify", ({ body }) => {
+route("POST", "/api/notify", ({ body, ip }) => {
+  limit("notify:" + ip, 30, 60_000);
   const u = byNotifyToken(body.token);
   if (!u) fail(404, "Esse link não funciona mais. Entre na sua conta e ajuste os avisos em Meu perfil.");
   if (!isOneOf(body.level, NOTIFY)) fail(400, "Escolha uma opção.");
@@ -2110,9 +2247,24 @@ function createOAuthUser(r: OAuthRegistration, role: Role) {
 }
 function redirect(res: http.ServerResponse, to: string) { res.writeHead(302, { ...SECURITY_HEADERS, Location: to, "Cache-Control": "no-store" }); res.end(); }
 const stateCookie = (v: string, age: number) => `osmo_oauth=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
+const oauthLanguageCookie = (v: string, age: number) => `osmo_oauth_lang=${v}; Path=/auth; HttpOnly; Max-Age=${age}; SameSite=Lax${COOKIE_SECURE ? "; Secure" : ""}`;
 async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, url: URL, ip: string) {
   const m = url.pathname.match(/^\/auth\/(google|microsoft|linkedin|adobe|github)(\/callback)?$/);
-  const fail2 = (code: string) => redirect(res, `/entrar?oauth_error=${code}`);
+  let language = i18n.pick(url.searchParams.get("lang")) || "pt-BR";
+  if (m && m[2]) {
+    const state = url.searchParams.get("state") || "";
+    let languageCookie = "";
+    try { languageCookie = readCookie(req, "osmo_oauth_lang") || ""; } catch { /* preferência opcional corrompida não bloqueia o login */ }
+    const savedLanguage = /^([a-f0-9]{48})\.(pt-BR|en-US)$/.exec(languageCookie);
+    if (savedLanguage && savedLanguage[1] === state && readCookie(req, "osmo_oauth") === state) language = i18n.pick(savedLanguage[2]) || "pt-BR";
+  }
+  const destination = (path: string) => {
+    if (language !== "en-US") return path;
+    const target = new URL(path, PUBLIC_URL);
+    target.searchParams.set("lang", "en-US");
+    return target.pathname + target.search + target.hash;
+  };
+  const fail2 = (code: string) => redirect(res, destination(`/entrar?oauth_error=${code}`));
   if (!m) return send(res, 404, "Não encontrado", { "Content-Type": "text/plain; charset=utf-8" });
   const k = m[1];
   if (!oauth.enabled(k)) return fail2("indisponivel");
@@ -2127,6 +2279,7 @@ async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, u
     run("DELETE FROM oauth_states WHERE created_at < datetime('now', '-15 minutes')");
     run("INSERT INTO oauth_states (state, provider, verifier, nonce, role) VALUES (?,?,?,?,?)", s.state, k, s.verifier, s.nonce, role);
     appendCookie(res, stateCookie(s.state, 600));
+    appendCookie(res, oauthLanguageCookie(s.state + "." + language, 600));
     return redirect(res, s.url);
   }
   // retorno do provedor
@@ -2136,6 +2289,7 @@ async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, u
   if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
   const params = url.searchParams;
   appendCookie(res, stateCookie("", 0));
+  appendCookie(res, oauthLanguageCookie("", 0));
   if (params.get("error")) return fail2(params.get("error") === "access_denied" || params.get("error") === "user_cancelled_authorize" ? "cancelado" : "falhou");
   const state = params.get("state") || "", code = params.get("code") || "";
   const saved = /^[a-f0-9]{48}$/.test(state) ? one("SELECT * FROM oauth_states WHERE state = ? AND provider = ? AND created_at > datetime('now', '-15 minutes')", state, k) : null;
@@ -2154,13 +2308,13 @@ async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, u
   if (!uid) {
     if (!prof.email || !prof.emailVerified) return fail2("sem_email");
     const r = { provider: k, sub: prof.sub, email: prof.email, name: prof.name };
-    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role as Role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, saved.role === "freela" ? "/perfil" : "/publicar"); }
+    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role as Role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, destination(saved.role === "freela" ? "/perfil" : "/publicar")); }
     const token = crypto.randomBytes(24).toString("hex");
     run("INSERT INTO oauth_pending (token, provider, sub, email, name) VALUES (?,?,?,?,?)", token, k, prof.sub, prof.email, prof.name);
-    return redirect(res, `/escolher#${token}`);
+    return redirect(res, destination(`/escolher#${token}`));
   }
   createSession(res, uid);
-  return redirect(res, "/painel");
+  return redirect(res, destination("/painel"));
 }
 
 // TOP 10 DE FILMES E SÉRIES: os dados vêm do TMDB (themoviedb.org), que tem API oficial e gratuita.
@@ -2296,11 +2450,12 @@ const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js
 // - Permissions-Policy: o site não pede câmera, microfone nem localização;
 // - Content-Security-Policy: a lista de lugares de onde a página pode carregar coisas.
 //   Se alguém conseguir enfiar um script malvado, o navegador se recusa a rodar.
-const SECURITY_HEADERS = {
+const SECURITY_HEADERS: http.OutgoingHttpHeaders = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  ...(COOKIE_SECURE ? { "Strict-Transport-Security": "max-age=63072000; includeSubDomains" } : {}),
   // com o Google Analytics configurado, a lista de lugares permitidos ganha os endereços do Google;
   // o Cloudflare Web Analytics (static.cloudflareinsights.com / cloudflareinsights.com) vale nas duas versões
   "Content-Security-Policy": GA_ID
@@ -2354,7 +2509,7 @@ const stamp = (name: string) => {
   } catch { return "0"; }
 };
 const appVersion = () => stamp("app.js") + "." + stamp("styles.css");
-const publicPayments = { enabled: asaas.ENABLED, sandbox: /sandbox/.test(asaas.BASE), fee: asaas.FEE_PCT, autoRelease: asaas.AUTO_RELEASE_DAYS };
+const publicPayments = { enabled: PAYMENTS, sandbox: stripe.SELECTED ? stripe.SANDBOX : /sandbox/.test(asaas.BASE), fee: FEE * 100, autoRelease: stripe.SELECTED ? 0 : asaas.AUTO_RELEASE_DAYS };
 const seo = createSeo({ one, all, JOB_SELECT, jobOut: row => jobOut(row as unknown as AppRow), profileOf, hasFreelaSQL: HAS("freela"), payments: publicPayments, publicDir: PUBLIC_DIR });
 const editorialPaths = new Set(Object.keys(editorialPages));
 const stampHtml = (html: string) => html.replace(/(src|href)="\/(app\.js|theme\.js|styles\.css|fonts\.css|i18n-core\.js|i18n\.js|tv\/tv\.js|tv\/tv\.css|tv\/remote-tv\.js|tv\/qrcode\.js|tv\/controle\.js|tv\/controle\.css)"/g, (m, attr, name) => `${attr}="/${name}?v=${stamp(name)}"`);
@@ -2370,7 +2525,7 @@ function servePublicPage(req: http.IncomingMessage, res: http.ServerResponse, ur
   return true;
 }
 
-const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|tarefas|squads|gestao|top10|admin(?:\/dados)?)\/?$/;
+const APP_PATH = /^\/(?:(?:vagas|talentos|mensagens|projetos)(?:\/\d+)?|vagas\/\d+\/proposta|contratos\/\d+|entrar|esqueci|recuperar|avisos|escolher|painel|perfil|publicar|panorama|propostas|tarefas|squads|gestao|top10|admin(?:\/(?:dados|propostas))?)\/?$/;
 // endereço que não existe: página amigável, mas com código 404 (e sem guardar em cache)
 function notFound(res: http.ServerResponse) {
   fs.readFile(path.join(PUBLIC_DIR, "404.html"), (err, buf) => err
@@ -2391,7 +2546,10 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathna
     const ext = path.extname(file);
     // o navegador sempre confere se há versão nova; se nada mudou, responde 304 sem reenviar o arquivo
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
-    const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache", "ETag": etag };
+    const reqUrl = new URL(req.url || "/", "http://localhost");
+    const versioned = (ext === ".js" || ext === ".css") && reqUrl.searchParams.get("v") === Math.floor(st.mtimeMs).toString(36);
+    const cacheControl = versioned ? "public, max-age=31536000, immutable" : [".svg", ".png", ".jpg", ".ico", ".woff2"].includes(ext) ? "public, max-age=86400" : "no-cache";
+    const headers = { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": cacheControl, "ETag": etag };
     if (ext !== ".html" && req.headers["if-none-match"] === etag) { res.writeHead(304, { ...SECURITY_HEADERS, ...headers }); return res.end(); }
     if (ext === ".html") {
       // carimba app.js, theme.js e styles.css com a data do arquivo: navegador e Cloudflare sempre pegam a versão nova
@@ -2472,7 +2630,7 @@ const server = http.createServer(async (req, res) => {
     const out = await r.handler({ req, res, user, params, body, query: url.searchParams, ip });
     if (!res.headersSent) send(res, 200, out ?? { ok: true }); // a rota pode ter respondido sozinha (ex.: texto puro)
   } catch (e) {
-    if (e instanceof HttpError) return send(res, e.status, { error: e.message });
+    if (e instanceof HttpError || e instanceof stripe.PaymentError) return send(res, e.status, { error: e.message });
     console.error(new Date().toISOString(), req.method, url.pathname, e);
     send(res, 500, { error: "Algo deu errado do nosso lado. Tente de novo em instantes." });
   }

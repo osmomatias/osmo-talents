@@ -10,23 +10,54 @@ import type { I18nCore, LanguageEntry, TranslationDictionary } from "../shared/i
 interface ClientI18n {
   lang: string; locale: string; ativo: boolean; langs: LanguageEntry[]; ready: Promise<void>;
   t(key: string, ...args: unknown[]): string; tx(text: string): string; set(lang: string): void;
+  withLanguage(href: string): string;
 }
 const source = (name: string) => fs.readFileSync(path.join(PROJECT_ROOT, "public", name), "utf8");
 const english = JSON.parse(source("i18n/en-US.json")) as TranslationDictionary;
 
 // Exercise the emitted classic scripts with storage and fetch contained entirely in the VM.
-async function client(search = "", saved?: string, languages = ["pt-BR"], hostname = "example.test") {
+async function client(search = "", saved?: string, languages = ["pt-BR"], hostname = "example.test", destination?: string, anchorAttributes: readonly Record<string, string>[] = [], legalPages: readonly { lang: string; links: Record<string, string>[] }[] = []) {
   const storage = new Map<string, string>(saved ? [["osmo-lang", saved]] : []);
-  const requests: string[] = [], replacements: string[] = [], attributes = new Map<string, string>();
+  const requests: string[] = [], replacements: string[] = [], readyListeners: (() => void)[] = [];
   const window: { OsmoI18nCore?: I18nCore; I18N?: ClientI18n } = {};
-  const html = { setAttribute: (key: string, value: string) => attributes.set(key, value), classList: { add() {}, remove() {} } };
+  const href = destination === undefined ? "https://" + hostname + "/perfil" + search + "#prefs" : new URL(destination, "https://" + hostname).href;
+  const address = new URL(href);
+  class ElementStub {
+    readonly nodeType = 1;
+    readonly isContentEditable = false;
+    hidden = false;
+    readonly dataset: Record<string, string> = {};
+    readonly links: ElementStub[] = [];
+    parentElement: ElementStub | null = null;
+    readonly classList = { add() {}, remove() {} };
+    readonly attributes: Map<string, string>;
+    constructor(readonly tagName: string, attributes: Record<string, string> = {}) { this.attributes = new Map(Object.entries(attributes)); }
+    getAttribute(key: string) { return this.attributes.get(key) ?? null; }
+    hasAttribute(key: string) { return this.attributes.has(key); }
+    setAttribute(key: string, value: string) { this.attributes.set(key, value); }
+    querySelectorAll(selector: string) { return selector === "a[href]" ? this.links : []; }
+  }
+  const html = new ElementStub("HTML"), attributes = html.attributes;
+  const anchors = anchorAttributes.map(attrs => { const anchor = new ElementStub("A", attrs); anchor.parentElement = html; return anchor; });
+  const legalDocuments = legalPages.map(page => {
+    const doc = new ElementStub("DIV", { "data-doc": page.lang, translate: "no" }); doc.parentElement = html;
+    doc.links.push(...page.links.map(attrs => { const anchor = new ElementStub("A", attrs); anchor.parentElement = doc; return anchor; }));
+    return doc;
+  });
   const context = vm.createContext({
-    window, self: window, URL, HTMLScriptElement: class {},
-    location: { search, hostname, href: "https://" + hostname + "/perfil" + search + "#prefs", replace: (url: string) => replacements.push(url) },
+    window, self: window, URL, HTMLScriptElement: class {}, HTMLInputElement: class {}, Element: ElementStub, HTMLElement: ElementStub,
+    NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
+    location: { search: address.search, hostname, href, origin: address.origin, pathname: address.pathname, hash: address.hash, replace: (url: string) => replacements.push(url) },
     navigator: { languages, language: languages[0] },
     localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
     document: { documentElement: html, head: { appendChild() {} }, currentScript: null, readyState: "loading",
-      createElement: () => ({ textContent: "" }), querySelectorAll: () => [], addEventListener() {} },
+      createElement: () => ({ textContent: "" }), querySelectorAll: (selector: string) => selector === "[data-doc]" ? legalDocuments : [],
+      querySelector: (selector: string) => legalDocuments.find(doc => selector === '[data-doc="' + doc.getAttribute("data-doc") + '"]') ?? null,
+      addEventListener: (name: string, listener: () => void) => { if (name === "DOMContentLoaded") readyListeners.push(listener); },
+      createTreeWalker: (_root: ElementStub, _what: number, filter: { acceptNode(node: ElementStub): number }) => {
+        let index = 0; const nodes = [...anchors, ...legalDocuments];
+        return { nextNode() { while (index < nodes.length) { const node = nodes[index++]; if (filter.acceptNode(node) === 1) return node; } return null; } };
+      } },
     MutationObserver: class { observe() {} takeRecords() { return []; } },
     setTimeout: () => 0,
     fetch: async (url: string) => { requests.push(url); return { ok: true, status: 200, json: async () => english }; },
@@ -35,7 +66,7 @@ async function client(search = "", saved?: string, languages = ["pt-BR"], hostna
   vm.runInContext(source("i18n.js"), context, { filename: "i18n.js" });
   assert.ok(window.I18N);
   await window.I18N.ready;
-  return { api: window.I18N, storage, requests, replacements, attributes };
+  return { api: window.I18N, storage, requests, replacements, attributes, anchors, legalDocuments, dispatchDOMContentLoaded: () => readyListeners.forEach(listener => listener()) };
 }
 
 test("only Portuguese and English can be selected or translated by the backend", () => {
@@ -147,4 +178,96 @@ test("manual language changes on the UK domain survive the next page load", asyn
   second.api.set("en-US");
   const third = await client("", second.storage.get("osmo-lang"), ["pt-BR"], "osmodesign.co.uk");
   assert.equal(third.api.lang, "en-US");
+});
+
+test("Brazilian root and www domains open in Portuguese before saved or browser preferences", async () => {
+  for (const hostname of ["osmo.com.br", "www.osmo.com.br", "OSMO.COM.BR", "osmo.com.br.", "WWW.OSMO.COM.BR."]) {
+    for (const query of ["", "?lang=es-419", "?lang=fr-CA"]) {
+      const { api, requests, attributes } = await client(query, "en-US", ["en-GB"], hostname);
+      assert.equal(api.lang, "pt-BR", hostname + query);
+      assert.equal(attributes.get("lang"), "pt-BR");
+      assert.deepEqual(requests, []);
+    }
+    assert.equal((await client("?lang=en-GB", "pt-BR", ["pt-BR"], hostname)).api.lang, "en-US");
+  }
+  for (const hostname of ["app.osmo.com.br", "notosmo.com.br", "osmo.com.br.example.test"]) {
+    assert.equal((await client("", "en-US", ["pt-BR"], hostname)).api.lang, "en-US", hostname);
+  }
+});
+
+test("English navigation on the Brazilian domain adds language only to internal HTML destinations", async () => {
+  const { api } = await client("?lang=en-US", "pt-BR", ["pt-BR"], "osmo.com.br");
+  for (const href of ["/vagas", "/vagas?q=brand#lista", "talentos?cat=design#top", "/privacidade.html", "https://osmo.com.br/perfil?tab=skills#bio"]) {
+    const result = new URL(api.withLanguage(href), "https://osmo.com.br/perfil");
+    const original = new URL(href, "https://osmo.com.br/perfil");
+    assert.equal(result.origin, original.origin, href);
+    assert.equal(result.pathname, original.pathname, href);
+    assert.equal(result.hash, original.hash, href);
+    const expected = new URLSearchParams(original.search); expected.set("lang", "en-US");
+    assert.equal(result.searchParams.toString(), expected.toString(), href);
+  }
+  for (const href of ["/vagas?lang=pt-BR&cat=design#lista", "/perfil?lang=en-GB", "/vagas?lang=es-419", "https://example.test/vagas", "//example.test/vagas", "#faq", "/auth/google?role=freela", "/api/jobs", "/arquivo/123", "/avatar/7", "/portfolio/4", "/guia.PDF?download=1#p2", "/favicon.svg", "mailto:hi@example.test", "javascript:alert(1)", "blob:https://osmo.com.br/document-id", "http://["]) {
+    assert.equal(api.withLanguage(href), href, href);
+  }
+});
+
+test("language navigation leaves Portuguese pages and other domains unchanged", async () => {
+  for (const [hostname, query, languages] of [
+    ["osmo.com.br", "", ["en-GB"]],
+    ["osmodesign.co.uk", "", ["pt-BR"]],
+    ["example.test", "?lang=en-US", ["en-GB"]],
+  ] as [string, string, string[]][]) {
+    const { api } = await client(query, undefined, languages, hostname);
+    assert.equal(api.withLanguage("/vagas?cat=design#lista"), "/vagas?cat=design#lista", hostname);
+  }
+});
+
+test("Brazilian English selection survives internal hard navigation and refresh through its URL", async () => {
+  const initial = await client("", "en-US", ["en-GB"], "osmo.com.br");
+  assert.equal(initial.api.lang, "pt-BR");
+  initial.api.set("en-US");
+  assert.deepEqual(initial.replacements, ["/perfil?lang=en-US#prefs"]);
+  assert.equal(initial.storage.get("osmo-lang"), "en-US");
+  const englishPage = await client("", initial.storage.get("osmo-lang"), ["pt-BR"], "osmo.com.br", initial.replacements[0]);
+  assert.equal(englishPage.api.lang, "en-US");
+  const link = englishPage.api.withLanguage("/vagas?q=brand#lista");
+  const navigated = await client("", englishPage.storage.get("osmo-lang"), ["pt-BR"], "osmo.com.br", link);
+  assert.equal(navigated.api.lang, "en-US");
+  const refreshed = await client("", navigated.storage.get("osmo-lang"), ["pt-BR"], "osmo.com.br", link);
+  assert.equal(refreshed.api.lang, "en-US");
+  refreshed.api.set("pt-BR");
+  assert.deepEqual(refreshed.replacements, ["/vagas?q=brand#lista"]);
+  const portuguesePage = await client("", refreshed.storage.get("osmo-lang"), ["en-GB"], "osmo.com.br", refreshed.replacements[0]);
+  assert.equal(portuguesePage.api.lang, "pt-BR");
+  assert.equal((await client("", "en-US", ["en-GB"], "osmo.com.br")).api.lang, "pt-BR");
+});
+
+test("DOMContentLoaded carries English into editorial anchors while preserving downloads and untranslated content", async () => {
+  const page = await client("?lang=en-US", undefined, ["pt-BR"], "osmo.com.br", undefined, [
+    { href: "/privacidade?source=footer#dados", title: "Publicar vaga" },
+    { href: "/privacidade?download=1", download: "privacy.html" },
+    { href: "/privacidade#original", translate: "no", title: "Publicar vaga" },
+  ]);
+  assert.equal(page.anchors[0].getAttribute("href"), "/privacidade?source=footer#dados");
+  page.dispatchDOMContentLoaded();
+  assert.equal(page.anchors[0].getAttribute("href"), "/privacidade?source=footer&lang=en-US#dados");
+  assert.equal(page.anchors[0].getAttribute("title"), english["Publicar vaga"]);
+  assert.equal(page.anchors[1].getAttribute("href"), "/privacidade?download=1");
+  assert.equal(page.anchors[2].getAttribute("href"), "/privacidade#original");
+  assert.equal(page.anchors[2].getAttribute("title"), "Publicar vaga");
+});
+
+test("active English legal documents preserve navigation language without translating protected content", async () => {
+  const page = await client("?lang=en-US", undefined, ["pt-BR"], "osmo.com.br", undefined, [], [
+    { lang: "pt-BR", links: [{ href: "/" }] },
+    { lang: "en-US", links: [{ href: "/", title: "Publicar vaga" }, { href: "/privacidade?lang=pt-BR#dados" }] },
+  ]);
+  page.dispatchDOMContentLoaded();
+  const [portuguese, englishDoc] = page.legalDocuments;
+  assert.equal(portuguese.hidden, true);
+  assert.equal(portuguese.links[0].getAttribute("href"), "/");
+  assert.equal(englishDoc.hidden, false);
+  assert.equal(englishDoc.links[0].getAttribute("href"), "/?lang=en-US");
+  assert.equal(englishDoc.links[0].getAttribute("title"), "Publicar vaga");
+  assert.equal(englishDoc.links[1].getAttribute("href"), "/privacidade?lang=pt-BR#dados");
 });

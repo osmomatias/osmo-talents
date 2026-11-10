@@ -10,9 +10,54 @@
 set -e
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
-echo ""
-echo "Ligar pagamentos (Asaas)"
-echo "------------------------"
+if [ "${1:-}" = "--from-env" ]; then
+  if [ ! -f .env ]; then echo "Arquivo .env local não encontrado."; exit 1; fi
+  SKEY="$(grep -E '^STRIPE_SECRET_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r\"'"'"'')"
+  WSEC="$(grep -E '^STRIPE_WEBHOOK_SECRET=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r\"'"'"'')"
+  PIX="$(grep -E '^STRIPE_PIX_ENABLED=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r\"'"'"'')"
+  [ -n "$PIX" ] || PIX="false"
+  if [ -z "$SKEY" ]; then echo "STRIPE_SECRET_KEY não encontrada no .env local."; exit 1; fi
+  PROV="1"
+else
+  echo ""
+  echo "Ligar pagamentos (Stripe ou Asaas)"
+  echo "----------------------------------"
+  read -r -p "Provedor: 1 = Stripe (Connect), 2 = Asaas [1]: " PROV
+fi
+if [ "${PROV:-1}" = "1" ]; then
+  if [ "${1:-}" != "--from-env" ]; then
+    read -r -s -p "Cole a STRIPE_SECRET_KEY (sk_test_... ou sk_live_...) e aperte Enter: " SKEY; echo ""
+    if [ -z "$SKEY" ]; then echo "Nenhuma chave informada. Nada foi alterado."; exit 1; fi
+    read -r -s -p "Cole o STRIPE_WEBHOOK_SECRET (whsec_...) e aperte Enter: " WSEC; echo ""
+    read -r -p "Habilitar Pix no Checkout Stripe? (s/N) [n]: " PIXIN
+    if [[ "$PIXIN" =~ ^[sSyY]$ ]]; then PIX="true"; else PIX="false"; fi
+  fi
+  NEWSECRET="$(openssl rand -hex 24)"
+  echo ""
+  echo "Enviando configuração da Stripe para o servidor..."
+  LC_ALL=C.UTF-8 ssh -o SendEnv=- "root@$IP" "bash -s" <<EOF
+set -e
+ENV=/var/www/osmo-talents/.env
+SECRET="\$(grep -E '^APP_SECRET=' \$ENV | cut -d= -f2- || true)"
+[ -n "\$SECRET" ] || SECRET="$NEWSECRET"
+grep -vE '^(PAYMENT_PROVIDER|STRIPE_[A-Z_]+|APP_SECRET|PUBLIC_URL)=' \$ENV > \$ENV.tmp || true
+cat >> \$ENV.tmp <<'VARS'
+PAYMENT_PROVIDER=stripe
+STRIPE_SECRET_KEY=$SKEY
+STRIPE_WEBHOOK_SECRET=$WSEC
+STRIPE_PIX_ENABLED=$PIX
+PUBLIC_URL=https://$DOMAIN
+VARS
+echo "APP_SECRET=\$SECRET" >> \$ENV.tmp
+mv \$ENV.tmp \$ENV && chmod 640 \$ENV && chgrp osmo \$ENV
+systemctl restart osmo-talents
+sleep 2
+curl -fsS http://127.0.0.1:3000/api/me | grep -oE '"payments":\{[^}]+\}'
+EOF
+  echo ""
+  echo "Pronto. Stripe configurada em https://$DOMAIN (Webhook: https://$DOMAIN/api/webhooks/stripe)."
+  exit 0
+fi
 read -r -p "Ambiente: 1 = testes (sandbox), 2 = real (produção) [1]: " AMB
 if [ "${AMB:-1}" = "2" ]; then BASE="https://api.asaas.com/v3"; else BASE="https://api-sandbox.asaas.com/v3"; fi
 read -r -s -p "Cole a chave de API do Asaas (ela não aparece na tela) e aperte Enter: " KEY; echo ""

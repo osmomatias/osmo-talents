@@ -17,9 +17,10 @@ function paymentConfig(config: PaymentInput = {}) {
 }
 function paymentState(config: PaymentInput): string {
   const p = paymentConfig(config);
-  if (p.enabled && p.sandbox) return '<p><strong>Os pagamentos estão em ambiente de testes (sandbox).</strong> A integração com o Asaas está habilitada para simulações. Cobranças, confirmações e repasses nesse ambiente não representam movimentação real de dinheiro.</p>';
+  const gw = config.provider === "stripe" ? "a Stripe" : "o Asaas";
+  if (p.enabled && p.sandbox) return `<p><strong>Os pagamentos estão em ambiente de testes (sandbox).</strong> A integração com ${gw} está habilitada para simulações. Cobranças, confirmações e repasses nesse ambiente não representam movimentação real de dinheiro.</p>`;
   return p.live
-    ? '<p><strong>A integração de pagamentos está habilitada.</strong> Confira as condições e o ambiente indicado no fluxo de cobrança antes de efetuar um pagamento. A habilitação da integração, por si só, não confirma que uma cobrança foi paga ou que um repasse foi concluído.</p>'
+    ? `<p><strong>A integração de pagamentos com ${gw} está habilitada.</strong> Confira as condições e o ambiente indicado no fluxo de cobrança antes de efetuar um pagamento. A habilitação da integração, por si só, não confirma que uma cobrança foi paga ou que um repasse foi concluído.</p>`
     : '<p><strong>Os pagamentos estão simulados durante o período de testes.</strong> A integração de cobrança e repasse está desativada nesta instalação. Registros e etapas de teste não representam pagamento, custódia ou transferência real de dinheiro.</p>';
 }
 

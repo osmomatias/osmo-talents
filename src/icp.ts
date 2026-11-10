@@ -209,10 +209,12 @@ const crlCache = new Map<string, { at: number; serials: Set<string>; next: Date 
 async function revoked(info: CertificateInfo, issuer: crypto.X509Certificate): Promise<RevocationStatus> {
   for (const url of info.crlUrls.filter(u => u.startsWith("http://") || u.startsWith("https://"))) {
     try {
+      const parsed = new URL(url);
+      if (/^(localhost|127\.|0\.|169\.254\.|\[?::1\]?$)/i.test(parsed.hostname)) continue;
       let c = crlCache.get(url);
       if (!c || (c.next && c.next < new Date()) || Date.now() - c.at > 6 * 3600e3) {
         const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 20_000);
-        const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+        const res = await fetch(url, { signal: ctrl.signal, redirect: "error" }).finally(() => clearTimeout(timer));
         if (!res.ok) continue;
         const buf = Buffer.from(await res.arrayBuffer());
         if (buf.length > 60e6) continue;

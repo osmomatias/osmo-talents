@@ -47,6 +47,7 @@
 </head>
 <!-- O corpo da página: tudo daqui para baixo é o que aparece na tela. -->
 <body>
+<a class="sr-only skip-link" href="#view">Pular para o conteúdo principal</a>
 <!-- CABEÇALHO: o logo da Osmo (desenhado em SVG, que é um desenho feito de
      números e por isso fica nítido em qualquer tamanho), o menu principal
      e o espaço para os botões de entrar, perfil etc. (topActions). -->
@@ -63,7 +64,7 @@
   </div>
 </header>
 <!-- O PALCO: o app.js troca o que aparece aqui dentro a cada tela. -->
-<main><nav class="wrap breadcrumbs" id="breadcrumbs" aria-label="Trilha de navegação"></nav><div class="wrap" id="view"><p class="loading">Carregando…</p></div></main>
+<main><nav class="wrap breadcrumbs" id="breadcrumbs" aria-label="Trilha de navegação" hidden></nav><div class="wrap" id="view"><p class="loading">Carregando…</p></div></main>
 <!-- RODAPÉ: links de privacidade e termos, e um aviso sobre os pagamentos
      (o app.js troca esse texto quando os pagamentos estão ligados). -->
 <footer class="foot"><div class="wrap row" style="justify-content:space-between">

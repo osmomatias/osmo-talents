@@ -447,6 +447,8 @@ CREATE TABLE IF NOT EXISTS phone_tickets (
 // --- migrações (conversas de suporte)
 addColumn("threads", "kind", "TEXT NOT NULL DEFAULT ''");
 db.exec("CREATE INDEX IF NOT EXISTS idx_threads_kind ON threads(kind, client_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_threads_client ON threads(client_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_threads_freela ON threads(freela_id)");
 
 // CONTROLE PELO CELULAR (app de TV /tv/): cada TV ganha um "crachá" secreto (tv_screens) e cada
 // celular ligado a ela ganha o seu (tv_phones). Guardamos só o resumo (sha256) dos crachás.
@@ -535,9 +537,15 @@ BEGIN SELECT RAISE(ABORT, 'review parties do not match contract'); END;
 //   Exemplo: aceitar proposta = criar contrato + criar etapas + mudar a vaga. Ou tudo, ou nada.
 // Os "?" nas perguntas são espaços que o banco preenche com segurança, para ninguém
 // conseguir enfiar comandos malandros dentro de um texto digitado.
-const one = <T = DatabaseRow>(sql: string, ...p: SQLInputValue[]): T | undefined => db.prepare(sql).get(...p) as T | undefined;
-const all = <T = DatabaseRow>(sql: string, ...p: SQLInputValue[]): T[] => db.prepare(sql).all(...p) as T[];
-const run = (sql: string, ...p: SQLInputValue[]) => db.prepare(sql).run(...p);
+const stmts = new Map<string, ReturnType<typeof db.prepare>>();
+const stmt = (sql: string) => {
+  let s = stmts.get(sql);
+  if (!s) { s = db.prepare(sql); stmts.set(sql, s); }
+  return s;
+};
+const one = <T = DatabaseRow>(sql: string, ...p: SQLInputValue[]): T | undefined => stmt(sql).get(...p) as T | undefined;
+const all = <T = DatabaseRow>(sql: string, ...p: SQLInputValue[]): T[] => stmt(sql).all(...p) as T[];
+const run = (sql: string, ...p: SQLInputValue[]) => stmt(sql).run(...p);
 function tx<T>(fn: () => T): T {
   db.exec("BEGIN");
   try { const r = fn(); db.exec("COMMIT"); return r; }

@@ -99,6 +99,7 @@ function encKey() {
   if (s.length < 24) throw new AsaasError("Defina APP_SECRET (24 caracteres ou mais) no .env para ativar pagamentos.", 503);
   return crypto.createHash("sha256").update(s).digest();
 }
+function assertEncryptionConfigured() { encKey(); }
 function seal(text: unknown) {
   const iv = crypto.randomBytes(12), c = crypto.createCipheriv("aes-256-gcm", encKey(), iv);
   const out = Buffer.concat([c.update(String(text), "utf8"), c.final()]);
@@ -140,4 +141,4 @@ const api = {
   createWebhook: (body: WebhookRequest) => call<{ id: string }>("POST", "/webhooks", body),
 };
 
-export { ENABLED, BASE, FEE_PCT, AUTO_RELEASE_DAYS, AsaasError, api, seal, open, checkWebhookToken };
+export { ENABLED, BASE, FEE_PCT, AUTO_RELEASE_DAYS, AsaasError, api, seal, open, checkWebhookToken, assertEncryptionConfigured };

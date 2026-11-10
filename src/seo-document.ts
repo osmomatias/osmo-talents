@@ -36,11 +36,11 @@ export function renderDocument(template: string, page: DocumentPage, origin: str
 ${schemas.length ? `<script type="application/ld+json" id="seo-schema">${json(schemas)}</script>` : ""}`;
   html = html.replace("</head>", head + "\n</head>");
   if (page.content !== undefined) html = html.replace('<p class="loading">Carregando…</p>', page.content);
-  if (breadcrumbs.length) {
+  if (breadcrumbs.length > 1) {
     const trail = `<span class="breadcrumbs-label">Você está em</span><ol>${breadcrumbs.map((b,i) => `<li>${i ? '<span class="breadcrumbs-separator" aria-hidden="true">/</span>' : ""}${i < breadcrumbs.length - 1 && b.href ? `<a href="${escape(b.href)}">${escape(b.label)}</a>` : `<span aria-current="page">${escape(b.label)}</span>`}</li>`).join("")}</ol>`;
-    html = html.replace('<nav class="wrap breadcrumbs" id="breadcrumbs" aria-label="Trilha de navegação"></nav>', `<nav class="wrap breadcrumbs" id="breadcrumbs" aria-label="Trilha de navegação">${trail}</nav>`);
+    html = html.replace(/<nav class="wrap breadcrumbs" id="breadcrumbs"[^>]*><\/nav>/, `<nav class="wrap breadcrumbs" id="breadcrumbs" aria-label="Trilha de navegação">${trail}</nav>`);
   }
-  if (payments) html = html.replace(/(<span id="payNote">)[\s\S]*?(<\/span>)/, (_: string, open: string, close: string) => open + (payments.enabled && !payments.sandbox ? "Pagamentos por etapa via Asaas. Consulte as condições e taxas." : "Pagamentos simulados durante o período de testes. Não há cobrança ou garantia de valores reais neste modo.") + close);
+  if (payments) html = html.replace(/(<span id="payNote">)[\s\S]*?(<\/span>)/, (_: string, open: string, close: string) => open + (payments.enabled ? `Pagamentos por etapa via ${payments.provider === "stripe" ? "Stripe" : "Asaas"}${payments.sandbox ? " (ambiente de testes)" : ""}. Consulte as condições e taxas.` : "Pagamentos simulados durante o período de testes. Não há cobrança ou garantia de valores reais neste modo.") + close);
   if (payments && html.includes('<h2>Pagamentos</h2>')) {
     const note = payments.enabled && !payments.sandbox
       ? 'A integração de pagamentos está habilitada. Confira o estado de cada cobrança e as condições antes de iniciar.'

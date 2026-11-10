@@ -5,6 +5,7 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 export type StructuredData = { [key: string]: JsonValue };
 export interface PaymentConfig {
   enabled: boolean;
+  provider?: string;
   sandbox?: boolean;
   fee: number;
   autoRelease: number;

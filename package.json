@@ -12,6 +12,8 @@
     "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
     "seed": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/seed.js",
     "preseed": "node scripts/ensure-build.cjs",
+    "asaas:check": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/asaas-check.js",
+    "preasaas:check": "node scripts/ensure-build.cjs",
     "asaas:setup": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/asaas-setup.js",
     "preasaas:setup": "node scripts/ensure-build.cjs",
     "laudo:conferir": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/conferir-laudo.js",

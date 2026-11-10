@@ -25,7 +25,8 @@ export function createSeo({ one, all, JOB_SELECT, jobOut, profileOf, hasFreelaSQ
   const origin = canonicalOrigin();
   const enabled = payments.enabled ?? payments.ENABLED ?? false;
   const sandbox = payments.sandbox ?? (payments.BASE ? /sandbox/.test(payments.BASE) : false);
-  const paymentConfig = { enabled, sandbox, fee: payments.fee ?? payments.FEE_PCT ?? 10, autoRelease: payments.autoRelease ?? payments.AUTO_RELEASE_DAYS ?? 7 };
+  const provider = payments.provider || 'asaas';
+  const paymentConfig = { enabled, provider, sandbox, fee: payments.fee ?? payments.FEE_PCT ?? 10, autoRelease: payments.autoRelease ?? payments.AUTO_RELEASE_DAYS ?? 7 };
   let categories: Category[] = [];
   try { categories = (JSON.parse(fs.readFileSync(path.join(publicDir || path.join(PROJECT_ROOT, 'public'), 'taxonomia.json'), 'utf8')) as { categorias?: Category[] }).categorias || []; } catch {}
   const categoryNames = new Map(categories.map(c => [c.id, c.nome]));

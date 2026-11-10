@@ -3,9 +3,8 @@
 // ============================================================================
 // É o "tradutor de bolso" do site. O site inteiro foi escrito em português.
 // Quando a pessoa usa outro idioma, este arquivo:
-//   1. descobre o idioma: o que a pessoa escolheu em Ajustes (guardado neste
-//      navegador) ou, na primeira visita, o idioma do domínio/navegador. Dá para forçar
-//      com ?lang=en-US no endereço (bom para testar e para mandar link);
+//   1. descobre o idioma: ?lang= no endereço tem prioridade, seguido da regra do
+//      domínio. Nos demais casos, usa a preferência salva ou o idioma do navegador;
 //   2. baixa o dicionário daquele idioma (public/i18n/<idioma>.json);
 //   3. fica de olho na página: toda vez que um texto aparece (uma tela nova, um
 //      aviso, uma mensagem de erro), ele troca pela tradução, antes de a tela ser
@@ -22,6 +21,8 @@
   var ATIVO = true;
   var SUPPORTED: string[] = core.LANGS.map(function (l) { return l[0]; });
   var html = document.documentElement;
+  var host = location.hostname.toLowerCase().replace(/\.$/, "");
+  var brazilianDomain = host === "osmo.com.br" || host === "www.osmo.com.br";
 
   function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function detect() {
@@ -29,15 +30,36 @@
     var q = (location.search.match(/[?&]lang=([\w-]+)/) || [])[1];
     var fromUrl = q && core.pick([q]);
     if (fromUrl) { try { localStorage.setItem(KEY, fromUrl); } catch (e) {} return fromUrl; }
+    // A entrada direta no domínio brasileiro usa português, inclusive após uma visita em inglês.
+    if (brazilianDomain) return "pt-BR";
     var s = stored();
     if (s && SUPPORTED.indexOf(s) >= 0) return s;
     // O domínio britânico abre em inglês; a escolha explícita da pessoa tem prioridade.
-    var host = location.hostname.toLowerCase().replace(/\.$/, "");
     if (host === "osmodesign.co.uk" || host === "www.osmodesign.co.uk") return "en-US";
     return core.pick(navigator.languages || [navigator.language]) || "pt-BR";
   }
   var lang = detect();
   var locale = lang; // datas e números: Intl entende "en-US", "es-419", "fr-CA", "pt-BR"
+  // Uma escolha explícita em inglês acompanha as páginas internas, inclusive ao recarregar.
+  // Sem esse parâmetro, uma nova entrada no domínio brasileiro volta ao português.
+  function withLanguage(href: string): string {
+    if (!brazilianDomain || lang !== "en-US" || !href || href.charAt(0) === "#") return href;
+    try {
+      var target = new URL(href, location.href);
+      if (target.protocol !== "http:" && target.protocol !== "https:") return href;
+      if (target.origin !== new URL(location.href).origin) return href;
+      if (/^\/(api|auth|arquivo|avatar|portfolio)(\/|$)/i.test(target.pathname)) return href;
+      if (/\/[^/]*\.[^/]+$/.test(target.pathname) && !/\.html?$/i.test(target.pathname)) return href;
+      if (target.searchParams.has("lang")) return href;
+      target.searchParams.set("lang", lang);
+      return target.pathname + target.search + target.hash;
+    } catch (e) { return href; }
+  }
+  function keepLinkLanguage(el: Element): void {
+    if (el.tagName !== "A" || el.hasAttribute("download")) return;
+    var href = el.getAttribute("href");
+    if (href) { var next = withLanguage(href); if (next !== href) el.setAttribute("href", next); }
+  }
   html.setAttribute("lang", lang);
   var C: OsmoCompiledDictionary | null = null; // dicionário pronto para procurar
   // enquanto o dicionário chega, a página fica invisível (classe i18n-wait), para não piscar em português
@@ -51,6 +73,8 @@
     var hit = document.querySelector<HTMLElement>('[data-doc="' + lang + '"]') || document.querySelector<HTMLElement>('[data-doc="pt-BR"]');
     for (var i = 0; i < docs.length; i++) docs[i].hidden = docs[i] !== hit;
     if (!hit) return;
+    // Os documentos já traduzidos não passam pelo tradutor de texto, mas mantêm seus links no idioma ativo.
+    hit.querySelectorAll("a[href]").forEach(keepLinkLanguage);
     if (hit.dataset.title) document.title = hit.dataset.title;
     var d = document.querySelector('meta[name="description"]'); if (d && hit.dataset.desc) d.setAttribute("content", hit.dataset.desc);
   }
@@ -76,6 +100,7 @@
   function doAttrs(el: Element): void {
     // num <textarea> o texto de dentro é da pessoa, mas o placeholder e o aria-label são nossos
     if (el.getAttribute("translate") === "no" || (el instanceof HTMLElement && el.isContentEditable) || (el.parentElement && skip(el.parentElement))) return;
+    keepLinkLanguage(el);
     for (var i = 0; i < ATTRS.length; i++) {
       var a = ATTRS[i], v = el.getAttribute(a);
       if (!v || !/[A-Za-zÀ-ÿ]/.test(v)) continue;
@@ -112,7 +137,7 @@
   }
   var obs = new MutationObserver(handle);
   function observe() {
-    obs.observe(html, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS.concat(["value"]) });
+    obs.observe(html, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS.concat(["value", "href"]) });
   }
 
   // ---------- carregar o dicionário ----------
@@ -141,6 +166,7 @@
     ativo: ATIVO,
     langs: ATIVO ? core.LANGS : core.LANGS.filter(function (l) { return l[0] === "pt-BR"; }),
     ready: ready,
+    withLanguage: withLanguage,
     // T("Olá, {1}!", nome): para textos que não passam pela tela (prompt, título da aba...)
     t: function (key: string, ...args: unknown[]) { return core.format(C, key, args); },
     // traduz um texto qualquer do jeito da tela (com moldes); devolve o original se não souber
@@ -151,6 +177,7 @@
       if (!ATIVO || SUPPORTED.indexOf(l) < 0) return;
       try { localStorage.setItem(KEY, l); } catch (e) {}
       var u = new URL(location.href); u.searchParams.delete("lang");
+      if (brazilianDomain && l !== "pt-BR") u.searchParams.set("lang", l);
       location.replace(u.pathname + u.search + u.hash);
     },
   };

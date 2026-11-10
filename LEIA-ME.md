@@ -147,6 +147,8 @@ Se o site mostrar erro 521 ou 522 depois do passo 4, a porta 443 está fechada n
 
 ## Pagamentos com Asaas
 
+Para preparar e verificar o sandbox local sem expor segredos, consulte [o roteiro de validação](docs/asaas-sandbox.md) e execute `npm run asaas:check` (sem chamadas externas).
+
 Sem configuração, os pagamentos ficam simulados. Para ligar:
 
 1. Crie uma conta no Asaas. Para testar, use o ambiente sandbox (sandbox.asaas.com).
@@ -363,7 +365,7 @@ As ideias que ficaram de fora estão no relatório [Osmo Talents: ideias fora do
 
 O site é escrito em português e traduzido na hora para inglês (EUA). Somente português e inglês aparecem nos seletores e são aceitos para a interface, e-mails e notificações. Os dicionários de espanhol (América Latina) e francês (Canadá) continuam preservados, mas esses idiomas estão desativados.
 
-- **Como o idioma é escolhido:** um `?lang=` válido tem prioridade, seguido da preferência salva neste navegador. Sem uma escolha explícita, `osmodesign.co.uk` e `www.osmodesign.co.uk` abrem em inglês; nos demais domínios, vale o idioma do navegador, com português como padrão final. A pessoa pode trocar no rodapé ou em **Ajustes → Idioma** (fica salvo neste domínio). Para testar ou mandar link num idioma: `osmo.com.br/?lang=en-US`.
+- **Como o idioma é escolhido:** um `?lang=` válido tem prioridade. A entrada direta em `osmo.com.br` ou `www.osmo.com.br`, sem esse parâmetro, sempre usa português, mesmo com inglês salvo ou no navegador. Ao escolher inglês pelo seletor ou entrar pelo domínio britânico, `?lang=en-US` acompanha a navegação interna para manter o idioma ao recarregar. Nos demais domínios, vale a preferência salva; sem ela, `osmodesign.co.uk` e `www.osmodesign.co.uk` usam inglês, e os outros seguem o idioma do navegador, com português como padrão final. A pessoa pode trocar no rodapé ou em **Ajustes → Idioma**. Para testar ou mandar link num idioma: `osmo.com.br/?lang=en-US`.
 - **Onde ficam as traduções:** o dicionário ativo de inglês está em `public/i18n/en-US.json`; `es-419.json` e `fr-CA.json` ficam arquivados. Cada linha é `"frase em português": "tradução"`. Frase sem tradução aparece em português, sem quebrar nada.
 - **Lacunas:** `{1}` é qualquer texto (nome, título de vaga) e `{#1}` é um número. Ex.: `"há {#1} min": "{1} min ago"`.
 - **Texto novo no `client/app.ts`:** escreva em português como sempre e acrescente a tradução no `public/i18n/en-US.json`.
