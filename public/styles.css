@@ -99,8 +99,12 @@ button,input,select,textarea{font:inherit; color:inherit}
 .top-tool svg{width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
 .top-tool .badge{position:absolute; top:1px; right:1px; margin:0; min-width:17px; height:17px; padding:0 4px; font-size:.65rem; line-height:17px}
 
-.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; border-radius:999px; border:1.5px solid var(--line); background:var(--surface); cursor:pointer; font-weight:700; text-decoration:none; color:var(--fg); white-space:nowrap}
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; border-radius:999px; border:1.5px solid var(--line); background:var(--surface); cursor:pointer; font-weight:700; text-decoration:none; color:var(--fg); white-space:nowrap; transition:transform .12s ease-out, filter .15s ease, background-color .2s ease; -webkit-tap-highlight-color:transparent}
 .btn:hover{border-color:var(--fg)}
+.btn:active{transform:scale(.96)}
+.btn.btn-success{background:#1B7A43!important; border-color:#1B7A43!important; color:#fff!important; pointer-events:none}
+.btn.btn-success svg.check-icon{stroke-dasharray:20; stroke-dashoffset:20; animation:checkDraw .3s ease-out forwards .05s}
+@keyframes checkDraw{to{stroke-dashoffset:0}}
 .btn.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.ghost{border-color:transparent; background:none}
@@ -173,9 +177,10 @@ textarea.input{min-height:120px; resize:vertical}
 .job .price b{font-family:var(--f-mono); font-size:1.05rem; display:block}
 .clarity{display:flex; align-items:center; gap:8px; font-size:.85rem; font-weight:700}
 .bar{height:6px; background:var(--sunken); border-radius:99px; overflow:hidden; width:70px}
-.bar i{display:block; height:100%; background:var(--accent); border-radius:99px}
+.bar i{display:block; height:100%; background:var(--accent); border-radius:99px; transition:width .35s cubic-bezier(.16,1,.3,1), background-color .3s ease}
 .bar.mid i{background:var(--sun)}
 .bar.low i{background:var(--coral)}
+.bar.ready i{background:var(--accent); box-shadow:0 0 10px rgb(122 11 60 / .28)}
 .listhead{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap}
 
 /* detalhe */
@@ -268,10 +273,12 @@ textarea.input.msg-in{min-height:44px; max-height:140px; padding:10px 14px; resi
 
 /* publicar */
 .meter{position:sticky; top:calc(env(safe-area-inset-top,0px) + 84px)}
-.meter .big{font-family:var(--f-mono); font-size:2.6rem; font-weight:600}
+.meter .big{font-family:var(--f-mono); font-size:2.6rem; font-weight:600; transition:color .2s ease}
 .meter ul{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px; font-size:.92rem}
-.meter li::before{content:"○ "; color:var(--muted)}
-.meter li.ok::before{content:"● "; color:var(--accent)}
+.meter li{transition:color .2s ease, transform .2s ease}
+.meter li.ok{color:var(--fg); font-weight:600; transform:translateX(2px)}
+.meter li::before{display:inline-block; transition:transform .22s cubic-bezier(.34,1.56,.64,1); content:"○ "; color:var(--muted)}
+.meter li.ok::before{content:"● "; color:var(--accent); transform:scale(1.2)}
 
 /* acessibilidade */
 .drawer{position:fixed; right:0; top:0; bottom:0; width:min(380px,100%); background:var(--surface); border-left:1px solid var(--line); z-index:40; padding:calc(24px + env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) 24px; display:flex; flex-direction:column; gap:18px; overflow-y:auto; box-shadow:-20px 0 40px rgb(0 0 0 / .12)}

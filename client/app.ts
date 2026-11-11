@@ -1884,11 +1884,24 @@ function showTempPassword(name: unknown, pass: string) {
     <div class="sheet-grip" aria-hidden="true"></div><h2>Senha temporária</h2>
     <p class="muted">Passe para ${esc(name)} por um canal seguro. Ela não aparece de novo; a pessoa pode trocar depois em "Esqueci minha senha".</p>
     <input class="input mono" readonly value="${esc(pass)}" id="admPass">
-    <div class="sheet-actions"><button class="btn hl" data-adm-close="1">Pronto</button></div></div>`;
+    <div class="sheet-actions"><button class="btn" type="button" data-copy="${esc(pass)}">Copiar senha</button><button class="btn hl" data-adm-close="1">Pronto</button></div></div>`;
   $("#admPass").focus(); $("#admPass").select();
 }
 document.addEventListener("click", async ev => { const target = eventElement(ev); if (!target) return;
   const t = target;
+  const cp = t.closest<HTMLElement>("[data-copy]");
+  if (cp) {
+    const text = cp.dataset.copy || "";
+    if (text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        pulseSuccess(cp, "Copiado!");
+      } catch {
+        toast("Copiado!");
+      }
+    }
+    return;
+  }
   const tab = t.closest<HTMLElement>("[data-adm-tab]"); if (tab) { ADM.ent = tab.dataset.admTab!; ADM.q = ""; ADM.pstatus = ""; ADM.jobId = 0; ADM.page = 0; return route(); }
   const pst = t.closest<HTMLElement>("[data-adm-pstatus]"); if (pst) { ADM.pstatus = pst.dataset.admPstatus || ""; ADM.page = 0; return admRefresh(); }
   if (t.closest<HTMLElement>("[data-adm-clear-job]")) { ADM.jobId = 0; ADM.page = 0; return admRefresh(); }
@@ -2595,7 +2608,44 @@ function postScore() {
   const items = [["Título", P.title.trim().length > 8], ["Área", !!P.cat], ["Objetivo", P.obj.trim().length > 20], ["Duas entregas ou mais", lines(P.ent).length >= 2], ["Fora do escopo", lines(P.fora).length >= 1], ["Comunicação", P.com.trim().length > 3], ["Feedback", P.fb.trim().length > 3], ["Valor", Number(P.budget) > 0], ["Prazo", P.duration.trim().length > 1]];
   return { items, score: Math.round(items.filter(i => i[1]).length / items.length * 100) };
 }
-function meterHTML() { const { items, score } = postScore(); return `<span class="label">Clareza do briefing</span><span class="big">${score}%</span><div class="bar ${score >= 80 ? "" : score >= 65 ? "mid" : "low"}" style="width:100%; height:8px"><i style="width:${score}%"></i></div><p class="hint">Para publicar, a vaga precisa de pelo menos 50%. Acima de 80% ela recebe propostas mais certeiras.</p><ul>${items.map(i => `<li class="${i[1] ? "ok" : ""}">${i[0]}</li>`).join("")}</ul>`; }
+function meterHTML() { const { items, score } = postScore(); return `<span class="label">Clareza do briefing</span><span class="big">${score}%</span><div class="bar ${score >= 80 ? "ready" : score >= 50 ? "mid" : "low"}" style="width:100%; height:8px"><i style="width:${score}%"></i></div><p class="hint">Para publicar, a vaga precisa de pelo menos 50%. Acima de 80% ela recebe propostas mais certeiras.</p><ul>${items.map(i => `<li class="${i[1] ? "ok" : ""}">${i[0]}</li>`).join("")}</ul>`; }
+function updateMeterLive() {
+  const box = $("#meter");
+  if (!box) return;
+  const { items, score } = postScore();
+  const big = box.querySelector(".big");
+  if (big) big.textContent = `${score}%`;
+  const bar = box.querySelector(".bar");
+  const fill = box.querySelector<HTMLElement>(".bar i");
+  if (bar && fill) {
+    fill.style.width = `${score}%`;
+    bar.className = `bar ${score >= 80 ? "ready" : score >= 50 ? "mid" : "low"}`;
+  }
+  const lis = box.querySelectorAll("ul li");
+  if (lis.length === items.length) {
+    items.forEach((item, idx) => {
+      const li = lis[idx];
+      if (item[1]) li.classList.add("ok");
+      else li.classList.remove("ok");
+    });
+  } else {
+    box.innerHTML = meterHTML();
+  }
+}
+function pulseSuccess(btn: HTMLElement, tempText = "Copiado!") {
+  const original = btn.innerHTML;
+  btn.classList.add("btn-success");
+  btn.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px">
+    <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    ${esc(tempText)}
+  </span>`;
+  setTimeout(() => {
+    btn.classList.remove("btn-success");
+    btn.innerHTML = original;
+  }, 1600);
+}
 V.publicar = async () => {
   if (needLogin("cliente")) return;
   const fld = (id: string, label: string, html: string, hint = "") => `<div class="field"><label for="${id}">${label}</label>${html}${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
@@ -2815,7 +2865,7 @@ document.addEventListener("input", e => { const target = eventInput(e); if (!tar
   if (id === "wval" || id === "wdays") { const v = t.value.replace(/\D/g, ""); if (t.value !== v) t.value = v; W![id === "wval" ? "value" : "days"] = v; const n = Number(W!.value) || 0; $("#wcalc").innerHTML = calcHTML(n, Math.round(n * 0.1)); if (W!.split) { const d = $("#msDiff"); if (d) $("#msBox").innerHTML = msRows(); } saveDraft(); }
   if (id === "wqs") { W!.qs = t.value; saveDraft(); }
   if (t.dataset.ms !== undefined) { const i = Number(t.dataset.ms), k = t.dataset.k; let v = t.value; if (k === "value") { v = v.replace(/\D/g, ""); if (t.value !== v) t.value = v; } W!.ms[i][k as "value" | "title"] = v; saveDraft(); const d = (Number(W!.value) || 0) - msSum(); $("#msDiff").textContent = d === 0 ? "As etapas somam o valor total." : d > 0 ? `Faltam ${brl(d)} para fechar o total.` : `As etapas passam ${brl(-d)} do total.`; }
-  if (t.dataset.p && t.type !== "checkbox") { P[t.dataset.p as Exclude<keyof OsmoPostDraft, "async" | "flex">] = t.value; store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
+  if (t.dataset.p && t.type !== "checkbox") { P[t.dataset.p as Exclude<keyof OsmoPostDraft, "async" | "flex">] = t.value; store.set("post-draft", P); updateMeterLive(); }
   if (id === "po_doc") payoutDocKind();
   if (id === "p_cat" && $(".skillbox")) $(".skillbox").dataset.area = t.value; // a lista de sugestões passa a priorizar a área escolhida
 });
@@ -2848,7 +2898,7 @@ document.addEventListener("change", e => { const target = eventInput(e); if (!ta
   if (id === "msgFile" && files.length) { sendMsgFiles([...files]); t.value = ""; }
   if (id === "peImg" && files[0]) { syncPE(); shrinkImage(files[0], 1600, false).then(d => { PE!.newImage = PE!.image = d; PE!.removeImage = false; renderPort(); })
     .catch(e2 => { const b = $("#peErr"); b.textContent = errorMessage(e2); b.hidden = false; }); }
-  if (t.dataset.p) { Object.assign(P, { [t.dataset.p]: t.type === "checkbox" ? checked : t.value }); store.set("post-draft", P); $("#meter").innerHTML = meterHTML(); }
+  if (t.dataset.p) { Object.assign(P, { [t.dataset.p]: t.type === "checkbox" ? checked : t.value }); store.set("post-draft", P); updateMeterLive(); }
   if (id === "p_cat" || id === "p_bt") applyPostPH(); // exemplos da área escolhida
 });
 // OUVIDO DE FORMULÁRIOS: quando você aperta "Enviar/Salvar/Entrar", o navegador iria recarregar
