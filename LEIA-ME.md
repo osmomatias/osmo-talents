@@ -104,7 +104,21 @@ Antes de abrir a plataforma para pessoas reais, apague o banco (`data/osmo_talen
 
 ## Backup
 
-Tudo fica em um arquivo só: `data/osmo_talents.sqlite`. Copie esse arquivo (e os que terminam em `-wal` e `-shm`) para fazer backup.
+Tudo fica em um arquivo só: `data/osmo_talents.sqlite`.
+
+Na VPS instalada com `instalar.sh`, o backup é automático: uma cópia conferida do banco é gravada em `data/backups` toda noite (03:30 de Brasília) e antes de cada atualização. Ficam as 14 mais novas (`BACKUP_KEEP` no `.env` muda esse número; `BACKUP_DIR` muda a pasta).
+
+| Para | Comando |
+| --- | --- |
+| Fazer uma cópia agora | `cd /var/www/osmo-talents && runuser -u osmo -- npm run backup` |
+| Ver as cópias | `ls -lh /var/www/osmo-talents/data/backups` |
+| Ver se o backup da noite rodou | `systemctl list-timers osmo-talents-backup.timer` e `journalctl -u osmo-talents-backup -n 20` |
+
+Para restaurar: `systemctl stop osmo-talents`, copie o backup escolhido por cima de `data/osmo_talents.sqlite`, apague os arquivos `-wal` e `-shm` ao lado dele e rode `systemctl start osmo-talents`.
+
+**Atenção:** essas cópias ficam no mesmo servidor. Elas protegem contra banco corrompido ou atualização que deu errado, mas não contra a perda da VPS. Baixe uma cópia para outro lugar de tempos em tempos. Os vídeos de `data/videos` não entram no backup.
+
+No CloudPanel/PM2 (sem `instalar.sh`) não há timer: rode `npm run backup` pelo cron do painel.
 
 ## Comandos úteis
 

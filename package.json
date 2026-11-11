@@ -18,6 +18,8 @@
     "preasaas:setup": "node scripts/ensure-build.cjs",
     "laudo:conferir": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/conferir-laudo.js",
     "prelaudo:conferir": "node scripts/ensure-build.cjs",
+    "backup": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/backup.js",
+    "prebackup": "node scripts/ensure-build.cjs",
     "build:node": "tsc -p tsconfig.node.json",
     "build:client": "tsc -p tsconfig.app.json && tsc -p tsconfig.client.json && tsc -p tsconfig.worker.json",
     "build": "npm run build:node && npm run build:client && npm run build:library",

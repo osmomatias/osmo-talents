@@ -13,7 +13,16 @@ set -e
 cd "$(dirname "$0")"
 # Compila os módulos TypeScript antes de empacotar; a VPS executa o JavaScript gerado.
 if [ ! -x node_modules/.bin/tsc ]; then npm ci --include=dev; fi
-npm run build
+# Antes de empacotar, confere os tipos e roda os testes (o "npm test" já compila tudo).
+# Se qualquer um falhar, o set -e para aqui e NADA é publicado.
+# Emergência: PULAR_TESTES=1 bash publicar.sh publica só com a compilação.
+if [ "${PULAR_TESTES:-0}" = "1" ]; then
+  echo "ATENÇÃO: publicando sem conferir tipos nem rodar os testes (PULAR_TESTES=1)."
+  npm run build
+else
+  npm run typecheck
+  npm test
+fi
 IP="${IP:-46.202.147.229}"
 DOMAIN="${DOMAIN:-osmo.com.br}"
 # APP_HOST: endereço alternativo do app. O domínio principal serve o app por padrão;

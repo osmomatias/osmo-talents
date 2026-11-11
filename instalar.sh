@@ -4,7 +4,8 @@
 #   1. instala as ferramentas (nginx, curl...);
 #   2. instala o Node.js 22 (o programa que roda o server.js);
 #   3. copia o app para /var/www/osmo-talents, sem mexer no banco e no .env;
-#   4. cria um "serviço" que liga o app sozinho e o religa se ele cair;
+#   4. cria um "serviço" que liga o app sozinho e o religa se ele cair, e outro que tira
+#      uma cópia do banco toda noite (e uma antes de cada atualização);
 #   5. configura o nginx, o "porteiro da frente" que recebe as visitas e repassa ao app;
 #   6. ativa o HTTPS (o cadeadinho): com o certificado de origem da Cloudflare, se ele foi
 #      enviado, ou com o Let's Encrypt, se o domínio aponta direto para cá;
@@ -85,6 +86,17 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR/data"
 chmod 640 "$APP_DIR/.env"; chgrp "$APP_USER" "$APP_DIR/.env"
 ok "arquivos no lugar (banco e configuração preservados)"
 
+# FOTOCÓPIA ANTES DE MEXER: a versão nova pode acrescentar colunas no banco quando liga.
+# Então, antes de religar o app, tiramos uma cópia do banco como ele está agora
+# (scripts/backup.ts). Na primeira instalação ainda não há banco, e este passo é pulado.
+BACKUP_CMD="$NODE_BIN --disable-warning=ExperimentalWarning --env-file-if-exists=.env dist/scripts/backup.js"
+DB_FILE="$(grep -E '^DB_PATH=' "$APP_DIR/.env" | tail -n 1 | cut -d= -f2- || true)"
+DB_FILE="${DB_FILE:-$APP_DIR/data/osmo_talents.sqlite}"
+if [ -f "$DB_FILE" ]; then
+  if (cd "$APP_DIR" && runuser -u "$APP_USER" -- $BACKUP_CMD >/dev/null); then ok "cópia do banco feita antes de atualizar (data/backups)"
+  else warn "não consegui copiar o banco antes de atualizar. Veja com: cd $APP_DIR && runuser -u $APP_USER -- npm run backup"; fi
+fi
+
 # O "serviço" (systemd) é como um despertador que liga o app quando o servidor liga e o
 # religa em 3 segundos se ele cair. As linhas Protect... prendem o app numa caixinha: ele
 # não consegue mexer no resto do sistema, só na pasta data.
@@ -111,8 +123,38 @@ ReadWritePaths=$APP_DIR/data
 [Install]
 WantedBy=multi-user.target
 EOF
+# BACKUP DE TODA NOITE: um segundo "despertador" (timer) roda a fotocópia do banco todo dia
+# às 06:30 UTC (03:30 em Brasília, hora de pouco movimento). Persistent=true: se o servidor
+# estava desligado nessa hora, ele faz a cópia assim que ligar. Guarda as 14 mais novas.
+cat > /etc/systemd/system/osmo-talents-backup.service <<EOF
+[Unit]
+Description=Osmo Talents: backup do banco de dados
+
+[Service]
+Type=oneshot
+User=$APP_USER
+WorkingDirectory=$APP_DIR
+ExecStart=$BACKUP_CMD
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=$APP_DIR/data
+EOF
+cat > /etc/systemd/system/osmo-talents-backup.timer <<EOF
+[Unit]
+Description=Osmo Talents: backup do banco toda noite
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
 systemctl daemon-reload
 systemctl enable osmo-talents >/dev/null 2>&1
+systemctl enable --now osmo-talents-backup.timer >/dev/null 2>&1
 systemctl restart osmo-talents
 sleep 2
 if curl -fsS "http://127.0.0.1:$PORT/api/me" >/dev/null; then ok "app respondendo na porta $PORT"; else
@@ -318,4 +360,5 @@ echo
 echo "    Dados de demonstração (opcional):  cd $APP_DIR && sudo -u $APP_USER npm run seed"
 echo "    Ver se está rodando:               systemctl status osmo-talents"
 echo "    Ver erros:                         journalctl -u osmo-talents -n 50"
+echo "    Backups do banco (toda noite):     ls -lh $APP_DIR/data/backups"
 echo
