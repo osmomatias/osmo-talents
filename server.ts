@@ -380,7 +380,9 @@ route("POST", "/api/auth/phone/simulate", ({ body }) => {
 route("POST", "/api/auth/register", async ({ body, res, ip }) => {
   limit("reg:" + ip, 10, 600_000);
   const name = str(body.name, 80), email = str(body.email, 160).toLowerCase(), password = typeof body.password === "string" ? body.password : "";
-  const role = body.role === "cliente" ? "cliente" : "freela";
+  const rawRole = body.role;
+  const role: Role = rawRole === "cliente" ? "cliente" : "freela";
+  const roles = rawRole === "ambos" ? "freela,cliente" : "";
   if (name.length < 2) fail(400, "Escreva seu nome.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "Esse e-mail não parece válido.");
   if (password.length < 8) fail(400, "A senha precisa ter pelo menos 8 caracteres.");
@@ -395,7 +397,7 @@ route("POST", "/api/auth/register", async ({ body, res, ip }) => {
   }
   const passHash = await hashPasswordAsync(password);
   const id = tx(() => {
-    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, phone, phone_verified_at) VALUES (?,?,?,?,?,?)", name, email, passHash, role, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
+    const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, roles, phone, phone_verified_at) VALUES (?,?,?,?,?,?,?)", name, email, passHash, role, roles, phone, phone ? new Date().toISOString() : "").lastInsertRowid);
     run("INSERT INTO profiles (user_id) VALUES (?)", uid);
     if (phone) run("DELETE FROM phone_tickets WHERE phone = ?", phone);
     return uid;
@@ -512,9 +514,11 @@ route("POST", "/api/auth/oauth/complete", ({ body, res, ip }) => {
   limit("oauth-pend:" + ip, 30, 60_000);
   const r = pendingRow(body.token);
   if (!r) fail(404, "Esse link expirou. Entre de novo pelo botão do provedor.");
-  const role = body.role === "cliente" ? "cliente" : body.role === "freela" ? "freela" : "";
-  if (!role) fail(400, "Escolha se você quer trabalhar ou contratar.");
-  const id = tx(() => createOAuthUser(r, role));
+  const choice = isOneOf(body.role, ["freela", "cliente", "ambos"]) ? body.role : "";
+  if (!choice) fail(400, "Escolha se você quer trabalhar, contratar ou ambos.");
+  const role: Role = choice === "cliente" ? "cliente" : "freela";
+  const roles = choice === "ambos" ? "freela,cliente" : "";
+  const id = tx(() => createOAuthUser(r, role, roles));
   run("DELETE FROM oauth_pending WHERE token = ?", r.token);
   createSession(res, id);
   return { ok: true, role };
@@ -2240,10 +2244,10 @@ route("POST", "/api/push/test", async ({ user, body }) => {
 //   * é gente nova? cria a conta (se já escolheu freela/cliente) ou manda escolher.
 // Qualquer problema volta para a tela de entrar com um código de erro.
 /* ---------------- login social (/auth/...) ---------------- */
-function createOAuthUser(r: OAuthRegistration, role: Role) {
+function createOAuthUser(r: OAuthRegistration, role: Role, roles = "") {
   if (one("SELECT 1 FROM users WHERE email = ?", r.email)) fail(409, "Já existe uma conta com esse e-mail. Entre com e-mail e senha.");
   const name = r.name || r.email.split("@")[0];
-  const uid = Number(run("INSERT INTO users (name, email, pass_hash, role) VALUES (?,?,?,?)", name.slice(0, 80), r.email, "oauth$" + r.provider, role).lastInsertRowid);
+  const uid = Number(run("INSERT INTO users (name, email, pass_hash, role, roles) VALUES (?,?,?,?,?)", name.slice(0, 80), r.email, "oauth$" + r.provider, role, roles).lastInsertRowid);
   run("INSERT INTO profiles (user_id) VALUES (?)", uid);
   run("INSERT INTO oauth_identities (provider, sub, user_id, email) VALUES (?,?,?,?)", r.provider, r.sub, uid, r.email);
   return uid;
@@ -2277,7 +2281,7 @@ async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, u
     const pub = new URL(PUBLIC_URL);
     if (pub.hostname !== "localhost" && (req.headers.host || "").split(":")[0] !== pub.hostname) return redirect(res, PUBLIC_URL + url.pathname + url.search);
     try { limit("oauth:" + ip, 30, 600_000); } catch { return fail2("tentativas"); }
-    const role = isOneOf(url.searchParams.get("role"), ["freela", "cliente"]) ? url.searchParams.get("role") : "";
+    const role = isOneOf(url.searchParams.get("role"), ["freela", "cliente", "ambos"]) ? url.searchParams.get("role") : "";
     const s = oauth.start(k);
     run("DELETE FROM oauth_states WHERE created_at < datetime('now', '-15 minutes')");
     run("INSERT INTO oauth_states (state, provider, verifier, nonce, role) VALUES (?,?,?,?,?)", s.state, k, s.verifier, s.nonce, role);
@@ -2311,7 +2315,13 @@ async function handleAuth(req: http.IncomingMessage, res: http.ServerResponse, u
   if (!uid) {
     if (!prof.email || !prof.emailVerified) return fail2("sem_email");
     const r = { provider: k, sub: prof.sub, email: prof.email, name: prof.name };
-    if (saved.role) { try { uid = tx(() => createOAuthUser(r, saved.role as Role)); } catch { return fail2("falhou"); } createSession(res, uid); return redirect(res, destination(saved.role === "freela" ? "/perfil" : "/publicar")); }
+    if (saved.role) {
+      const activeRole: Role = saved.role === "cliente" ? "cliente" : "freela";
+      const roles = saved.role === "ambos" ? "freela,cliente" : "";
+      try { uid = tx(() => createOAuthUser(r, activeRole, roles)); } catch { return fail2("falhou"); }
+      createSession(res, uid);
+      return redirect(res, destination(activeRole === "freela" ? "/perfil" : "/publicar"));
+    }
     const token = crypto.randomBytes(24).toString("hex");
     run("INSERT INTO oauth_pending (token, provider, sub, email, name) VALUES (?,?,?,?,?)", token, k, prof.sub, prof.email, prof.name);
     return redirect(res, destination(`/escolher#${token}`));

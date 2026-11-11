@@ -269,6 +269,14 @@ async function refreshMe() {
   try { const d = await api<OsmoMeResponse>("GET", "/api/me"); noteVersion(d.v); ME = d.user; if (d.payments) PAY = d.payments; OAUTH = d.oauth || []; MAIL = !!d.mail; PHONE = !!d.phone; PUSH = d.push || ""; GA_ID = d.analytics || ""; } catch { ME = null; }
   renderChrome(); gaLoad(); gaBanner();
   if (ME && ME!.needPhone) phoneModal();
+  else if (ME && ME!.role === "freela" && profileMissingFields(ME!.profile).length) {
+    try {
+      if (!sessionStorage.getItem("osmo.profWarned")) {
+        sessionStorage.setItem("osmo.profWarned", "1");
+        incompleteProfileModal();
+      }
+    } catch {}
+  }
 }
 
 // CABEÇALHO, MENU E BARRA DE BAIXO: ICONS são os desenhos dos ícones. renderChrome monta os
@@ -716,7 +724,8 @@ V.entrar = async () => {
   <div class="seg" role="group" aria-label="Modo"><button aria-pressed="${!reg}" data-auth="entrar">Entrar</button><button aria-pressed="${reg}" data-auth="criar">Criar conta</button></div>
   ${reg ? `<div class="field"><span class="flabel">Eu quero</span>
       <label class="check"><input type="radio" name="role" value="freela" checked><span>Trabalhar como freelancer</span></label>
-      <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label></div>` : ""}
+      <label class="check"><input type="radio" name="role" value="cliente"><span>Contratar freelancers</span></label>
+      <label class="check"><input type="radio" name="role" value="ambos"><span>Ambos (atuar como freelancer e empresa contratante)</span></label></div>` : ""}
   ${socialHTML(reg)}
   <form class="panel stack" id="authForm" novalidate>
     ${reg ? `<div class="field"><label for="a_name">Nome</label><input class="input" id="a_name" autocomplete="name" placeholder="Nome e sobrenome" required></div>` : ""}
@@ -850,6 +859,7 @@ V.escolher = async () => {
     <div class="stack" style="gap:12px">
       <button class="cat" data-act="oauth-role" data-role="freela" data-token="${esc(token)}"><b>Quero trabalhar</b><span class="muted">Encontrar vagas com briefing claro e enviar propostas</span></button>
       <button class="cat" data-act="oauth-role" data-role="cliente" data-token="${esc(token)}"><b>Quero contratar</b><span class="muted">Publicar vagas e encontrar talentos</span></button>
+      <button class="cat" data-act="oauth-role" data-role="ambos" data-token="${esc(token)}"><b>Ambos</b><span class="muted">Atuar como freelancer e empresa contratante na mesma conta</span></button>
     </div>
     <div id="roleErr" class="err" role="alert" hidden></div></div>`;
 };
@@ -2961,7 +2971,9 @@ document.addEventListener("submit", async e => { const target = eventForm(e); if
         skills: v("p_skills").split(",").map(s => s.trim()).filter(Boolean), bio: v("p_bio"), tag: v("p_tag"), company: v("p_company"), cpfCnpj: v("p_doc"),
         notify: (f.querySelector<HTMLInputElement>('input[name="notify"]:checked') || {}).value, how: { com: v("w_com"), resp: v("w_resp"), fb: v("w_fb"), foco: v("w_foco") } };
       try { await api("PUT", "/api/me/profile", body); } catch (err) { return showErr("#profErr", errorMessage(err)); }
-      await refreshMe(); updateProfMeta(); toast("Salvo"); return;
+      await refreshMe(); updateProfMeta(); toast("Salvo");
+      if (ME && ME!.role === "freela" && profileMissingFields(ME!.profile).length) incompleteProfileModal(true);
+      return;
     }
     if (f.id === "postForm") {
       const body = { ...P, ent: P.ent.split("\n"), fora: P.fora.split("\n"), skills: P.skills.split(",").map(s => s.trim()).filter(Boolean), budget: Number(P.budget) || 0 };
@@ -3080,6 +3092,86 @@ function phoneModal() {
     if (b.dataset.ph === "sim") { await api("POST", "/api/auth/phone/simulate", { code: b.dataset.code, phone: prompt("Celular que mandou a mensagem (teste):", "11 91234-5678") || "" }).catch(err => toast(errorMessage(err))); poll(); }
   });
   start();
+}
+
+// AVISO DE PERFIL INCOMPLETO: aparece como modal box para freelancers que ainda não
+// preencheram os dados essenciais do perfil (sem eles, o cadastro não fica concluído
+// e o perfil não entra na vitrine de talentos).
+function profileMissingFields(p: OsmoProfile): string[] {
+  const missing: string[] = [];
+  if (!p.title.trim()) missing.push("o que você faz");
+  if (!p.bio.trim()) missing.push("sobre você");
+  if (!p.skills.length) missing.push("habilidades");
+  if (!p.how.com.trim()) missing.push("comunicação");
+  return missing;
+}
+function focusMissingProfileField() {
+  if (!ME) return;
+  const p = ME!.profile;
+  const target: [string, string] | null = !p.title.trim() ? ["sobre", "p_title"]
+    : !p.bio.trim() ? ["sobre", "p_bio"]
+    : !p.skills.length ? ["habil", "p_skills_in"]
+    : !p.how.com.trim() ? ["como", "w_com"]
+    : null;
+  if (!target) return;
+  const [secId, fieldId] = target;
+  PSEC_OPEN.add(secId);
+  const det = $(`details.psec[data-sec="${secId}"]`) as HTMLDetailsElement | null;
+  if (det) det.open = true;
+  const el = $("#" + fieldId) as HTMLElement | null;
+  if (el) {
+    el.scrollIntoView({ behavior: calmMotion() ? "auto" : "smooth", block: "center" });
+    el.focus();
+  }
+}
+let profWarnBox: HTMLDivElement | null = null;
+function incompleteProfileModal(force = false) {
+  if (profWarnBox || phoneBox || !ME || ME!.role !== "freela") return;
+  const missing = profileMissingFields(ME!.profile);
+  if (!missing.length) return;
+  if (!force && $("#layer")?.innerHTML.trim()) return;
+  const back = document.activeElement as HTMLElement | null, box = document.createElement("div");
+  profWarnBox = box;
+  const onPerfil = curH() === "perfil";
+  box.innerHTML = `<div class="scrim"></div><div class="drawer sheet" role="dialog" aria-modal="true" aria-labelledby="pwT" aria-describedby="pwD">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <h2 id="pwT">Seu perfil ainda está nos bastidores</h2>
+    <div class="stack" id="pwD" style="gap:10px">
+      <p class="muted">Sem preencher os dados do seu perfil, o seu cadastro não fica concluído e você ainda não entra na vitrine de talentos para quem está contratando.</p>
+      <p class="muted">É ali que os clientes descobrem o seu estilo, se encantam pelo que você faz e decidem te chamar para projetos incríveis — leva menos de dois minutinhos para deixar tudo irresistível.</p>
+      <p class="hint">Ainda falta dar o seu toque em: <b>${esc(missing.join(", "))}</b>.</p>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" class="btn hl" data-pw="go">${onPerfil ? "Preencher agora" : "Completar meu perfil agora"}</button>
+      <button type="button" class="btn" data-pw="later">Deixar pra depois</button>
+    </div>
+  </div>`;
+  document.body.appendChild(box);
+  const panel = box.querySelector<HTMLElement>(".sheet")!;
+  const done = () => {
+    if (!profWarnBox) return;
+    document.removeEventListener("keydown", onKey, true);
+    box.remove(); profWarnBox = null;
+    if (back && back.focus && document.contains(back)) back.focus();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); }
+    else trapFocus(e, panel);
+  };
+  document.addEventListener("keydown", onKey, true);
+  box.addEventListener("click", async e => {
+    const target = eventElement(e); if (!target) return;
+    if (target.classList.contains("scrim")) return done();
+    const b = target.closest<HTMLElement>("[data-pw]"); if (!b) return;
+    const act = b.dataset.pw;
+    done();
+    if (act === "go") {
+      if (curH() !== "perfil") await go("perfil");
+      focusMissingProfileField();
+    }
+  });
+  sheetDrag(panel, done);
+  panel.querySelector<HTMLElement>('[data-pw="go"]')!.focus();
 }
 
 // FOTO AMPLIADA: tocar numa foto de perfil abre a foto grande no meio da tela, com o fundo escurecido.

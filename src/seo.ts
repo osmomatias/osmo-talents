@@ -80,9 +80,9 @@ export function createSeo({ one, all, JOB_SELECT, jobOut, profileOf, hasFreelaSQ
     if (!(search instanceof URLSearchParams)) search = new URLSearchParams(search);
     const current = pageNumber(search), q = trim(search.get('q'), 80), args: string[] = [], normalized = new URLSearchParams();
     let where = freelance;
-    if (q) { where += " AND lower(u.name || ' ' || p.title || ' ' || p.bio || ' ' || p.skills) LIKE lower(?)"; args.push('%' + q + '%'); normalized.set('q', q); }
-    const count = Number(one('SELECT count(*) n FROM users u JOIN profiles p ON p.user_id = u.id WHERE ' + where, ...args)?.n ?? 0);
-    const talents = all('SELECT u.id FROM users u JOIN profiles p ON p.user_id = u.id WHERE ' + where + " ORDER BY (trim(p.title) != '') DESC, u.id DESC LIMIT ? OFFSET ?", ...args, pageSize, (current - 1) * pageSize).map(r => profileOf(Number(r.id))).filter((p): p is PublicProfile => p !== null);
+    if (q) { where += " AND lower(u.name || ' ' || coalesce(p.title,'') || ' ' || coalesce(p.bio,'') || ' ' || coalesce(p.skills,'')) LIKE lower(?)"; args.push('%' + q + '%'); normalized.set('q', q); }
+    const count = Number(one('SELECT count(*) n FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE ' + where, ...args)?.n ?? 0);
+    const talents = all('SELECT u.id FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE ' + where + " ORDER BY (trim(coalesce(p.title,'')) != '') DESC, u.id DESC LIMIT ? OFFSET ?", ...args, pageSize, (current - 1) * pageSize).map(r => profileOf(Number(r.id))).filter((p): p is PublicProfile => p !== null);
     return { talents, pagination: { page: current, pages: Math.max(1, Math.ceil(count / pageSize)), total: Number(count) }, normalized, q };
   }
 
