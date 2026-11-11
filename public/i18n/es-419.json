@@ -227,6 +227,8 @@
  "Clareza": "Claridad",
  "Clareza %": "Claridad %",
  "Clareza do briefing": "Claridad del brief",
+ "Clareza do briefing: {#1} de 9": "Claridad del brief: {1} de 9",
+ "Pontos em aberto": "Puntos pendientes",
  "clareza média {#1}%": "claridad media {1}%",
  "Cobrança da etapa \"{1}\" gerada ({2}). O valor fica protegido até a aprovação.": "Cobro de la etapa \"{1}\" generado ({2}). El valor queda protegido hasta la aprobación.",
  "Cobrança gerada. Clique em Abrir cobrança para pagar.": "Cobro generado. Haz clic en Abrir cobro para pagar.",

@@ -121,11 +121,16 @@ const sha = (s: string | Uint8Array) => crypto.createHash("sha256").update(s).di
 // NOTA DE CLAREZA da vaga: uma lista de 9 perguntas de sim ou não (tem título bom? tem
 // objetivo? tem pelo menos 2 entregas? diz o que está fora? diz o valor?...).
 // A nota é a porcentagem de "sim". Vaga com menos de 50% não pode ser publicada.
-function clarity(j: ClarityInput) {
-  const checks = [
+// clarityChecks devolve as 9 respostas, sempre na MESMA ordem (título, área, objetivo, entregas,
+// fora do escopo, comunicação, feedback, valor, prazo): o site desenha um anel de 9 pedaços com elas.
+function clarityChecks(j: ClarityInput): boolean[] {
+  return [
     j.title.length > 8, CATS.includes(j.cat), j.obj.length > 20, j.ent.length >= 2,
     j.fora.length >= 1, j.com.length > 3, j.fb.length > 3, j.budget > 0, j.duration.length > 1,
   ];
+}
+function clarity(j: ClarityInput) {
+  const checks = clarityChecks(j);
   return Math.round(checks.filter(Boolean).length / checks.length * 100);
 }
 
@@ -245,6 +250,7 @@ function jobOut(j: AppRow) {
     brief: { obj: j.obj, ent: parse(j.ent), fora: parse(j.fora), com: j.com, fb: j.fb, ref: j.ref },
     budget_type: j.budget_type, budget: j.budget, duration: j.duration, skills: parse(j.skills),
     async: !!j.is_async, flex: !!j.is_flex, clarity: j.clarity, status: j.status, created_at: j.created_at,
+    checks: clarityChecks({ title: String(j.title || ""), cat: String(j.cat || ""), obj: String(j.obj || ""), ent: parse(j.ent), fora: parse(j.fora), com: String(j.com || ""), fb: String(j.fb || ""), budget: Number(j.budget) || 0, duration: String(j.duration || "") }),
     proposals: j.n_props ?? undefined,
   };
 }

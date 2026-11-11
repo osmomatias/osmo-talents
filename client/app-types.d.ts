@@ -22,7 +22,7 @@ interface OsmoTalent extends OsmoProfile { id: number; name: string; reviews: Os
 interface OsmoPayments { provider?: string; enabled: boolean; fee: number; autoRelease: number; sandbox?: boolean }
 interface OsmoMeResponse { v: string; user: OsmoUser | null; payments?: OsmoPayments; oauth?: string[]; mail?: boolean; phone?: boolean; push?: string; analytics?: string }
 interface OsmoBrief { obj: string; ent: string[]; fora: string[]; com: string; fb: string; ref: string }
-interface OsmoJob { id: number; title: string; company: string; client: string; client_id: number; created_at: string; proposals: number; budget_type: string; budget: number; duration: string; clarity: number; async: OsmoFlag; flex: OsmoFlag; skills: string[]; cat: string; status: string; brief: OsmoBrief }
+interface OsmoJob { id: number; title: string; company: string; client: string; client_id: number; created_at: string; proposals: number; budget_type: string; budget: number; duration: string; clarity: number; checks?: boolean[]; async: OsmoFlag; flex: OsmoFlag; skills: string[]; cat: string; status: string; brief: OsmoBrief }
 interface OsmoJobDetail extends OsmoJob { files: OsmoAttachment[]; filesCount: number; clientRating: OsmoRating; clientReviews: OsmoReview[] }
 interface OsmoProposal { id: number; status: string; files: OsmoAttachment[]; value: number; days: number; milestones: { title: string; value: number }[]; text: string; freela_id: number; freela_name: string; freela: OsmoTalent; job_id: number; job_title: string; client_name: string; created_at: string }
 interface OsmoJobResponse { job: OsmoJobDetail; mine: OsmoProposal | null; proposals: OsmoProposal[] }

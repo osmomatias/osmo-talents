@@ -207,7 +207,18 @@ const VB_SVG = (() => {
 const VB_TXT = "Verificado: neurodivergência comprovada por laudo médico com assinatura digital ICP-Brasil";
 const vbadge = (on: unknown) => on ? `<span class="vbadge" role="img" aria-label="${VB_TXT}" title="${VB_TXT}">${VB_SVG}</span>` : "";
 const av = (name: string | undefined, id: number, size = "", src: string | undefined = "") => src ? `<img class="av ${size}" src="${esc(src)}" alt="" data-name="${esc(name || "")}" loading="lazy">` : `<div class="av ${size} c${(id || 0) % 4}" aria-hidden="true">${esc(initials(name))}</div>`;
-function clarBar(v: number) { const cls = v >= 80 ? "" : v >= 65 ? "mid" : "low"; return `<span class="clarity" title="Clareza do briefing"><span class="bar ${cls}"><i style="width:${v}%"></i></span>${v}% claro</span>`; }
+// ANEL DE CLAREZA: a marca da Osmo para "quão claro está este briefing". São 9 pedaços, um para
+// cada pergunta da nota (na ordem de CLAR_ITEMS); pedaço aceso = item preenchido. Assim dá para
+// ver O QUE falta, não só um número. Sem a lista (dado antigo), acende os primeiros pela nota.
+const CLAR_ITEMS = ["Título", "Área", "Objetivo", "Duas entregas ou mais", "Fora do escopo", "Comunicação", "Feedback", "Valor", "Prazo"];
+const clarChecks = (v: number, checks?: boolean[]) => checks && checks.length === 9 ? checks : CLAR_ITEMS.map((_, i) => i < Math.round(v * 9 / 100));
+function clarMark(checks: boolean[], size = 26) {
+  return `<svg class="cmark" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">${checks.map((ok, i) => `<circle class="${ok ? "on" : ""}" cx="12" cy="12" r="9.5" pathLength="90" stroke-dasharray="7.6 82.4" stroke-dashoffset="${-(i * 10 + 1.2)}"/>`).join("")}</svg>`;
+}
+function clarBar(v: number, checks?: boolean[]) {
+  const c = clarChecks(v, checks), label = `Clareza do briefing: ${c.filter(Boolean).length} de 9`;
+  return `<span class="clarity" role="img" aria-label="${label}" title="${label}">${clarMark(c)}<span aria-hidden="true">${v}% claro</span></span>`;
+}
 function toast(m: string) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
 // O GARÇOM INDO À COZINHA: api() manda um pedido ao servidor e traz a resposta.
@@ -652,21 +663,71 @@ const V: Record<string, (id?: number | null) => Promise<string | void>> = {};
 // e "quero contratar"), um exemplo de perfil, as áreas, o "como funciona" e os princípios.
 // Cada V.alguma-coisa é uma função que DEVOLVE o HTML da tela; o roteador coloca na página.
 /* ---------- início ---------- */
+// A home tem DUAS versões, trocadas pelo alternador da faixa de cima (S.aud):
+// - "freela": fala com quem quer trabalhar (vagas, proposta guiada, receber por etapa);
+// - "cliente": fala com quem quer contratar a equipe criativa da Osmo (briefing guiado, propostas, aprovar por etapa).
+// homeHTML monta a tela com os textos da versão escolhida. Ao clicar no alternador, só o miolo
+// (#home) é redesenhado: sem recarregar a página nem buscar nada de novo no servidor.
+let homeFeatured: OsmoTalent | undefined = undefined;
 V.inicio = async () => {
-  let featured: OsmoTalent | undefined = undefined;
-  try { featured = (await api<OsmoTalentsResponse>("GET", "/api/talents")).talents.find(t => t.title && t.how.com); } catch {}
-  return `
+  try { homeFeatured = (await api<OsmoTalentsResponse>("GET", "/api/talents")).talents.find(t => t.title && t.how.com); } catch {}
+  return homeHTML();
+};
+function homeHTML() {
+  const featured = homeFeatured, hire = S.aud === "cliente";
+  const copy = hire ? {
+    label: "Para quem contrata criação",
+    h1: ["Contrate a equipe criativa da Osmo, ", "sem retrabalho", ", com tudo combinado antes."],
+    lead: "Design, texto, vídeo e desenvolvimento feitos por talentos neurodivergentes. Você descreve o que precisa em um briefing guiado, recebe propostas por etapa e sabe desde o início como cada pessoa trabalha melhor.",
+    leadM: "Talentos criativos, briefing guiado e entregas por etapa.",
+    ph: "Buscar talentos: designer, revisora…",
+    catsTitle: "O que a equipe pode criar para você", catHref: (_id: string) => "/talentos",
+    stepsTitle: "Como contratar",
+    steps: [
+      ["Descreva o que precisa em um briefing guiado", "O formulário pergunta objetivo, entregas, o que fica de fora e como será a comunicação. O anel de clareza mostra o que ainda falta."],
+      ["Receba propostas com valor, prazo e etapas", "Cada talento responde ao seu briefing ponto a ponto. Antes de aceitar, você já sabe como a pessoa prefere se comunicar e receber feedback."],
+    ],
+    payTitle: PAY.enabled ? "Pague por etapa aprovada" : "Aprove o trabalho por etapa",
+    whyTitle: "Por que contratar pela Osmo",
+    why: [
+      ["Menos idas e vindas", "Escopo, entregas e o que fica de fora estão escritos desde o primeiro dia. O briefing estruturado evita o “não era bem isso”."],
+      ["Você sabe como a pessoa trabalha", "Cada perfil diz como a pessoa prefere se comunicar, em quanto tempo responde e como recebe feedback."],
+      ["Atenção ao seu projeto", "O limite de propostas abertas acompanha as horas livres de cada talento, para que ninguém assuma mais do que cabe na semana."],
+      ["Combinado por escrito", "Cada conversa tem um resumo fixo do que foi combinado, editável pelos dois lados."],
+    ],
+  } : {
+    label: "Trabalho freelance para mentes neurodivergentes",
+    h1: ["Trabalho freelance, ", "no seu ritmo", ", com briefing claro."],
+    lead: "Aqui toda vaga tem briefing estruturado, todo perfil diz como a pessoa prefere se comunicar e nenhuma proposta precisa ser escrita do zero.",
+    leadM: "Vagas com briefing claro e comunicação combinada antes.",
+    ph: "Buscar vagas: logotipo, Webflow, revisão…",
+    catsTitle: "Explore por área", catHref: (id: string) => "/vagas?cat=" + encodeURIComponent(id),
+    stepsTitle: "Como funciona",
+    steps: [
+      ["Escolha vagas com briefing claro", "Cada vaga mostra a porcentagem de clareza: objetivo, entregas, o que está fora do escopo e como será a comunicação."],
+      ["Envie uma proposta guiada", "Quatro passos curtos, com perguntas de apoio. O rascunho salva sozinho, então dá para pausar e voltar depois."],
+    ],
+    payTitle: PAY.enabled ? "Receba por etapa entregue" : "Combine entregas por etapa",
+    whyTitle: "O que muda em relação a outras plataformas",
+    why: [
+      ["Sem adivinhação", "Só é possível publicar vaga com pelo menos metade do briefing preenchido. A nota de clareza fica visível para todos."],
+      ["Propor não custa nada", "Sem créditos nem taxa por proposta. O limite de propostas abertas acompanha a capacidade que você declara."],
+      ["Interface calma", "Sem contadores piscando nem pressa artificial. Ajuste tamanho de texto, espaçamento e movimento em Ajustes."],
+      ["Comunicação combinada antes", "Cada conversa tem um resumo fixo do que foi combinado, editável pelos dois lados."],
+    ],
+  };
+  return `<div id="home">
 <section class="hero">
   <div>
-    <span class="label">Trabalho freelance para mentes neurodivergentes</span>
-    <h1 style="margin-top:12px">Trabalho freelance, <em>no seu ritmo</em>, com briefing claro.</h1>
-    <p class="lead"><span class="only-d">Aqui toda vaga tem briefing estruturado, todo perfil diz como a pessoa prefere se comunicar e nenhuma proposta precisa ser escrita do zero.</span><span class="only-m">Vagas com briefing claro e comunicação combinada antes.</span></p>
+    <span class="label">${copy.label}</span>
+    <h1 style="margin-top:12px">${copy.h1[0]}<em>${copy.h1[1]}</em>${copy.h1[2]}</h1>
+    <p class="lead"><span class="only-d">${copy.lead}</span><span class="only-m">${copy.leadM}</span></p>
     <div class="seg" role="group" aria-label="Eu quero">
-      <button aria-pressed="${S.aud === "freela"}" data-aud="freela">Quero trabalhar</button>
-      <button aria-pressed="${S.aud === "cliente"}" data-aud="cliente">Quero contratar</button>
+      <button aria-pressed="${!hire}" data-aud="freela">Quero trabalhar</button>
+      <button aria-pressed="${hire}" data-aud="cliente">Quero contratar</button>
     </div>
     <form class="search" id="heroSearch" role="search">
-      <input id="heroQ" aria-label="Buscar" placeholder="${S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"}">
+      <input id="heroQ" aria-label="Buscar" placeholder="${copy.ph}">
       <button class="btn hl" type="submit">Buscar</button>
     </form>
   </div>
@@ -683,27 +744,25 @@ V.inicio = async () => {
   </aside>` : `<aside class="wcard"><h3>Comece em dois minutos</h3><p class="muted">Crie sua conta, conte como você trabalha melhor e encontre vagas com briefing claro.</p><button class="btn hl" data-go="entrar">Criar conta</button></aside>`}
 </section>
 <section class="stack" style="margin-top:32px">
-  <h2>Explore por área</h2>
-  <div class="cats">${CATS.map(c => `<a class="cat" href="/vagas?cat=${encodeURIComponent(c.id)}"><span class="cat-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${CAT_ICONS[c.id] || CAT_ICONS._}</svg></span><b>${c.n}</b><span class="muted">${c.c}</span></a>`).join("")}</div>
+  <h2>${copy.catsTitle}</h2>
+  <div class="cats">${CATS.map(c => `<a class="cat" href="${copy.catHref(c.id)}"><span class="cat-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${CAT_ICONS[c.id] || CAT_ICONS._}</svg></span><b>${c.n}</b><span class="muted">${c.c}</span></a>`).join("")}</div>
 </section>
 <section class="stack" style="margin-top:56px">
-  <h2>Como funciona</h2>
+  <h2>${copy.stepsTitle}</h2>
   <div class="steps">
-    <div class="step"><h3>Escolha vagas com briefing claro</h3><p class="muted">Cada vaga mostra a porcentagem de clareza: objetivo, entregas, o que está fora do escopo e como será a comunicação.</p></div>
-    <div class="step"><h3>Envie uma proposta guiada</h3><p class="muted">Quatro passos curtos, com perguntas de apoio. O rascunho salva sozinho, então dá para pausar e voltar depois.</p></div>
-    <div class="step"><h3>${PAY.enabled ? "Receba por etapa entregue" : "Combine entregas por etapa"}</h3><p class="muted">${PAY.enabled ? `O pagamento é processado ${PAY.provider === "stripe" ? "pela Stripe" : "pelo Asaas"}${PAY.sandbox ? " (ambiente de testes)" : ""} e liberado conforme as etapas aprovadas e os termos da plataforma.` : "Os pagamentos estão em simulação durante o período de testes. Não há cobrança nem proteção de valores pela plataforma nesta fase."} <a href="/pagamentos-e-taxas">Entenda pagamentos e taxas</a>.</p></div>
+    ${copy.steps.map(x => `<div class="step"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join("")}
+    <div class="step"><h3>${copy.payTitle}</h3><p class="muted">${PAY.enabled ? `O pagamento é processado ${PAY.provider === "stripe" ? "pela Stripe" : "pelo Asaas"}${PAY.sandbox ? " (ambiente de testes)" : ""} e liberado conforme as etapas aprovadas e os termos da plataforma.` : "Os pagamentos estão em simulação durante o período de testes. Não há cobrança nem proteção de valores pela plataforma nesta fase."} <a href="/pagamentos-e-taxas">Entenda pagamentos e taxas</a>.</p></div>
   </div>
 </section>
 <section class="stack" style="margin-top:56px">
-  <h2>O que muda em relação a outras plataformas</h2>
+  <h2>${copy.whyTitle}</h2>
   <div class="principles">
-    <div class="principle"><h3>Sem adivinhação</h3><p class="muted">Só é possível publicar vaga com pelo menos metade do briefing preenchido. A nota de clareza fica visível para todos.</p></div>
-    <div class="principle"><h3>Propor não custa nada</h3><p class="muted">Sem créditos nem taxa por proposta. O limite de propostas abertas acompanha a capacidade que você declara.</p></div>
-    <div class="principle"><h3>Interface calma</h3><p class="muted">Sem contadores piscando nem pressa artificial. Ajuste tamanho de texto, espaçamento e movimento em Ajustes.</p></div>
-    <div class="principle"><h3>Comunicação combinada antes</h3><p class="muted">Cada conversa tem um resumo fixo do que foi combinado, editável pelos dois lados.</p></div>
+    ${copy.why.map(x => `<div class="principle"><h3>${x[0]}</h3><p class="muted">${x[1]}</p></div>`).join("")}
   </div>
-</section>`;
-};
+</section>
+${hire ? `<section class="panel home-cta"><div><h2>Pronto para começar?</h2><p class="muted">Publique seu briefing em poucos minutos ou conheça os talentos antes de decidir.</p></div><div class="row" style="gap:10px"><a class="btn hl" href="/publicar" data-go="publicar">Publicar vaga</a><a class="btn" href="/talentos" data-go="talentos">Ver talentos</a></div></section>` : ""}
+</div>`;
+}
 
 // ENTRAR E CRIAR CONTA: a mesma tela com duas abas. Mostra os botões de login social que
 // estiverem ligados (SOCIAL) e traduz os códigos de erro da volta do Google em frases (OAUTH_ERR).
@@ -879,7 +938,7 @@ function jobCard(j: OsmoJob) {
   return `<a class="job" href="/vagas/${j.id}" data-go="vaga-${j.id}">
     <div><h3>${esc(j.title)}</h3><p class="muted">${esc(j.company || j.client)} · ${when(j.created_at)} · ${j.proposals} ${j.proposals === 1 ? "proposta" : "propostas"}</p></div>
     <div class="price"><b class="mono">${j.budget_type === "hora" ? brl(j.budget) + "/h" : brl(j.budget)}</b><span class="muted">${j.budget_type === "hora" ? "por hora" : "valor fixo"} · ${esc(j.duration)}</span></div>
-    <div class="meta">${clarBar(j.clarity)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>
+    <div class="meta">${clarBar(j.clarity, j.checks)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>
   </a>`;
 }
 const activeFilters = () => [S.cat, S.clear, S.async, S.flex].filter(Boolean).length;
@@ -972,7 +1031,7 @@ V.vaga = async id => {
 <div class="detail">
   <article class="stack">
     <div class="stack" style="gap:10px"><span class="label">${catName(j.cat)}</span><h1 style="font-size:clamp(1.7rem,4vw,2.5rem)">${esc(j.title)}</h1>
-      <div class="row">${pill(JSTATUS, j.status)}${clarBar(j.clarity)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}</div></div>
+      <div class="row">${pill(JSTATUS, j.status)}${clarBar(j.clarity, j.checks)}${j.async ? `<span class="chip accent">Assíncrono</span>` : `<span class="chip sun">Com reuniões</span>`}${j.flex ? `<span class="chip plum">Prazo flexível</span>` : ""}</div></div>
     <div class="panel brief">
       <section><h2 class="label">Objetivo</h2><p>${esc(b.obj) || '<span class="muted">Não informado</span>'}</p></section>
       <section><h2 class="label">Entregas</h2>${b.ent.length ? `<ul>${b.ent.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : '<p class="muted">Não informado</p>'}</section>
@@ -988,7 +1047,7 @@ V.vaga = async id => {
         <div id="jFilesErr" class="err" role="alert" hidden></div></div></section>` : ""}
       ${j.skills.length ? `<section><h2 class="label">Habilidades</h2><div class="row" style="gap:6px">${j.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div></section>` : ""}
     </div>
-    ${j.clarity < 70 ? `<div class="sunk"><b>Este briefing tem pontos em aberto.</b><p class="muted">A proposta guiada sugere perguntas para esclarecer antes de aceitar.</p></div>` : ""}
+    ${(() => { const miss = CLAR_ITEMS.filter((_, i) => !clarChecks(j.clarity, j.checks)[i]); return miss.length ? `<div class="sunk stack" style="gap:8px"><div class="row" style="gap:6px"><b>Pontos em aberto</b>${miss.map(m => `<span class="chip">${m}</span>`).join("")}</div>${j.clarity < 70 ? `<p class="muted">A proposta guiada sugere perguntas para esclarecer antes de aceitar.</p>` : ""}</div>` : ""; })()}
     ${props}
   </article>
   <aside class="stack">
@@ -1103,12 +1162,16 @@ function reviewBox(c: OsmoContract) {
 // TALENTOS: a lista de freelas com busca e a página de perfil público de cada um (foto, selo,
 // habilidades, "como eu trabalho melhor", portfólio, avaliações e botão de conversar/convidar).
 /* ---------- talentos ---------- */
+// O cartão começa por COMO a pessoa trabalha (o que só a Osmo mostra), e não por preço e contagem.
+// Contadores zerados ("0 trabalhos concluídos") não aparecem: são ruído e pesam contra quem acabou de chegar.
 function talentCard(t: OsmoTalent) {
+  const how = [["Comunicação", t.how.com], ["Tempo de resposta", t.how.resp], ["Feedback", t.how.fb], ["Ritmo", t.how.foco]].filter(x => x[1]).slice(0, 2);
   return `<a class="talent" href="/talentos/${t.id}" data-go="talento-${t.id}">
     <div class="row">${av(t.name, t.id, "", t.avatar)}<div style="min-width:0"><h3>${esc(t.name)}${vbadge(t.verified)}</h3><p class="muted" style="font-size:.9rem">${esc(t.title || "Perfil em construção")}</p></div></div>
     ${t.tag ? `<div class="row" style="gap:6px"><span class="chip plum">${esc(t.tag)}</span></div>` : ""}
-    <div class="row" style="justify-content:space-between"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span><span class="row" style="gap:10px">${stars(t.rating.avg, t.rating.n)}<span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></span></div>
+    ${how.length ? `<dl class="thow">${how.map(x => `<div><dt class="label">${x[0]}</dt><dd>${esc(x[1])}</dd></div>`).join("")}</dl>` : ""}
     ${t.skills.length ? `<div class="row" style="gap:6px">${t.skills.map(s => `<span class="chip">${esc(s)}</span>`).join("")}</div>` : ""}
+    <div class="row tfoot"><span class="mono">${t.rate ? `<b>${brl(t.rate)}</b>/h` : "Valor a combinar"}</span>${how.length ? `<span class="mono muted">${t.hours} h/semana</span>` : ""}${t.done ? `<span class="row" style="gap:10px; margin-left:auto">${stars(t.rating.avg, t.rating.n)}<span class="mono">${t.done} ${t.done === 1 ? "trabalho concluído" : "trabalhos concluídos"}</span></span>` : ""}</div>
   </a>`;
 }
 function paginationHTML(path: string, pagination: OsmoPagination | undefined, query = new URLSearchParams()) {
@@ -2615,22 +2678,18 @@ function applyPostPH() {
 }
 function postScore() {
   const lines = (s: string) => String(s).split("\n").map(x => x.trim()).filter(Boolean);
-  const items = [["Título", P.title.trim().length > 8], ["Área", !!P.cat], ["Objetivo", P.obj.trim().length > 20], ["Duas entregas ou mais", lines(P.ent).length >= 2], ["Fora do escopo", lines(P.fora).length >= 1], ["Comunicação", P.com.trim().length > 3], ["Feedback", P.fb.trim().length > 3], ["Valor", Number(P.budget) > 0], ["Prazo", P.duration.trim().length > 1]];
+  const oks = [P.title.trim().length > 8, !!P.cat, P.obj.trim().length > 20, lines(P.ent).length >= 2, lines(P.fora).length >= 1, P.com.trim().length > 3, P.fb.trim().length > 3, Number(P.budget) > 0, P.duration.trim().length > 1];
+  const items: [string, boolean][] = CLAR_ITEMS.map((name, i) => [name, oks[i]]);
   return { items, score: Math.round(items.filter(i => i[1]).length / items.length * 100) };
 }
-function meterHTML() { const { items, score } = postScore(); return `<span class="label">Clareza do briefing</span><span class="big">${score}%</span><div class="bar ${score >= 80 ? "ready" : score >= 50 ? "mid" : "low"}" style="width:100%; height:8px"><i style="width:${score}%"></i></div><p class="hint">Para publicar, a vaga precisa de pelo menos 50%. Acima de 80% ela recebe propostas mais certeiras.</p><ul>${items.map(i => `<li class="${i[1] ? "ok" : ""}">${i[0]}</li>`).join("")}</ul>`; }
+function meterHTML() { const { items, score } = postScore(); return `<span class="label">Clareza do briefing</span><div class="row" style="gap:14px">${clarMark(items.map(i => !!i[1]), 64)}<span class="big">${score}%</span></div><p class="hint">Para publicar, a vaga precisa de pelo menos 50%. Acima de 80% ela recebe propostas mais certeiras.</p><ul>${items.map(i => `<li class="${i[1] ? "ok" : ""}">${i[0]}</li>`).join("")}</ul>`; }
 function updateMeterLive() {
   const box = $("#meter");
   if (!box) return;
   const { items, score } = postScore();
   const big = box.querySelector(".big");
   if (big) big.textContent = `${score}%`;
-  const bar = box.querySelector(".bar");
-  const fill = box.querySelector<HTMLElement>(".bar i");
-  if (bar && fill) {
-    fill.style.width = `${score}%`;
-    bar.className = `bar ${score >= 80 ? "ready" : score >= 50 ? "mid" : "low"}`;
-  }
+  box.querySelectorAll(".cmark circle").forEach((seg, idx) => seg.classList.toggle("on", !!items[idx]?.[1]));
   const lis = box.querySelectorAll("ul li");
   if (lis.length === items.length) {
     items.forEach((item, idx) => {
@@ -2718,7 +2777,13 @@ document.addEventListener("click", async e => { const target = eventElement(e); 
   if (t.id === "scrim" || t.closest<HTMLElement>("#a11yClose")) return closeA11y();
   if (t.closest<HTMLAnchorElement>("a[href]")) return; // links são tratados no interceptor, inclusive Ctrl/Cmd+clique
   const g = t.closest<HTMLElement>("[data-go]"); if (g) { e.preventDefault(); if (menuOpen) closeMenu(false); return go(g.dataset.go!); }
-  const a = t.closest<HTMLElement>("[data-aud]"); if (a) { S.aud = a.dataset.aud!; $$("[data-aud]").forEach(b => b.setAttribute("aria-pressed", String(b === a))); $("#heroQ").placeholder = S.aud === "freela" ? "Buscar vagas: logotipo, Webflow, revisão…" : "Buscar talentos: designer, revisora…"; return; }
+  const a = t.closest<HTMLElement>("[data-aud]"); if (a) {
+    // troca a home inteira para a versão escolhida e devolve o foco ao botão clicado (teclado e leitor de tela não se perdem)
+    S.aud = a.dataset.aud!;
+    const home = document.getElementById("home");
+    if (home) { home.outerHTML = homeHTML(); document.querySelector<HTMLElement>(`[data-aud="${S.aud}"]`)?.focus({ preventScroll: true }); }
+    return;
+  }
   const c = t.closest<HTMLElement>("[data-cat]"); if (c) { S.cat = c.dataset.cat!; return go("vagas", "?cat=" + encodeURIComponent(S.cat)); }
   const fq = t.closest<HTMLElement>("[data-fchip]"); if (fq) { const k = fq.dataset.fchip!; S[k as "clear" | "async" | "flex"] = !S[k as "clear" | "async" | "flex"]; const cb = $("#f_" + k) as HTMLInputElement; if (cb) cb.checked = S[k as "clear" | "async" | "flex"]; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
   const fc = t.closest<HTMLElement>("[data-fcat]"); if (fc) { S.cat = S.cat === fc.dataset.fcat! ? "" : fc.dataset.fcat!; const sel = $("#fcat"); if (sel) sel.value = S.cat; $("#fchips").innerHTML = fchipsHTML(); return refreshJobs(); }
