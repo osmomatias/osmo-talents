@@ -21,3 +21,7 @@ dist/
 /public/tv/controle.js
 /biblioteca/public/app.js
 /biblioteca/dist/
+
+# Prévias locais da newsletter
+newsletter/preview.html
+newsletter/preview-pedido.json
