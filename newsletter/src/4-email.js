@@ -1,9 +1,9 @@
 // ============================================================================
 // E-MAIL: template de e-mail marketing da Osmo (mesmo visual de src/mail.ts)
 // ============================================================================
-// Cabeçalho com gradiente oficial, wordmark SVG, cartões #F7EAE2 e rodapé com
-// o símbolo O. OSMO_WORDMARK_PATH e OSMO_SYMBOL_PATH são copiados de
-// src/mail.ts pelo build.mjs, então o logo é sempre o oficial.
+// Cabeçalho com fundo da marca (gradiente onde o cliente suporta), cartões
+// #F7EAE2 e rodapé com o símbolo O. Logo e símbolo são PNGs servidos pelo site
+// (public/email/), porque Gmail e Outlook não exibem SVG dentro do e-mail.
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -19,7 +19,7 @@ function renderNewsletter({ config, temas, itens, textos, agora = new Date() }) 
   const totalPalavras = (textos.itens || []).reduce((n, t) => n + `${t.titulo} ${t.paragrafos.join(" ")} ${t.por_que_importa}`.split(/\s+/).length, 0);
   const minutos = Math.max(1, Math.round(totalPalavras / 200));
   const descadastrar = `mailto:${config.RESPONDER_PARA}?subject=${encodeURIComponent("Sair da newsletter " + config.NOME)}`;
-  const simbolo = (tam, raio) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="${tam}" height="${tam}" style="vertical-align:middle"><rect width="32" height="32" rx="${raio}" fill="#7A0B3C"/><g transform="translate(5.5 5.5) scale(.7)" fill="#FFFFFF"><path d="${OSMO_SYMBOL_PATH}"/></g></svg>`;
+  const simbolo = (tam) => `<img src="${esc(origin)}/email/osmo-simbolo.png" width="${tam}" height="${tam}" alt="" style="vertical-align:middle;border:0">`;
 
   const secoes = temas.map(tema => {
     const doTema = itens.filter(i => i.tema === tema.id && porId[i.id]);
@@ -56,20 +56,26 @@ function renderNewsletter({ config, temas, itens, textos, agora = new Date() }) 
 <meta name="color-scheme" content="light">
 <title>${esc(config.NOME)} · ${esc(data)}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap">
+<style>.cabecalho{background-image:linear-gradient(135deg,#D85A16 0%,#A3303A 35%,#7A0B3C 75%,#610930 100%)}</style>
 </head>
 <body style="margin:0;padding:24px 12px;background-color:#FBF5F1;font-family:${font};color:#1C0B12;-webkit-font-smoothing:antialiased">
   <div style="display:none;max-height:0;overflow:hidden">${esc(textos.abertura)}</div>
   <div style="max-width:600px;margin:0 auto;background-color:#FFFFFF;border:1px solid #EBD8CE;border-radius:24px;overflow:hidden;box-shadow:0 8px 30px rgba(160,60,20,0.08)">
-    <div style="background:#7A0B3C;background-image:linear-gradient(135deg,#D85A16 0%,#A3303A 35%,#7A0B3C 75%,#610930 100%);padding:26px 28px;border-bottom:3px solid #E8650F">
-      <a href="${esc(origin)}" style="text-decoration:none;color:#FFFFFF">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 94.2 30" width="76" height="24" fill="#FFFFFF" aria-label="Osmo" style="display:inline-block;vertical-align:middle"><path d="${OSMO_WORDMARK_PATH}"/></svg>
-        <span style="display:inline-block;width:1px;height:16px;margin:0 10px;background:rgba(255,255,255,0.35);vertical-align:middle"></span>
-        <span style="font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#FFB6C1;vertical-align:middle">Talents</span>
-      </a>
-      <div style="margin-top:16px;font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FFC9A3">Newsletter · ${esc(data)}</div>
-      <h1 style="margin:6px 0 0;font-size:24px;line-height:1.2;font-weight:700;color:#FFFFFF">${esc(config.NOME)}</h1>
-      <p style="margin:6px 0 0;font-size:14px;line-height:1.4;color:#FFE6DA">${itens.length} artigos, um por área · leitura de ${minutos} min</p>
-    </div>
+    <!-- Cabeçalho: fundo sólido (bgcolor) que todo cliente mostra; o gradiente
+         vem da classe .cabecalho no <head>, que o Gmail ignora sem quebrar nada.
+         O logo é PNG hospedado porque Gmail e Outlook não exibem SVG. -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
+      <tr><td class="cabecalho" bgcolor="#7A0B3C" style="background-color:#7A0B3C;padding:26px 28px;border-bottom:3px solid #E8650F">
+        <a href="${esc(origin)}" style="text-decoration:none;color:#FFFFFF">
+          <img src="${esc(origin)}/email/osmo-wordmark-branco.png" width="76" height="24" alt="OSMO" style="display:inline-block;vertical-align:middle;border:0;outline:none;color:#FFFFFF;font-size:18px;font-weight:700;letter-spacing:0.1em">
+          <span style="display:inline-block;height:16px;margin:0 10px;border-left:1px solid #B5567A;vertical-align:middle"></span>
+          <span style="font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#FFB6C1;vertical-align:middle">Talents</span>
+        </a>
+        <div style="margin-top:16px;font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#FFC9A3">Newsletter · ${esc(data)}</div>
+        <h1 style="margin:6px 0 0;font-size:24px;line-height:1.2;font-weight:700;color:#FFFFFF">${esc(config.NOME)}</h1>
+        <p style="margin:6px 0 0;font-size:14px;line-height:1.4;color:#FFE6DA">${itens.length} artigos, um por área · leitura de ${minutos} min</p>
+      </td></tr>
+    </table>
 
     <div style="padding:26px 28px 10px;font-size:16.5px;line-height:1.6;color:#1C0B12">
       <p style="margin:0 0 14px;color:#1C0B12">${esc(textos.abertura)}</p>
@@ -81,7 +87,7 @@ function renderNewsletter({ config, temas, itens, textos, agora = new Date() }) 
     </div>
 
     <div style="padding:18px 28px;background-color:#F7EAE2;border-top:1px solid #EBD8CE;font-size:13px;line-height:1.5;color:#6E5560">
-      <div style="margin-bottom:6px">${simbolo(18, 6)} <strong style="color:#1C0B12;vertical-align:middle">Osmo Talents</strong> <span style="vertical-align:middle">· Trabalho freelance com regras claras</span></div>
+      <div style="margin-bottom:6px">${simbolo(18)} <strong style="color:#1C0B12;vertical-align:middle">Osmo Talents</strong> <span style="vertical-align:middle">· Trabalho freelance com regras claras</span></div>
       <p style="margin:4px 0;color:#6E5560">Você recebe o ${esc(config.NOME)} todas as manhãs porque se inscreveu na Osmo.</p>
       <p style="margin:6px 0 0">
         <a href="${esc(origin)}" style="color:#7A0B3C;text-decoration:none;font-weight:600">osmo.com.br</a>
