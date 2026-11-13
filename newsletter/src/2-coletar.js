@@ -4,13 +4,16 @@
 // Não usa bibliotecas: um leitor simples de XML que entende RSS 2.0 e Atom.
 // `baixar(url)` é injetado: no n8n usa this.helpers.httpRequest; no teste local, fetch.
 
-const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", hellip: "…", mdash: "—", ndash: "–", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“" };
+const ENTIDADES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", hellip: "…", mdash: "—", ndash: "–", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", ordm: "º", ordf: "ª", laquo: "«", raquo: "»", deg: "°" };
+// &eacute; &atilde; &ccedil; etc.: letra + acento combinado (vira "é", "ã", "ç").
+const ACENTOS = { acute: "́", grave: "̀", circ: "̂", tilde: "̃", uml: "̈", cedil: "̧" };
 
 function decodificar(s) {
   return String(s || "")
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&([a-z])(acute|grave|circ|tilde|uml|cedil);/gi, (_, l, a) => (l + ACENTOS[a.toLowerCase()]).normalize("NFC"))
     .replace(/&([a-z]+);/gi, (m, n) => ENTIDADES[n.toLowerCase()] ?? m);
 }
 

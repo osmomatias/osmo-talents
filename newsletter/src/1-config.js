@@ -41,7 +41,6 @@ const TEMAS = [
     id: "dev", nome: "Desenvolvimento e TI", cor: "#A3303A",
     fontes: [
       { nome: "Tecnoblog", idioma: "pt", url: "https://tecnoblog.net/feed/" },
-      { nome: "Canaltech", idioma: "pt", url: "https://canaltech.com.br/rss/" },
       { nome: "InfoQ", idioma: "en", url: "https://feed.infoq.com/" },
       { nome: "GitHub Blog", idioma: "en", url: "https://github.blog/feed/" },
       { nome: "Stack Overflow Blog", idioma: "en", url: "https://stackoverflow.blog/feed/" },
